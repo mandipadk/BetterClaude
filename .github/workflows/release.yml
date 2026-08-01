@@ -148,15 +148,23 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
-          # Prefer the annotated tag's message body; fall back to the commit subject when the
-          # tag is lightweight or does not exist yet (a workflow_dispatch run).
+          # Re-fetch the tag as a tag. actions/checkout resolves a tag-push ref to the commit,
+          # so `git tag -l --format='%(contents:...)'` returns the *commit* message — which is
+          # how v0.1.0 shipped with a wall of engineering detail as its release notes, and
+          # put the same text in the in-app updater's "what's new".
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG" 2>/dev/null || true
+
           notes=""
-          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+          if [ "$(git cat-file -t "$TAG" 2>/dev/null || true)" = "tag" ]; then
             notes="$(git tag -l --format='%(contents:subject)%0a%0a%(contents:body)' "$TAG")"
           fi
           notes="$(printf '%s' "$notes" | sed -e 's/[[:space:]]*$//' | sed -e '/./,$!d')"
+          # Deliberately the subject only, never the body: a lightweight tag should produce a
+          # short line, not the whole commit message.
           if [ -z "$notes" ]; then
             notes="$(git log -1 --pretty=%s)"
+            echo "::warning::$TAG is not an annotated tag; using the commit subject. "\
+                 "Tag with 'git tag -a' to write real release notes."
           fi
           {
             echo "notes<<RELEASE_NOTES_EOF"
@@ -234,8 +242,12 @@ jobs:
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             # Re-run against an existing release: replace the assets rather than failing.
-            echo "Release $TAG already exists — updating its assets."
+            # The notes are refreshed too — a re-run exists to correct something, and leaving
+            # the old body in place is how v0.1.0 kept its wrong notes after its assets were
+            # rebuilt with the right ones.
+            echo "Release $TAG already exists — updating its assets and notes."
             gh release upload "$TAG" "${assets[@]}" --clobber
+            gh release edit "$TAG" --title "Better Claude $VERSION" --notes "$body"
           else
             # --target matters for workflow_dispatch, where the tag may not exist yet.
             gh release create "$TAG" "${assets[@]}" \

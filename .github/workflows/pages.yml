@@ -65,6 +65,11 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          # Turns Pages on and points it at Actions if it is not already configured, instead
+          # of failing with "Get Pages site failed". This is what makes the site public: the
+          # first successful run publishes it at the URL in site/README.md.
+          enablement: true
 
       - name: Upload the site
         uses: actions/upload-pages-artifact@v3
