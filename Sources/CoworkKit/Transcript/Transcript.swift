@@ -286,19 +286,28 @@ public struct Transcript: Sendable {
 
     /// Split on `\n`, keeping every line including empty ones so line numbers stay true.
     /// A trailing newline does not produce a final empty line.
+    ///
+    /// The newline scan runs over a raw pointer instead of subscripting the `Data`. Each
+    /// `data[i]` goes through non-inlinable `__DataStorage` accessors, which made walking a
+    /// 33 MB transcript cost more than parsing all the JSON inside it.
     static func splitLines(_ data: Data) -> [Data] {
-        var lines: [Data] = []
-        var start = data.startIndex
-        var index = data.startIndex
-        while index < data.endIndex {
-            if data[index] == 0x0A {
-                lines.append(data.subdata(in: start..<index))
-                start = data.index(after: index)
+        guard !data.isEmpty else { return [] }
+        var bounds: [(start: Int, end: Int)] = []
+        bounds.reserveCapacity(data.count / 512 + 1)
+        data.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress else { return }
+            var start = 0
+            while start < raw.count,
+                  let hit = memchr(base + start, 0x0A, raw.count - start) {
+                let index = UnsafeRawPointer(hit) - base
+                bounds.append((start, index))
+                start = index + 1
             }
-            index = data.index(after: index)
+            if start < raw.count { bounds.append((start, raw.count)) }
         }
-        if start < data.endIndex { lines.append(data.subdata(in: start..<data.endIndex)) }
-        return lines
+        // `withUnsafeBytes` offsets are zero-based; `subdata` wants the Data's own indices.
+        let origin = data.startIndex
+        return bounds.map { data.subdata(in: (origin + $0.start)..<(origin + $0.end)) }
     }
 
     static func recordIndex(forByteOffset offset: Int, lineStarts: [Int]) -> Int {

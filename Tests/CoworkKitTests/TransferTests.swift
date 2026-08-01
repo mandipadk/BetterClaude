@@ -81,6 +81,31 @@ struct TranscriptTests {
         ]
     }
 
+    @Test("Line splitting keeps blank lines and drops only the trailing newline")
+    func splitLinesShape() {
+        func split(_ s: String) -> [String] {
+            Transcript.splitLines(Data(s.utf8)).map { String(decoding: $0, as: UTF8.self) }
+        }
+        #expect(split("") == [])
+        #expect(split("\n") == [""])
+        #expect(split("\n\n") == ["", ""])
+        #expect(split("a\nb") == ["a", "b"])
+        #expect(split("a\nb\n") == ["a", "b"])
+        #expect(split("a\n\n\nb\n") == ["a", "", "", "b"])
+        #expect(split("\na\n") == ["", "a"])
+        #expect(split("abc") == ["abc"])
+        // \r stays on the line: line numbering must not depend on the writer's line ending.
+        #expect(split("a\r\nb\r\n") == ["a\r", "b\r"])
+    }
+
+    @Test("Line splitting honours a slice's own start index")
+    func splitLinesOnSlice() {
+        let backing = Data("xxxxxHELLO\nWORLD\ntail".utf8)
+        let slice = backing[backing.index(backing.startIndex, offsetBy: 5)...]
+        let lines = Transcript.splitLines(slice).map { String(decoding: $0, as: UTF8.self) }
+        #expect(lines == ["HELLO", "WORLD", "tail"])
+    }
+
     @Test("An intact chain reports no orphans")
     func chainIntegrity() {
         let transcript = Transcript(records: minimalChat())
