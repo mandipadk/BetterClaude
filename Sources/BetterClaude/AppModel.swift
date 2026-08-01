@@ -116,6 +116,13 @@ final class AppModel {
     var configItems: [ConfigItem] = []
     var comparison: ConfigComparison?
     var configScopeFilter: ConfigScope?
+
+    /// Scopes that actually hold something. Three installs on a typical machine have a
+    /// config directory but nothing in it; listing them invites a click that lands nowhere.
+    var populatedConfigScopes: [ConfigScope] {
+        let counts = Dictionary(grouping: configItems, by: \.scope).mapValues(\.count)
+        return configScopes.filter { (counts[$0] ?? 0) > 0 }
+    }
     var isLoadingConfig = false
 
     /// Off the main actor: a full inventory walks every skill, plugin and settings file on

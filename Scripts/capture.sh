@@ -6,6 +6,14 @@
 # windows that are nobody's business.
 set -uo pipefail
 
+# Hold the display awake for the duration. Synthetic clicks and the accessibility API are
+# inert while the screen is locked, so a machine that sleeps mid-run yields a directory of
+# identical screenshots rather than an error. This is a process assertion, not a settings
+# change — it releases when the script exits.
+caffeinate -d -i -w $$ &
+CAFFEINATE_PID=$!
+trap 'kill "$CAFFEINATE_PID" 2>/dev/null' EXIT
+
 OUT="${1:?usage: capture.sh <output-dir>}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 mkdir -p "$OUT"

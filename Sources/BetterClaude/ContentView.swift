@@ -296,7 +296,10 @@ private struct Sidebar: View {
                              isSelected: model.configScopeFilter == nil) {
                         model.configScopeFilter = nil
                     }
-                    ForEach(model.configScopes, id: \.id) { scope in
+                    // An install with nothing in it selects into an empty pane and tells the
+                    // reader nothing, so it is not offered. The count beside "Everything"
+                    // still reflects every scope that was scanned.
+                    ForEach(model.populatedConfigScopes, id: \.id) { scope in
                         ScopeRow(title: scope.title,
                                  badge: "\(model.configItems.filter { $0.scope == scope }.count)",
                                  isSelected: model.configScopeFilter == scope) {
