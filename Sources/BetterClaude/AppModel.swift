@@ -225,60 +225,16 @@ final class AppModel {
         isHarvesting = true
         defer { isHarvesting = false }
 
-        struct Source: Sendable {
-            let transcript: URL
-            let workspace: URL?
-            let title: String
-            let id: String
-            let container: String
-        }
-        var sources: [Source] = []
-        for store in stores {
-            for account in accounts[store] ?? [] {
-                for session in (try? Discovery.sessions(in: account)) ?? [] {
-                    guard let url = session.transcriptURL else { continue }
-                    sources.append(Source(transcript: url, workspace: session.workspaceURL,
-                                          title: session.title, id: session.sessionId,
-                                          container: store.variantDirName))
-                }
-            }
-        }
-        for dir in claudeCodeProjects {
-            for session in (try? Discovery.claudeCodeSessions(projectDir: dir,
-                                                              configDir: claudeCodeConfigDir)) ?? [] {
-                sources.append(Source(transcript: session.transcriptURL, workspace: nil,
-                                      title: session.title, id: session.sessionId,
-                                      container: projectLabel(dir)))
-            }
-        }
-
-        let captured = sources
-        harvest = await Task.detached(priority: .userInitiated) { () -> HarvestSummary in
-            var all: [Artifact] = []
-            var scanned = 0
-            let skipped: [String] = []
-            for source in captured {
-                scanned += 1
-                if let transcript = try? Transcript(contentsOf: source.transcript) {
-                    all += ArtifactHarvest.codeBlocks(in: transcript,
-                                                      conversationTitle: source.title,
-                                                      conversationID: source.id,
-                                                      container: source.container)
-                }
-                if let workspace = source.workspace {
-                    all += ArtifactHarvest.files(inWorkspace: workspace,
-                                                 conversationTitle: source.title,
-                                                 conversationID: source.id,
-                                                 container: source.container)
-                }
-            }
-            let (kept, collapsed) = ArtifactHarvest.deduplicate(all)
-            return HarvestSummary(artifacts: kept,
-                                  totalBytes: kept.reduce(0) { $0 + Int64($1.bytes) },
-                                  duplicatesCollapsed: collapsed,
-                                  conversationsScanned: scanned,
-                                  skipped: skipped)
+        // Shared with `cowork library` on purpose. This enumeration used to be written here
+        // and again in the CLI, and the two silently disagreed about what "the machine" meant.
+        let configDir = claudeCodeConfigDir
+        let sources = await Task.detached(priority: .userInitiated) {
+            ArtifactHarvest.machineSources(claudeCodeConfigDir: configDir)
         }.value
+
+        harvest = await ArtifactHarvest.harvest(
+            sources: sources,
+            maximumConcurrency: ProcessInfo.processInfo.activeProcessorCount)
     }
 
     func revealArtifact(_ artifact: Artifact) {

@@ -68,6 +68,22 @@ func fail(_ message: String) -> Never {
     exit(1)
 }
 
+/// Runs an async operation from this synchronous command dispatcher.
+///
+/// The CLI is a straight-line script with no run loop, so there is nothing to suspend into;
+/// blocking the main thread on a semaphore is the whole point rather than a mistake. The work
+/// itself still fans out across cores inside the task.
+func runBlocking<T: Sendable>(_ operation: @escaping @Sendable () async -> T) -> T {
+    let semaphore = DispatchSemaphore(value: 0)
+    nonisolated(unsafe) var result: T?
+    Task.detached(priority: .userInitiated) {
+        result = await operation()
+        semaphore.signal()
+    }
+    semaphore.wait()
+    return result!
+}
+
 func bytes(_ n: Int64) -> String {
     ByteCountFormatter.string(fromByteCount: n, countStyle: .file)
 }
@@ -335,32 +351,20 @@ func cmdUndo(_ args: Args) throws {
 }
 
 func cmdLibrary(_ args: Args) throws {
-    var artifacts: [Artifact] = []
-    var scanned = 0
-    for store in try Discovery.stores() {
-        for account in try Discovery.accounts(in: store) {
-            for session in try Discovery.sessions(in: account) {
-                scanned += 1
-                if let url = session.transcriptURL, let transcript = try? Transcript(contentsOf: url) {
-                    artifacts += ArtifactHarvest.codeBlocks(in: transcript,
-                                                            conversationTitle: session.title,
-                                                            conversationID: session.sessionId,
-                                                            container: store.variantDirName)
-                }
-                artifacts += ArtifactHarvest.files(inWorkspace: session.workspaceURL,
-                                                   conversationTitle: session.title,
-                                                   conversationID: session.sessionId,
-                                                   container: store.variantDirName)
-            }
-        }
+    let sources = ArtifactHarvest.machineSources()
+    let summary = runBlocking {
+        await ArtifactHarvest.harvest(sources: sources,
+                                      maximumConcurrency: ProcessInfo.processInfo.activeProcessorCount)
     }
-    let (kept, collapsed) = ArtifactHarvest.deduplicate(artifacts)
-    var shown = kept
+    var shown = summary.artifacts
     if let kind = args.values["kind"], let k = ArtifactKind(rawValue: kind) {
         shown = shown.filter { $0.kind == k }
     }
     let limit = args.values["limit"].flatMap(Int.init) ?? 25
-    print("\(kept.count) artifacts · \(collapsed) duplicates collapsed · \(scanned) conversations\n")
+    let megabytes = Double(summary.totalBytes) / 1_048_576
+    print("\(summary.artifacts.count) artifacts · \(String(format: "%.1f", megabytes)) MB · "
+          + "\(summary.duplicatesCollapsed) duplicates collapsed · "
+          + "\(summary.conversationsScanned) conversations\n")
     for artifact in shown.prefix(limit) {
         let lines = artifact.lineCount.map { "\($0)L" } ?? "—"
         print("  \(artifact.kind.rawValue.padding(toLength: 9, withPad: " ", startingAt: 0)) "

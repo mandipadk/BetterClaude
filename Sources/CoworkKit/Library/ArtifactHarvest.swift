@@ -393,6 +393,46 @@ public enum ArtifactHarvest {
 
     // MARK: - Whole-machine harvest
 
+    /// Every conversation on the machine, from both places Claude keeps them.
+    ///
+    /// This exists because the enumeration was previously written twice — once in the app and
+    /// once in the CLI — and the two drifted: the CLI's copy walked only the Cowork stores, so
+    /// `cowork library` silently reported a fraction of the machine while claiming to harvest
+    /// everything. Anything that harvests should call this rather than walk `Discovery` itself.
+    ///
+    /// Claude Code sessions have no workspace directory; their artifacts come from the
+    /// transcript alone. Cowork sessions have both.
+    public static func machineSources(
+        claudeCodeConfigDir: URL = Discovery.defaultClaudeCodeConfigDir()
+    ) -> [HarvestSource] {
+        var sources: [HarvestSource] = []
+
+        for store in (try? Discovery.stores()) ?? [] {
+            for account in (try? Discovery.accounts(in: store)) ?? [] {
+                for session in (try? Discovery.sessions(in: account)) ?? [] {
+                    sources.append(HarvestSource(conversationTitle: session.title,
+                                                 conversationID: session.sessionId,
+                                                 container: store.variantDirName,
+                                                 transcriptURL: session.transcriptURL,
+                                                 workspaceURL: session.workspaceURL))
+                }
+            }
+        }
+
+        for projectDir in (try? Discovery.claudeCodeProjects(configDir: claudeCodeConfigDir)) ?? [] {
+            let label = projectDir.lastPathComponent
+            for session in (try? Discovery.claudeCodeSessions(projectDir: projectDir,
+                                                              configDir: claudeCodeConfigDir)) ?? [] {
+                sources.append(HarvestSource(conversationTitle: session.title,
+                                             conversationID: session.sessionId,
+                                             container: label,
+                                             transcriptURL: session.transcriptURL,
+                                             workspaceURL: nil))
+            }
+        }
+        return sources
+    }
+
     /// Harvest every source, deduplicate, and report what was skipped.
     ///
     /// Serial. Correct, and fine for a handful of sources; for a whole machine use
