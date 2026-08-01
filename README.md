@@ -108,13 +108,27 @@ never the matched value, because a report containing the secret is a second copy
 
 ## Install
 
-Requires macOS 14+ and Xcode's Swift toolchain.
+Requires macOS 14 or later. Download the latest `.dmg` from
+[Releases](https://github.com/mandipadk/BetterClaude/releases/latest) and drag the app to
+Applications.
+
+The build is ad-hoc signed and **not notarised**, so a browser download arrives
+quarantined and Gatekeeper blocks the first launch. Right-click the app and choose
+**Open**, then confirm — once per installed version. See [Updates](#updates) for what that
+means for the update checksum.
+
+### Building from source
+
+Needs Xcode's Swift toolchain in addition to macOS 14.
 
 ```bash
-git clone <this repo> && cd better-claude
+git clone https://github.com/mandipadk/BetterClaude.git && cd BetterClaude
 ./Scripts/make-app.sh
 open dist/BetterClaude.app
 ```
+
+A locally built bundle never acquires the quarantine attribute, so it launches with no
+Gatekeeper prompt at all.
 
 Optional command line tool:
 
