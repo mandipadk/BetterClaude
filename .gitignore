@@ -18,3 +18,4 @@ dist/
 *.coworkbundle/
 fixtures/real/
 scratch/
+_site/

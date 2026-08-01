@@ -39,30 +39,22 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
 
-      - name: Verify the site is self-contained
-        # The page's stated promise is that it loads nothing from a third party. A stray
-        # CDN link or webfont added later would break that silently, so fail the deploy
-        # instead.
-        #
-        # Matches by tag rather than by file extension. An earlier version keyed on
-        # extensions and sailed straight past
-        # <link href="https://fonts.googleapis.com/css?family=Inter"> — no extension, and
-        # the single most likely way this promise gets broken.
-        #
-        # <a href="https://..."> is deliberately allowed: a link is fetched when someone
-        # clicks it, which is not the page loading an asset.
+      - name: Stage exactly what gets published
+        # Copy the two files that are the site rather than uploading the directory. The
+        # directory also holds README.md, which upload-pages-artifact would happily serve
+        # at /README.md; staging makes the published surface explicit instead of "whatever
+        # happens to be in the folder".
         run: |
-          set -uo pipefail
-          pattern='<script|<iframe|@import|@font-face'
-          pattern="$pattern"'|<link[^>]+href="https?://'
-          pattern="$pattern"'|<(img|source|video|audio|embed|object|track)[^>]+src="https?://'
-          pattern="$pattern"'|url\(\s*.?https?://'
-          # rel="canonical" and rel="alternate" name a URL, they do not fetch one.
-          if grep -rniE "$pattern" site/ | grep -vE 'rel="(canonical|alternate)"'; then
-            echo "::error::site/ references an external asset; the page claims it loads none"
-            exit 1
-          fi
-          echo "No external assets referenced."
+          set -euo pipefail
+          mkdir -p _site
+          cp site/index.html site/styles.css _site/
+          ls -la _site/
+
+      - name: Verify the site is self-contained
+        # The page tells its readers it loads no fonts, no scripts and no third-party
+        # assets. This enforces that rather than trusting it. Runs against the staged copy,
+        # so it checks precisely what will be published.
+        run: python3 Scripts/check-selfcontained.py _site
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -70,7 +62,7 @@ jobs:
       - name: Upload the site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: _site
 
       - name: Deploy
         id: deploy

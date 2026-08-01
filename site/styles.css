@@ -158,19 +158,33 @@ a:hover { text-decoration-thickness: 2px; }
 
 h1 {
   margin: 0.35em 0 0;
-  /* The headline reaches past the body measure. Inside it, "Move a Claude conversation"
-     cannot fit one line, so the H1 broke into three or four lines filling as little as
-     52% — a rag no rebreak can fix, because there is no better break to find. Widening
-     the measure to 40rem is what actually fixes it: two lines at 96% and 98%.
-     A max-width, not a wider block: the second clamp keeps it inside the viewport at
-     narrow widths, where it collapses back to the body measure and never overflows. */
-  width: calc(100% + 8rem);
-  max-width: calc(100vw - 2 * var(--gutter));
+  max-width: 100%;
   font-size: clamp(2.125rem, 6.2vw, 3.125rem);
   line-height: 1.08;
   font-weight: 700;
   letter-spacing: -0.025em;
   text-wrap: balance;
+}
+
+/* The headline reaches past the body measure, but only where there is room for it.
+   Inside the body column "Move a Claude conversation" cannot fit one line, so the H1
+   broke into three or four lines filling as little as 52% — a rag no rebreak can fix,
+   because no better break exists. At 40rem it is two lines at 96% and 98%.
+
+   The width gate is a media query, not a max-width. Capping with
+   `calc(100vw - 2 * var(--gutter))` looked equivalent and was not: the H1 starts at the
+   centred column's left edge, not the viewport's, so the cap was short by half the
+   leftover width and pushed the headline off-screen from ~657px to ~772px — including
+   768, iPad portrait. `100vw` also counts a classic scrollbar that the containing block
+   does not, widening the broken band on Windows and Linux while measuring clean on
+   macOS overlay scrollbars.
+   848px is where the widened headline first fits its gutter exactly. Below it the
+   headline uses the column, where text-wrap: balance does real work. */
+@media (min-width: 53rem) {
+  h1 {
+    width: calc(100% + 8rem);
+    max-width: none;
+  }
 }
 
 h2 {
@@ -238,13 +252,17 @@ code {
   white-space: nowrap;
 }
 
+/* --ink-2, not --ink-3. This line is the page's evidence — the measured numbers that
+   separate it from every other product page — and at the third tier it rendered with the
+   same weight as a footnote. --ink-3 was also carrying four roles at once (.eyebrow,
+   .index, .meta, .evidence), which flattened the ramp exactly where it should separate. */
 .evidence {
   margin-top: 1rem;
   padding-left: 0.9rem;
   border-left: 1px solid var(--rule);
   font-size: 0.9375rem;
   line-height: 1.6;
-  color: var(--ink-3);
+  color: var(--ink-2);
   font-variant-numeric: tabular-nums;
 }
 
@@ -275,8 +293,14 @@ code {
 
 /* Body copy in every section, not just .item. Scoping this to .item once left the
    Parallex paragraphs inheriting --ink, which made the cross-promotion the darkest
-   body text on the page — the least important section rendering heaviest. */
-.band p:not(.index):not(.evidence):not(.meta) { color: var(--ink-2); }
+   body text on the page — the least important section rendering heaviest.
+
+   A direct-child selector rather than a chain of :not(). The denylist form already
+   matched p.actions, and at specificity 41 it outranked .lede and .lede-small — so any
+   paragraph class added later would silently take this colour unless someone remembered
+   to exclude it. This states what it means: prose directly inside a section. */
+.band > p,
+.item > p:not(.index):not(.evidence) { color: var(--ink-2); }
 
 /* ---------- Description pairs (no boxes, hairlines only) ---------- */
 
