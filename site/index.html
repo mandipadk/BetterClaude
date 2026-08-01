@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Better Claude — move Claude conversations between installs</title>
+<meta name="description" content="A macOS app that moves a Claude conversation between Claude Desktop installs and into Claude Code, inventories every install's configuration, collects every artifact Claude produced, and forks a conversation at any message.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.5v19' stroke='%23ba5631' stroke-width='1.5' stroke-linecap='round' opacity='.45'/%3E%3Cpath d='M4 12h15.5M15.5 7.75 19.75 12l-4.25 4.25' fill='none' stroke='%23ba5631' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="bar">
+  <div class="wrap bar-inner">
+    <a class="mark" href="#top" aria-label="Better Claude, top of page">
+      <svg class="glyph" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+        <path d="M12 2.5v19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.45"/>
+        <path d="M4 12h15.5M15.5 7.75 19.75 12l-4.25 4.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+      <span>Better&nbsp;Claude</span>
+    </a>
+    <nav class="bar-nav" aria-label="Primary">
+      <a href="#capabilities">What it does</a>
+      <a href="#limits">Limits</a>
+      <a href="https://github.com/mandipadk/BetterClaude">Source</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="wrap hero" id="top">
+    <p class="eyebrow">macOS app</p>
+    <h1>Move a Claude conversation to wherever you are working.</h1>
+    <p class="lede">
+      Better Claude operates on the conversation stores that Claude Desktop and Claude
+      Code already keep on your Mac. Move a chat between installs. Fork it at any
+      message. Find every file Claude ever wrote for you. Nothing leaves the machine.
+    </p>
+    <p class="actions">
+      <a class="btn" href="https://github.com/mandipadk/BetterClaude/releases/latest">Download for macOS</a>
+      <a class="btn-quiet" href="https://github.com/mandipadk/BetterClaude">Read the source</a>
+    </p>
+    <p class="meta">
+      Requires macOS 14 or later. Not on the Mac App Store, for a reason described
+      <a href="#limits">below</a>. You can also build it from source in one command.
+    </p>
+  </section>
+
+  <section class="wrap band" id="capabilities" aria-labelledby="capabilities-h">
+    <h2 id="capabilities-h">Four things it does</h2>
+
+    <article class="item">
+      <p class="index">01</p>
+      <h3>Transfer a conversation, with the chat intact.</h3>
+      <p>
+        Pick a conversation in one Claude Desktop install and send it to another, or
+        into a Claude Code project. User turns, assistant turns, tool calls, and inline
+        images and documents all arrive. You see a plan first — every check, every path
+        that will be created — and nothing is written until you confirm.
+      </p>
+      <p class="evidence">
+        Verified by comparing per-message SHA-256 fingerprints. Every message and every
+        inline image or document is byte-identical in all three directions.
+      </p>
+    </article>
+
+    <article class="item">
+      <p class="index">02</p>
+      <h3>Control what every install is running.</h3>
+      <p>
+        Better Claude inventories every skill, MCP server, subagent, slash command, hook
+        and memory file across every install on the machine, then diffs two installs
+        against each other so you can see what one has that the other does not. It is
+        read-only. It reports; it changes nothing.
+      </p>
+      <p class="evidence">
+        215 configuration items across 16 scopes on the developer's own machine — one
+        global Claude Code config, ten projects, and five Desktop installs.
+      </p>
+    </article>
+
+    <article class="item">
+      <p class="index">03</p>
+      <h3>Keep a library of everything Claude produced.</h3>
+      <p>
+        Every code block, generated file and upload, deduplicated by content hash, each
+        one carrying provenance back to the conversation it came from. The script you
+        half-remember from three weeks ago becomes findable.
+      </p>
+      <p class="evidence">
+        699 artifacts, 178.9 MB, across 102 conversations, with 90 duplicates collapsed —
+        on one real machine, in about a second.
+      </p>
+    </article>
+
+    <article class="item">
+      <p class="index">04</p>
+      <h3>Branch a conversation at any message.</h3>
+      <p>
+        Choose a message and fork the conversation there into a new one. The original
+        stays as it was. Neither Claude app can do this. The fork follows the parentUuid
+        chain rather than line order, so its ancestry is intact rather than merely
+        plausible.
+      </p>
+    </article>
+  </section>
+
+  <section class="wrap band" aria-labelledby="also-h">
+    <h2 id="also-h">And the smaller things</h2>
+    <dl class="pairs">
+      <dt>Search every conversation on the machine</dt>
+      <dd>
+        Reads every transcript once, across every install and every Claude Code project,
+        and ranks whole conversations with the matching passages underneath as evidence.
+      </dd>
+
+      <dt>Read without launching Claude</dt>
+      <dd>
+        Open any conversation in the app, with inline Markdown, code blocks, and its own
+        search.
+      </dd>
+
+      <dt>Export to Markdown</dt>
+      <dd>
+        Speakers, timestamps and prose, with the tool plumbing left behind.
+      </dd>
+    </dl>
+  </section>
+
+  <section class="wrap band" id="limits" aria-labelledby="limits-h">
+    <h2 id="limits-h">What it does not do</h2>
+    <p class="lede-small">
+      These are the constraints worth knowing before you download it. None of them are
+      going away soon.
+    </p>
+    <dl class="pairs">
+      <dt>macOS only, macOS 14 or later</dt>
+      <dd>
+        The store layout and the running-process checks are both platform-specific.
+      </dd>
+
+      <dt>Not sandboxed, and therefore not on the Mac App Store</dt>
+      <dd>
+        A sandboxed app cannot read another app's data directory, which is the whole
+        job. That trade is not available to take back.
+      </dd>
+
+      <dt>The on-disk format is undocumented and moves</dt>
+      <dd>
+        It was derived by reading real sessions, and it demonstrably changes between
+        Claude releases. Session data is therefore never modelled with fixed structs:
+        unknown fields are preserved untouched rather than dropped.
+      </dd>
+
+      <dt>Credentials, audit logs and permission grants are never exported</dt>
+      <dd>
+        The credential scan runs on the assembled export rather than on the source, so a
+        redaction bug in the assembler cannot pass it. A hit blocks the export and names
+        the file and the rule, never the matched value.
+      </dd>
+
+      <dt>Imports create; they never overwrite</dt>
+      <dd>
+        Every import writes a receipt listing exactly what it created, and any import can
+        be undone. The undo refuses to delete anything you have edited since.
+      </dd>
+    </dl>
+  </section>
+
+  <section class="wrap band" id="parallex" aria-labelledby="parallex-h">
+    <h2 id="parallex-h">Works best with Parallex</h2>
+    <p>
+      Parallex runs multiple fully isolated instances of any macOS app, each with its own
+      Dock icon, its own data, and its own settings.
+    </p>
+    <p>
+      The pairing is not a cross-promotion. Parallex is what creates several isolated
+      Claude installs in the first place — a personal one, a work one, a second account,
+      each genuinely separate on disk. Better Claude is what moves work between them.
+      One makes the installs; the other makes them a single workspace. Neither needs the
+      other, and each is more useful with it.
+    </p>
+    <p class="actions">
+      <a class="btn-quiet" href="https://github.com/mandipadk/parallex">Parallex on GitHub</a>
+    </p>
+    <p class="meta">A site and packaged releases for Parallex are coming.</p>
+  </section>
+
+  <section class="wrap band close" aria-labelledby="get-h">
+    <h2 id="get-h">Get it</h2>
+    <p class="lede-small">
+      One download, no account, no telemetry. The app reads directories that are not in a
+      privacy-protected category, so there is nothing to allow in System Settings and Full
+      Disk Access is not required.
+    </p>
+    <p class="actions">
+      <a class="btn" href="https://github.com/mandipadk/BetterClaude/releases/latest">Download for macOS</a>
+      <a class="btn-quiet" href="https://github.com/mandipadk/BetterClaude">Read the source</a>
+    </p>
+  </section>
+
+</main>
+
+<footer class="bar-foot">
+  <div class="wrap foot-inner">
+    <p>Better Claude — a macOS app for Claude Desktop and Claude Code conversation stores.</p>
+    <nav class="foot-nav" aria-label="Footer">
+      <a href="https://github.com/mandipadk/BetterClaude">Repository</a>
+      <a href="https://github.com/mandipadk/BetterClaude/releases/latest">Releases</a>
+      <a href="https://github.com/mandipadk/parallex">Parallex</a>
+    </nav>
+    <p class="meta">This page loads no fonts, no scripts and no third-party assets. It makes no network requests at all.</p>
+  </div>
+</footer>
+
+</body>
+</html>

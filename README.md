@@ -1,8 +1,10 @@
 # Better Claude
 
-Move Claude Desktop **Cowork conversations** between Claude installs, and into **Claude Code** — with the chat intact.
+Your Claude conversations are already on your disk. Better Claude is a macOS app that lets
+you **move them between installs, fork them, audit what every install is configured with,
+and find everything Claude ever made for you.**
 
-macOS app plus a command line tool sharing one engine.
+A macOS app plus a command line tool sharing one engine. Nothing leaves the machine.
 
 ---
 
@@ -10,13 +12,16 @@ macOS app plus a command line tool sharing one engine.
 
 If you run more than one Claude Desktop install — a personal one, a work one, a second
 account — a conversation started in one is stranded there. There is no export, no import,
-no way to pick up a thread in Claude Code where you left it in Cowork.
+no way to pick up a thread in Claude Code where you left it in Cowork. Meanwhile the
+skills, MCP servers and hooks each install is running are invisible to each other, and the
+files Claude wrote for you three weeks ago are somewhere in a session directory you will
+never find again.
 
-The conversations are on your disk in a readable format. This tool moves them.
+All of it is on your disk in a readable format. This tool operates on it.
 
-## What it does
+## The four things it does
 
-**Move a conversation.**
+### 1. Transfer a conversation, with the chat intact
 
 | From | To | Status |
 |---|---|---|
@@ -26,6 +31,35 @@ The conversations are on your disk in a readable format. This tool moves them.
 
 Every transfer carries the full conversation: user turns, assistant turns, tool calls, and
 inline images and documents byte-for-byte. Attachments and generated files are opt-in.
+
+Verified by comparing per-message SHA-256 fingerprints: every message and every inline
+image or document is byte-identical in all three directions.
+
+### 2. Control what every install is running
+
+Inventories every skill, MCP server, subagent, slash command, hook and memory file across
+every install on the machine, then diffs two of them so you can see what one has that the
+other does not. It is read-only — it reports, it changes nothing.
+
+On the development machine: 215 configuration items across 16 scopes — one global Claude
+Code config, ten projects, and five Desktop installs.
+
+### 3. Keep a library of everything Claude produced
+
+Every code block, generated file and upload, deduplicated by content hash, each carrying
+provenance back to the conversation it came from. The script you half-remember from three
+weeks ago becomes findable.
+
+On the development machine: 699 artifacts, 178.9 MB, across 102 conversations, with 90
+duplicates collapsed — in about a second.
+
+### 4. Branch a conversation at any message
+
+Choose a message and fork the conversation there into a new one. The original is left as it
+was. Neither Claude app can do this. The fork follows the `parentUuid` chain rather than
+line order, so its ancestry is intact rather than merely plausible.
+
+## And the smaller things
 
 **Find a conversation.** Filtering the selected account is instant. "Search every
 conversation" reads every transcript on the machine once — across every install and every
@@ -37,6 +71,20 @@ inline Markdown, code blocks, and its own search. ⌘O.
 
 **Take a conversation with you.** Export to Markdown — speakers, timestamps, and prose,
 with the tool plumbing left behind.
+
+## Works best with Parallex
+
+[**Parallex**](https://github.com/mandipadk/parallex) runs multiple fully isolated
+instances of any macOS app — each with its own Dock icon, its own data, and its own
+settings.
+
+The pairing is not a cross-promotion, it is causal. Parallex is what creates several
+isolated Claude installs in the first place: a personal one, a work one, a second account,
+each genuinely separate on disk. Better Claude is what moves work between them. One makes
+the installs; the other makes them a single workspace. Neither needs the other, and each is
+more useful with it.
+
+A site and packaged releases for Parallex are coming.
 
 ## What it deliberately does not carry
 
@@ -80,6 +128,20 @@ time — but the directories it reads are not in a privacy-protected category, s
 permission prompt appears and Full Disk Access is not required. It is not on the Mac App
 Store and cannot be: writing into another app's data directory is not permitted there.
 
+### Updates
+
+**Better Claude → Check for Updates…** compares against a published release, downloads it,
+and swaps the bundle in place.
+
+The download is fetched over HTTPS and its SHA-256 is checked against the value published
+with the release before anything is unpacked. That catches a corrupted or altered file in
+transit. It does **not** defend against a compromised release account: the archive and its
+checksum are published by the same account, so whoever can publish one can publish the
+other. Real protection needs a signature verified against a key compiled into the app
+(Sparkle's EdDSA scheme) or a Developer ID identity plus notarisation. This app is ad-hoc
+signed and has neither, so the app states the limit before every install rather than
+hiding it behind a progress bar.
+
 ## Using it
 
 Pick a source on the left, select conversations, press **Transfer…**. You get a plan
@@ -98,6 +160,9 @@ cowork inspect chat.coworkbundle                # manifest + scan report, no ext
 
 cowork import chat.coworkbundle --to code:/path/to/project --dry-run
 cowork import chat.coworkbundle --to cowork:Claude-Work
+
+cowork library                                  # every artifact Claude ever produced
+cowork library --kind code --limit 50           # narrowed to one kind
 
 cowork receipts                                 # every import this tool made
 cowork undo <receiptId>                         # roll one back
@@ -145,10 +210,13 @@ can lose data.
 
 ```
 Sources/CoworkKit/     the engine — discovery, transcripts, path encoding, bundles,
-                       transfer, search index, Markdown export
+                       transfer, branching, config inventory, artifact harvest,
+                       search index, Markdown export, updates
 Sources/cowork/        command line front end
 Sources/BetterClaude/  SwiftUI app
-Scripts/make-app.sh    assembles and ad-hoc signs the .app
+Scripts/make-app.sh    assembles and ad-hoc signs the .app, generating the icon
+Scripts/make-icon.swift  draws the app icon at every size from one geometry
+site/                  the public website (static, no scripts, no third-party assets)
 ```
 
 The app and the CLI share the engine completely. Any check added to one applies to both.
