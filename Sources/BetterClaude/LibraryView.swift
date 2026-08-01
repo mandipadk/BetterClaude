@@ -24,7 +24,6 @@ struct LibraryView: View {
         let visible = artifacts
         return VStack(spacing: 0) {
             header
-            Hairline()
             if let summary {
                 Hairline()
                 content(summary, visible: visible)
@@ -288,6 +287,7 @@ private struct ArtifactRow: View {
                         .foregroundStyle(Design.Palette.muted)
                         .frame(width: 44, alignment: .trailing)
                 }
+                Spacer(minLength: Design.Space.m)
                 Text(Int64(artifact.bytes).fileSize)
                     .font(Design.Typography.numeric)
                     .foregroundStyle(Design.Palette.secondary)
@@ -339,6 +339,7 @@ private struct ArtifactPreview: View {
                     .padding(.top, Design.Space.m)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .fadingBottomEdge(40)
                 .scrollContentBackground(.hidden)
                 Hairline()
             }

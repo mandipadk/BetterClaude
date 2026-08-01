@@ -417,7 +417,9 @@ private struct ComparisonRowView: View {
                 .foregroundStyle(Design.Palette.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .layoutPriority(1)
+                // Same fixed column as the list mode, so the two views of the same data
+                // share one description edge instead of 118pt of drift.
+                .frame(width: 200, alignment: .leading)
             if let detail = (row.left ?? row.right)?.detail {
                 Text(detail)
                     .font(Design.Typography.caption)

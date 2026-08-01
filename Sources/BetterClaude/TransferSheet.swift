@@ -223,6 +223,7 @@ struct TransferSheet: View {
                 .padding(.vertical, Design.Space.l)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .fadingBottomEdge(56)
         } else {
             VStack { ProgressView().controlSize(.small) }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

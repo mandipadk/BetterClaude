@@ -74,7 +74,7 @@ struct ConversationView: View {
         }
         .padding(.leading, Design.Space.gutter)
         .padding(.trailing, Design.Space.m)
-        .padding(.top, WindowMetrics.titlebarInset + Design.Space.s)
+        .padding(.top, WindowMetrics.titlebarInset + Design.Space.m + 3)
         .padding(.bottom, Design.Space.m)
     }
 

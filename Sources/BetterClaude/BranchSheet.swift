@@ -31,7 +31,7 @@ struct BranchSheet: View {
             footer
         }
         .frame(minWidth: 660, idealWidth: 660, maxWidth: 660,
-               minHeight: 420, idealHeight: 620, maxHeight: 680)
+               minHeight: 380, idealHeight: 620, maxHeight: 680)
         .background(Design.Palette.raised)
     }
 
