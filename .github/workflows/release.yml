@@ -1,0 +1,259 @@
+name: Release
+
+# Cuts a release from a pushed tag. See Scripts/RELEASING.md for the operator's view.
+#
+# NOT NOTARISED. The app is ad-hoc signed (`codesign -s -`), which is enough for a locally
+# built bundle but not for distribution. Everything downloaded from these releases arrives
+# with the com.apple.quarantine attribute, so Gatekeeper blocks the first launch and the user
+# has to right-click the app and choose Open. Fixing that needs a paid Developer ID
+# certificate and `xcrun notarytool`, neither of which this workflow has. Do not pretend
+# otherwise in release notes.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build, without the leading v (e.g. 1.2.3). Creates the tag if it does not exist.'
+        required: true
+        type: string
+
+# gh release create needs write access to the repository contents.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          # Full history and tags, so the annotated tag message is available for release notes.
+          fetch-depth: 0
+
+      - name: Select the newest installed Xcode
+        # The package is swift-tools-version 6.0, which needs Xcode 16+. The macos-14 image
+        # ships several Xcodes and its default is not always the newest, so pick explicitly
+        # rather than depending on whatever the image happens to default to this month.
+        run: |
+          set -euo pipefail
+          newest="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1 || true)"
+          if [ -n "$newest" ]; then
+            sudo xcode-select -s "$newest"
+          fi
+          xcodebuild -version
+          swift --version
+
+      - name: Derive the version
+        id: version
+        env:
+          # Passed through the environment rather than interpolated into the script body.
+          # `${{ inputs.version }}` is substituted before bash ever sees the line, so a value
+          # like `1.0.0"; curl … | sh; "` would run as code — before the regex below gets a
+          # chance to reject it. Only someone who can already trigger the workflow could do
+          # that, but the safe form costs nothing.
+          INPUT_VERSION: ${{ inputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            version="${INPUT_VERSION#v}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          # Refuse anything that is not a plain dotted version, optionally with a prerelease
+          # suffix. A malformed version would otherwise end up baked into the bundle and the
+          # appcast, where it is much more annoying to discover.
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'; then
+            echo "::error::'$version' is not a valid version (expected e.g. 1.2.3)"
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "tag=v$version"
+            # CFBundleVersion must increase monotonically for an updater to compare builds.
+            # run_number is monotonic per workflow and never reused, which is enough here.
+            echo "build=${{ github.run_number }}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing $version (build ${{ github.run_number }})"
+
+      - name: Build
+        run: swift build -c release
+
+      - name: Test
+        # A failure here fails the job before anything is published, which is the point.
+        run: swift test
+
+      - name: Assemble the app bundle
+        env:
+          BC_VERSION: ${{ steps.version.outputs.version }}
+          BC_BUILD: ${{ steps.version.outputs.build }}
+        run: |
+          set -euo pipefail
+          ./Scripts/make-app.sh release
+
+          # make-app.sh writes Info.plist from a heredoc with the version hardcoded, so the
+          # bundle it produces always claims whatever is in that heredoc. Patch the two
+          # version keys here instead of editing the script. See the "two sources of truth"
+          # section of Scripts/RELEASING.md.
+          plist="dist/BetterClaude.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $BC_VERSION" "$plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BC_BUILD" "$plist"
+
+          # Editing Info.plist invalidates the ad-hoc signature make-app.sh applied, so re-sign.
+          codesign --force --sign - --timestamp=none dist/BetterClaude.app
+          codesign --verify --strict --verbose=2 dist/BetterClaude.app
+
+          echo "Bundle reports:"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist"
+
+      - name: Build the disk image
+        # make-dmg.sh reads the version back out of the bundle, so it picks up the stamp above.
+        run: ./Scripts/make-dmg.sh
+
+      - name: Build the zip
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # ditto --keepParent preserves the bundle directory and its code signature. This is
+          # the artefact the in-app updater downloads; it unpacks without a disk image mount.
+          ditto -c -k --keepParent dist/BetterClaude.app "dist/BetterClaude-$VERSION.zip"
+          ls -lh dist/
+
+      - name: Compute checksums
+        id: sums
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          zip_sha="$(shasum -a 256 "dist/BetterClaude-$VERSION.zip" | awk '{print $1}')"
+          dmg_sha="$(shasum -a 256 "dist/BetterClaude-$VERSION.dmg" | awk '{print $1}')"
+          {
+            echo "zip_sha256=$zip_sha"
+            echo "dmg_sha256=$dmg_sha"
+          } >> "$GITHUB_OUTPUT"
+          echo "zip $zip_sha"
+          echo "dmg $dmg_sha"
+
+      - name: Collect release notes
+        id: notes
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Prefer the annotated tag's message body; fall back to the commit subject when the
+          # tag is lightweight or does not exist yet (a workflow_dispatch run).
+          notes=""
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            notes="$(git tag -l --format='%(contents:subject)%0a%0a%(contents:body)' "$TAG")"
+          fi
+          notes="$(printf '%s' "$notes" | sed -e 's/[[:space:]]*$//' | sed -e '/./,$!d')"
+          if [ -z "$notes" ]; then
+            notes="$(git log -1 --pretty=%s)"
+          fi
+          {
+            echo "notes<<RELEASE_NOTES_EOF"
+            printf '%s\n' "$notes"
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Generate appcast.json
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD: ${{ steps.version.outputs.build }}
+          TAG: ${{ steps.version.outputs.tag }}
+          ZIP_SHA256: ${{ steps.sums.outputs.zip_sha256 }}
+          DMG_SHA256: ${{ steps.sums.outputs.dmg_sha256 }}
+          NOTES: ${{ steps.notes.outputs.notes }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Built with python3 (preinstalled) rather than a heredoc so that quotes, newlines
+          # and non-ASCII in the notes are escaped correctly instead of producing invalid JSON.
+          python3 - <<'PY'
+          import json, os, datetime
+
+          version = os.environ["VERSION"]
+          tag = os.environ["TAG"]
+          base = f"https://github.com/{os.environ['REPO']}/releases/download/{tag}"
+
+          manifest = {
+              "version": version,
+              "build": os.environ["BUILD"],
+              "minimumSystemVersion": "14.0",
+              "publishedAt": datetime.datetime.now(datetime.timezone.utc)
+                  .replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+              "zipURL": f"{base}/BetterClaude-{version}.zip",
+              "zipSHA256": os.environ["ZIP_SHA256"],
+              "dmgURL": f"{base}/BetterClaude-{version}.dmg",
+              "dmgSHA256": os.environ["DMG_SHA256"],
+              "notes": os.environ["NOTES"].strip(),
+          }
+
+          with open("dist/appcast.json", "w", encoding="utf-8") as fh:
+              json.dump(manifest, fh, indent=2, ensure_ascii=False)
+              fh.write("\n")
+          PY
+          cat dist/appcast.json
+
+      - name: Publish the release
+        env:
+          # gh is preinstalled on the runner; GITHUB_TOKEN comes from the permissions block.
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          NOTES: ${{ steps.notes.outputs.notes }}
+        run: |
+          set -euo pipefail
+
+          gatekeeper_note=$(cat <<'EOF'
+          ---
+
+          **This build is ad-hoc signed and not notarised.** macOS will refuse to open it on
+          first launch after a browser download. Right-click **Better Claude.app** and choose
+          **Open**, then confirm. You only need to do this once per installed version.
+          EOF
+          )
+
+          # The blank line is required: notes followed directly by "---" is a Markdown setext
+          # heading, which would render the last line of the notes as a heading instead.
+          body="$(printf '%s\n\n%s\n' "$NOTES" "$gatekeeper_note")"
+
+          assets=(
+            "dist/BetterClaude-$VERSION.dmg"
+            "dist/BetterClaude-$VERSION.zip"
+            "dist/appcast.json"
+          )
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Re-run against an existing release: replace the assets rather than failing.
+            echo "Release $TAG already exists — updating its assets."
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            # --target matters for workflow_dispatch, where the tag may not exist yet.
+            gh release create "$TAG" "${assets[@]}" \
+              --title "Better Claude $VERSION" \
+              --notes "$body" \
+              --target "$GITHUB_SHA"
+          fi
+
+          gh release view "$TAG" --json assets --jq '.assets[].name'
+
+      - name: Upload build artefacts
+        # Kept independently of the release so a failed publish step is still debuggable.
+        if: always() && steps.version.outputs.version != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: betterclaude-${{ steps.version.outputs.version }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/appcast.json
+          if-no-files-found: warn
