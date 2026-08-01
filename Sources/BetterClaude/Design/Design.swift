@@ -44,8 +44,9 @@ enum Design {
         /// that credentials are never exported and the detail on a failed precondition. At
         /// 0.52 dark it measured 4.494:1 on the window background and 4.066:1 on `raised`,
         /// which every sheet uses — so the tier failed exactly where it carried prose. 0.565
-        /// gives 5.02:1 and 4.55:1. Any future change here must be checked against `raised`,
-        /// not just `background`; `raised` is the darker surface and the binding constraint.
+        /// measures 5.22:1 on `background` and 4.74:1 on `raised`, from rendered pixels.
+        /// Any future change here must be checked against `raised`, not just `background`:
+        /// `raised` is the darker surface in dark appearance and the binding constraint.
         static let muted = Color(light: NSColor(white: 0.44, alpha: 1),
                                  dark: NSColor(white: 0.565, alpha: 1))
         /// Non-text only: placeholder glyphs and rules.
@@ -69,8 +70,10 @@ enum Design {
         /// being empty and full-width, was the largest coloured area on screen.
         static let background = Color(nsColor: .textBackgroundColor)
 
-        /// Raised one measurable step above `background` so a sheet reads as being in front
-        /// of the window rather than continuous with it.
+        /// A step above `background` in dark appearance (L* 15.28 vs 11.26) so a sheet reads
+        /// as being in front of the window rather than continuous with it. In light both are
+        /// pure white and the separation comes entirely from the system sheet shadow — which
+        /// is fine, but means this value cannot be relied on for contrast in light.
         static let raised = Color(light: NSColor(white: 1.0, alpha: 1),
                                   dark: NSColor(white: 0.15, alpha: 1))
 
@@ -200,6 +203,15 @@ struct PrimaryButtonStyle: ButtonStyle {
 
 /// Everything that is not the primary action. Text-weight, no fill, no border until hovered.
 struct QuietButtonStyle: ButtonStyle {
+    /// Set on the trailing-most control in a bar so its label lands on the pane rail.
+    ///
+    /// A quiet button paints no fill behind its padding, so its ink stops 12pt short of the
+    /// rail that every filled primary button reaches. Cancelling that with negative padding
+    /// on the Button worked for the label and dragged the hover fill out with it, 12pt past
+    /// the rail. Dropping the trailing padding inside the style moves label and fill
+    /// together, which is the only way the two stay in agreement.
+    var onTrailingRail = false
+
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
@@ -209,7 +221,8 @@ struct QuietButtonStyle: ButtonStyle {
             // One disabled recipe across both button styles: a faded label reads as a
             // rendering failure, where a control-stroke label reads as "not yet".
             .foregroundStyle(isEnabled ? Design.Palette.secondary : Design.Palette.controlStroke)
-            .padding(.horizontal, Design.Space.m)
+            .padding(.leading, Design.Space.m)
+            .padding(.trailing, onTrailingRail ? 0 : Design.Space.m)
             .frame(height: 26)
             .background(
                 RoundedRectangle(cornerRadius: Design.Space.corner, style: .continuous)

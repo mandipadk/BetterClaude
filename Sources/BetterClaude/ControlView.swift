@@ -205,13 +205,7 @@ struct ControlView: View {
             Spacer()
             if comparison != nil {
                 Button("Back to everything") { comparison = nil }
-                    .buttonStyle(QuietButtonStyle())
-                    // A quiet button carries 12pt of horizontal padding with no fill behind
-                    // it, so its ink stops short of the rail. Every other pane's footer ends
-                    // in a filled primary button whose edge *is* the rail, which left this
-                    // one footer 13.5pt shy of the alignment every other pane keeps. Pulling
-                    // the padding back puts the label on the same edge as the rows above it.
-                    .padding(.trailing, -Design.Space.m)
+                    .buttonStyle(QuietButtonStyle(onTrailingRail: true))
             } else if isChoosingComparison {
                 Button("Cancel") { isChoosingComparison = false }
                     .buttonStyle(QuietButtonStyle())
@@ -356,10 +350,6 @@ private struct ItemRow: View {
 
     var body: some View {
         HStack(spacing: Design.Space.m) {
-            // Reserves the same leading mark column that ComparisonRowView draws into. These
-            // are two views of the same list of the same data, and without it their name
-            // columns sat 26pt apart — so switching into Compare shifted every row sideways.
-            Color.clear.frame(width: 14, height: 1)
             Text(item.name)
                 .font(Design.Typography.body)
                 .foregroundStyle(Design.Palette.primary)
@@ -436,14 +426,6 @@ private struct ComparisonRowView: View {
 
     var body: some View {
         HStack(spacing: Design.Space.m) {
-            // Only a genuine content difference earns a leading mark: a row present on one
-            // side alone is already stated by its two columns, and marking it too would leave
-            // nothing on the line that means "look here first".
-            if row.status == .different {
-                StatusMark(kind: .warning)
-            } else {
-                Color.clear.frame(width: 14, height: 1)
-            }
             Text(row.name)
                 .font(Design.Typography.body)
                 .foregroundStyle(Design.Palette.primary)
@@ -458,9 +440,11 @@ private struct ComparisonRowView: View {
                     .foregroundStyle(Design.Palette.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    // The description outranks the kind column. With every other column
-                    // fixed, this one absorbed all the shortfall at the minimum window and
-                    // rendered three glyphs — "MU…", "ALW…" — which is not a description.
+                    // The description outranks the kind column, but only up to a point.
+                    // Priority alone with no ceiling made it take the entire flexible budget
+                    // and starve kind down to a 1pt vertical slice of a single glyph — which
+                    // reads as broken rendering, not as a column.
+                    .frame(maxWidth: 320, alignment: .leading)
                     .layoutPriority(1)
             }
             Spacer(minLength: Design.Space.m)
@@ -469,13 +453,27 @@ private struct ComparisonRowView: View {
                 .foregroundStyle(Design.Palette.muted)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                // Yields rather than holding its width: the kind is restated by the section
-                // the row sits in, the description is not restated anywhere.
-                .frame(maxWidth: 88, alignment: .leading)
+                // Yields rather than holding its width, but not below legibility: a floor
+                // makes it degrade to "Skil…" instead of to a sliver.
+                .frame(minWidth: 34, maxWidth: 88, alignment: .leading)
             side(present: row.left != nil)
             side(present: row.right != nil)
         }
         .gutter()
+        // The mark sits in the gutter, not in the row. Reserving a 14pt column in ItemRow
+        // aligned the two name columns but charged Control 26pt of description width to do
+        // it — leaving the two views of one dataset truncating at different points, which is
+        // the drift that alignment was meant to remove. In the margin it costs nothing and
+        // reads the way a flag in a margin reads.
+        //
+        // Only a genuine content difference earns one: a row present on one side alone is
+        // already stated by its two columns, and marking it too would leave nothing on the
+        // line that means "look here first".
+        .overlay(alignment: .leading) {
+            if row.status == .different {
+                StatusMark(kind: .warning).padding(.leading, 1)
+            }
+        }
         .frame(height: Design.Space.rowHeight)
         .background(isHovering && revealURL != nil ? Design.Palette.hover : .clear)
         .contentShape(Rectangle())

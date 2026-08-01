@@ -86,8 +86,22 @@ struct TransferSheet: View {
 
     // MARK: - Configure
 
+    /// Destination scrolls; Include and Identity do not.
+    ///
+    /// Two earlier attempts treated this as a sizing problem — first a nested 150pt scroll
+    /// view, then a list bounded to four rows — and both left the Identity section below the
+    /// fold at the app's minimum window, where it rendered zero pixels. The bounded list was
+    /// actually 31pt taller than the nested scroll it replaced, so the "fix" regressed it.
+    ///
+    /// No constant works, because the deficit is 171pt and each project row is 43pt: the only
+    /// number that fits is zero. The structure was the problem. Identity now lives outside the
+    /// scroll view entirely, so the choice between keeping and removing identifiers is on
+    /// screen at every window size — which matters because the default keeps them, and someone
+    /// sending a conversation to another person's account has to be able to see the
+    /// alternative exists.
     private var configure: some View {
-        ScrollView {
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 SectionLabel(text: "Destination")
                     .padding(.bottom, Design.Space.m)
@@ -151,8 +165,19 @@ struct TransferSheet: View {
                     }
                 }
 
+            }
+            .font(Design.Typography.body)
+            .padding(.horizontal, Design.Space.xl)
+            .padding(.top, Design.Space.l)
+            .padding(.bottom, Design.Space.m)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .fadingBottomEdge(56)
+
+            Hairline()
+
+            VStack(alignment: .leading, spacing: 0) {
                 SectionLabel(text: "Include")
-                    .padding(.top, Design.Space.l)
                     .padding(.bottom, Design.Space.s)
                 VStack(alignment: .leading, spacing: Design.Space.s) {
                     Checkbox(title: "Files you uploaded", isOn: $model.includeUploads)
@@ -186,7 +211,6 @@ struct TransferSheet: View {
             .padding(.vertical, Design.Space.l)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .fadingBottomEdge(56)
     }
 
     // MARK: - Review

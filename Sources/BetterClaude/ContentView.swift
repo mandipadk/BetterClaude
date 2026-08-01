@@ -564,7 +564,16 @@ struct Empty: View {
             Text(detail)
                 .font(Design.Typography.body)
                 .foregroundStyle(Design.Palette.secondary)
+                // Centred and bounded. With neither, a long detail line ran to 3.5pt from
+                // the window edge at the minimum size — past the pane's own 16pt rail —
+                // and, being leading-aligned inside a centred frame, wrapped full-bleed on
+                // line one and ragged on line two. Shared by every empty state, so the
+                // measure belongs here rather than at each call site.
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: 440)
+        .gutter()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

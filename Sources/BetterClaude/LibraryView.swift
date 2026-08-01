@@ -91,13 +91,17 @@ struct LibraryView: View {
             // The accent belongs to the action the screen exists for. Before a harvest that
             // is the harvest; afterwards it moves to Copy in the preview, and re-harvesting
             // becomes an ordinary maintenance action.
+            // Both states land on the same rail. Before, the primary fill reached 11.5pt
+            // from the edge and the quiet label stopped at 24.5 — so this header's right
+            // edge jumped 13pt the instant a harvest finished and the button changed style.
             Button(summary == nil ? "Harvest" : "Re-harvest", action: onHarvest)
-                .buttonStyle(summary == nil ? AnyButtonStyle(PrimaryButtonStyle())
-                                            : AnyButtonStyle(QuietButtonStyle()))
+                .buttonStyle(summary == nil
+                             ? AnyButtonStyle(PrimaryButtonStyle())
+                             : AnyButtonStyle(QuietButtonStyle(onTrailingRail: true)))
                 .disabled(isHarvesting)
         }
         .padding(.leading, Design.Space.gutter)
-        .padding(.trailing, Design.Space.m)
+        .padding(.trailing, Design.Space.gutter)
         .padding(.top, WindowMetrics.titlebarInset)
         .padding(.bottom, Design.Space.m)
     }
