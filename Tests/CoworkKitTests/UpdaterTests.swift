@@ -105,10 +105,13 @@ struct UpdaterTests {
 
         let scripts = try FileManager.default.contentsOfDirectory(
             at: FileManager.default.temporaryDirectory, includingPropertiesForKeys: nil)
-        let script = scripts.filter { $0.lastPathComponent.hasPrefix("betterclaude-update-") }
-            .compactMap { try? String(contentsOf: $0, encoding: .utf8) }
-            .first { $0.contains("BetterClaude (1).app") }
-        let body = try #require(script, "the generated swap script should be on disk")
+            .filter { $0.lastPathComponent.hasPrefix("betterclaude-update-") }
+        let mine = scripts.first {
+            ((try? String(contentsOf: $0, encoding: .utf8)) ?? "").contains("BetterClaude (1).app")
+        }
+        let scriptURL = try #require(mine, "the generated swap script should be on disk")
+        defer { try? FileManager.default.removeItem(at: scriptURL) }
+        let body = try String(contentsOf: scriptURL, encoding: .utf8)
 
         #expect(body.contains("WAIT_PID=999999"))
         #expect(body.contains("kill -0"))
