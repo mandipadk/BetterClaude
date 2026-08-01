@@ -37,12 +37,17 @@ enum Design {
         static let primary = Color(nsColor: .labelColor)
         static let secondary = Color(light: NSColor(white: 0.32, alpha: 1),
                                      dark: NSColor(white: 0.72, alpha: 1))
-        /// A genuine third step — recessive but still readable at 11pt (~4:1). Removing the
-        /// unreadable tier entirely left a two-value plateau where a section label, a check
-        /// and a file path all rendered identically; this restores the middle of the ramp
-        /// without going back below the reading floor.
+        /// A genuine third step — recessive but still clearing 4.5:1 everywhere it is drawn.
+        ///
+        /// This tier was set to "~4:1" on the theory that it only carried labels. It does
+        /// not: it sets running sentences in the transfer sheet, including the one stating
+        /// that credentials are never exported and the detail on a failed precondition. At
+        /// 0.52 dark it measured 4.494:1 on the window background and 4.066:1 on `raised`,
+        /// which every sheet uses — so the tier failed exactly where it carried prose. 0.565
+        /// gives 5.02:1 and 4.55:1. Any future change here must be checked against `raised`,
+        /// not just `background`; `raised` is the darker surface and the binding constraint.
         static let muted = Color(light: NSColor(white: 0.44, alpha: 1),
-                                 dark: NSColor(white: 0.52, alpha: 1))
+                                 dark: NSColor(white: 0.565, alpha: 1))
         /// Non-text only: placeholder glyphs and rules.
         static let faint = Color(nsColor: .tertiaryLabelColor)
         /// Unselected control strokes. An unchecked box is an affordance, not decoration, so
@@ -226,6 +231,17 @@ struct StatusMark: View {
             .font(.system(size: kind == .warning ? 12 : 11, weight: .medium))
             .foregroundStyle(tint)
             .frame(width: 14, alignment: .leading)
+            // Without this the mark is decorative to VoiceOver, so a passed and a failed
+            // precondition — the entire point of the review step — announce identically.
+            .accessibilityLabel(spoken)
+    }
+
+    private var spoken: String {
+        switch kind {
+        case .ok: return "passed"
+        case .blocked: return "blocked"
+        case .warning: return "warning"
+        }
     }
 
     private var symbol: String {

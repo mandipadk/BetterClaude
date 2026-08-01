@@ -9,6 +9,11 @@ struct TransferSheet: View {
     @State private var showsAllChecks = false
     @State private var showsPaths = false
 
+    /// How many Claude Code projects the destination list shows before deferring to search.
+    /// Chosen so the configure step stays one screen tall at the app's 560pt minimum height,
+    /// which is what keeps the Identity section above the fold.
+    private static let visibleProjects = 4
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -17,8 +22,12 @@ struct TransferSheet: View {
             Hairline()
             footer
         }
-        .frame(minWidth: 660, idealWidth: 660, maxWidth: 660,
-               minHeight: 420, idealHeight: 640, maxHeight: 680)
+        // Width is fixed; height follows the content. An idealHeight held every stage at
+        // 640pt whatever it contained, so a two-line "Transferred" receipt rendered with a
+        // 401pt empty band — 63% of the sheet — and a failure with 450pt. The maxHeight is
+        // a ceiling for the configure step's list, not a target for the short stages.
+        .frame(width: 660)
+        .frame(maxHeight: 680)
         .background(Design.Palette.raised)
         .onAppear(perform: preselectDestination)
     }
@@ -112,20 +121,34 @@ struct TransferSheet: View {
                     .padding(.top, Design.Space.l)
                     .padding(.bottom, Design.Space.xs)
 
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 0) {
-                            ForEach(projects) { option in
-                                DestinationRow(option: option,
-                                               isSelected: model.destination == option.destination) {
-                                    model.destination = option.destination
-                                }
+                    // A bounded list, not a nested scroll view. This used to be its own
+                    // ScrollView pinned to 150pt inside the outer one — two scrollers with
+                    // two bottom fades, and the cost was not cosmetic: at the app's minimum
+                    // window the entire Identity section sat below the fold, so someone
+                    // sending a conversation to another person's account could not see that
+                    // "Remove — another account" existed. The default keeps identifiers.
+                    //
+                    // Showing a few and letting the search field narrow keeps the sheet one
+                    // screen tall, which is what makes the sections below it reachable.
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(projects.prefix(Self.visibleProjects)) { option in
+                            DestinationRow(option: option,
+                                           isSelected: model.destination == option.destination) {
+                                model.destination = option.destination
                             }
                         }
                     }
-                    // Deliberately not a whole number of rows: the half-cut row plus the fade
-                    // is what tells the reader the list continues.
-                    .frame(height: 150)
-                    .fadingBottomEdge(68)
+                    if projects.count > Self.visibleProjects {
+                        Text("\(projects.count - Self.visibleProjects) more — search to narrow the list.")
+                            .font(Design.Typography.caption)
+                            .foregroundStyle(Design.Palette.muted)
+                            .padding(.top, Design.Space.xs)
+                    } else if projects.isEmpty && !destinationQuery.isEmpty {
+                        Text("No project matches “\(destinationQuery)”.")
+                            .font(Design.Typography.caption)
+                            .foregroundStyle(Design.Palette.muted)
+                            .padding(.top, Design.Space.xs)
+                    }
                 }
 
                 SectionLabel(text: "Include")
@@ -360,7 +383,11 @@ struct TransferSheet: View {
                     .disabled(!model.canPlan)
                     .keyboardShortcut(.defaultAction)
             case .planning, .running:
+                // Held to the button height so the footer does not collapse 58 -> 48pt at
+                // the instant the user clicks Review or Transfer, with the cursor still over
+                // where the button was.
                 ProgressView().controlSize(.small)
+                    .frame(height: 26)
             case .ready:
                 Button("Back") { model.stage = .configuring }
                     .buttonStyle(QuietButtonStyle())

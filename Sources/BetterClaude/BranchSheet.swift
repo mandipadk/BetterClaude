@@ -30,8 +30,9 @@ struct BranchSheet: View {
             Hairline()
             footer
         }
-        .frame(minWidth: 660, idealWidth: 660, maxWidth: 660,
-               minHeight: 380, idealHeight: 620, maxHeight: 680)
+        // Height follows the content; see the note in TransferSheet.
+        .frame(width: 660)
+        .frame(maxHeight: 680)
         .background(Design.Palette.raised)
     }
 

@@ -24,15 +24,42 @@ struct LibraryView: View {
         let visible = artifacts
         return VStack(spacing: 0) {
             header
+            // The rules and the footer bar are chrome, not content: every other pane puts its
+            // header rule at 81pt and its footer rule 42.5pt above the bottom, at every window
+            // size. Hanging them off `summary` meant the one pane a new user sees first — the
+            // unharvested Library — had neither, and read as 290pt of void in an unfinished
+            // window rather than as an empty state.
+            Hairline()
             if let summary {
-                Hairline()
                 content(summary, visible: visible)
-                Hairline()
-                footer(summary)
             } else {
                 unharvested
             }
+            Hairline()
+            if let summary {
+                footer(summary)
+            } else {
+                unharvestedFooter
+            }
         }
+    }
+
+    /// The same bar the harvested pane draws, before there are any totals to put in it.
+    ///
+    /// No button: the harvest action already lives in the header, in the accent, which is
+    /// where this screen's one action belongs. This reserves the identical height so the
+    /// footer rule sits 42.5pt above the bottom here as it does in every other pane.
+    private var unharvestedFooter: some View {
+        HStack(spacing: Design.Space.s) {
+            Text(isHarvesting ? "Reading every conversation once…"
+                              : "Nothing gathered yet")
+                .font(Design.Typography.caption)
+                .foregroundStyle(Design.Palette.secondary)
+            Spacer(minLength: Design.Space.m)
+            Color.clear.frame(height: 26)
+        }
+        .gutter()
+        .padding(.vertical, Design.Space.s)
     }
 
     // MARK: - Rows in view
@@ -183,8 +210,10 @@ struct LibraryView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Empty(headline: "Nothing gathered yet",
-                      detail: "Harvest to collect every code block, generated file and upload from your conversations.")
+                // The footer bar already says "Nothing gathered yet", so the headline says
+                // what pressing Harvest will actually do instead of repeating it verbatim.
+                Empty(headline: "Collect everything Claude made",
+                      detail: "Harvest reads every conversation once and gathers every code block, generated file and upload — with a link back to where each came from.")
             }
         }
     }
@@ -276,16 +305,23 @@ private struct ArtifactRow: View {
                     .layoutPriority(showsProvenance ? 1 : 0)
                 // Language and line count are both restated in the preview, so these are
                 // what yield when the pane narrows.
+                //
+                // The widths are load-bearing, not taste. At the app's own 880pt minimum
+                // window the Library pane is 643.5pt, and the row's fixed columns summed to
+                // 658 — so it rendered 7pt outside the 16pt rail on both sides, out of line
+                // with its own header and footer. 60 and 34 bring the total to 636.
                 if showsProvenance {
                     Text(artifact.language ?? artifact.kind.label.lowercased())
                         .font(Design.Typography.caption)
                         .foregroundStyle(Design.Palette.muted)
                         .lineLimit(1)
-                        .frame(width: 72, alignment: .leading)
+                        .truncationMode(.tail)
+                        .frame(width: 60, alignment: .leading)
                     Text(artifact.lineCount.map { "\($0)" } ?? "—")
                         .font(Design.Typography.numeric)
                         .foregroundStyle(Design.Palette.muted)
-                        .frame(width: 44, alignment: .trailing)
+                        .lineLimit(1)
+                        .frame(width: 34, alignment: .trailing)
                 }
                 Spacer(minLength: Design.Space.m)
                 Text(Int64(artifact.bytes).fileSize)
@@ -308,7 +344,9 @@ private struct ArtifactRow: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(artifact.title)
+        // Matches what the row actually renders. Labelling with the raw title made a
+        // nameless artifact announce as an empty button.
+        .accessibilityLabel(artifact.title.isEmpty ? fallbackTitle : artifact.title)
         .accessibilityValue("\(artifact.kind.label), from \(artifact.conversationTitle), \(Int64(artifact.bytes).fileSize)")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }

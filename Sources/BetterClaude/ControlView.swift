@@ -135,8 +135,10 @@ struct ControlView: View {
             .fadingTrailingEdge(28)
         }
         .frame(height: 26)
-        .padding(.leading, Design.Space.gutter)
-        .padding(.trailing, Design.Space.s)
+        // Both rails match the list beneath. The trailing edge used to be 8pt against the
+        // list's 16, so at the minimum window the chip row visibly ran closer to the edge
+        // than every row below it.
+        .padding(.horizontal, Design.Space.gutter)
     }
 
     private var itemList: some View {
@@ -204,6 +206,12 @@ struct ControlView: View {
             if comparison != nil {
                 Button("Back to everything") { comparison = nil }
                     .buttonStyle(QuietButtonStyle())
+                    // A quiet button carries 12pt of horizontal padding with no fill behind
+                    // it, so its ink stops short of the rail. Every other pane's footer ends
+                    // in a filled primary button whose edge *is* the rail, which left this
+                    // one footer 13.5pt shy of the alignment every other pane keeps. Pulling
+                    // the padding back puts the label on the same edge as the rows above it.
+                    .padding(.trailing, -Design.Space.m)
             } else if isChoosingComparison {
                 Button("Cancel") { isChoosingComparison = false }
                     .buttonStyle(QuietButtonStyle())
@@ -348,6 +356,10 @@ private struct ItemRow: View {
 
     var body: some View {
         HStack(spacing: Design.Space.m) {
+            // Reserves the same leading mark column that ComparisonRowView draws into. These
+            // are two views of the same list of the same data, and without it their name
+            // columns sat 26pt apart — so switching into Compare shifted every row sideways.
+            Color.clear.frame(width: 14, height: 1)
             Text(item.name)
                 .font(Design.Typography.body)
                 .foregroundStyle(Design.Palette.primary)
@@ -388,13 +400,33 @@ private struct ItemRow: View {
         }
         .gutter()
         .frame(height: Design.Space.rowHeight)
-        .background(isHovering ? Design.Palette.hover : .clear)
+        .background(isHovering && item.url != nil ? Design.Palette.hover : .clear)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .help(item.url?.path.abbreviatingHome ?? item.name)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(item.name)
         .accessibilityValue("\(item.kind.title), \(item.scope.title)")
+        .revealsOnClick(item.url)
+    }
+}
+
+extension View {
+    /// Makes a row that already looks interactive actually do something.
+    ///
+    /// Both Control row types painted a hover highlight over a plain `HStack` with no button
+    /// and no action: the row lit up under the pointer and the click went nowhere. Revealing
+    /// the file is the obvious action for a pane whose whole job is "what is installed and
+    /// where", and it is what the Library rows already do. Rows with no file on disk keep no
+    /// highlight and stay inert, so the affordance and the behaviour agree either way.
+    @ViewBuilder
+    func revealsOnClick(_ url: URL?) -> some View {
+        if let url {
+            Button { NSWorkspace.shared.activateFileViewerSelecting([url]) } label: { self }
+                .buttonStyle(.plain)
+        } else {
+            self
+        }
     }
 }
 
@@ -426,25 +458,38 @@ private struct ComparisonRowView: View {
                     .foregroundStyle(Design.Palette.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    // The description outranks the kind column. With every other column
+                    // fixed, this one absorbed all the shortfall at the minimum window and
+                    // rendered three glyphs — "MU…", "ALW…" — which is not a description.
+                    .layoutPriority(1)
             }
             Spacer(minLength: Design.Space.m)
             Text(row.kind.title)
                 .font(Design.Typography.caption)
                 .foregroundStyle(Design.Palette.muted)
                 .lineLimit(1)
-                .frame(width: 88, alignment: .leading)
+                .truncationMode(.tail)
+                // Yields rather than holding its width: the kind is restated by the section
+                // the row sits in, the description is not restated anywhere.
+                .frame(maxWidth: 88, alignment: .leading)
             side(present: row.left != nil)
             side(present: row.right != nil)
         }
         .gutter()
         .frame(height: Design.Space.rowHeight)
-        .background(isHovering ? Design.Palette.hover : .clear)
+        .background(isHovering && revealURL != nil ? Design.Palette.hover : .clear)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
+        .help(revealURL?.path.abbreviatingHome ?? row.name)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(row.name)
         .accessibilityValue(spokenStatus)
+        .revealsOnClick(revealURL)
     }
+
+    /// Whichever side actually exists on disk. A row present on one side only still has one
+    /// file behind it; a differing row opens the left, which is the side read first.
+    private var revealURL: URL? { (row.left ?? row.right)?.url }
 
     @ViewBuilder
     private func side(present: Bool) -> some View {
