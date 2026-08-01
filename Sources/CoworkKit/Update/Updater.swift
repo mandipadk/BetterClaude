@@ -207,17 +207,26 @@ public enum Updater {
     /// the bundle it is executing from. The script waits for this process to exit, keeps the
     /// outgoing bundle until the incoming one is in place, and restores it if the move fails
     /// — so a failed update leaves a working app rather than none.
-    public static func install(newApp: URL, replacing currentApp: URL) throws -> Process {
+    public static func install(newApp: URL, replacing currentApp: URL,
+                               waitFor pid: Int32 = ProcessInfo.processInfo.processIdentifier)
+        throws -> Process {
         let script = """
         #!/bin/bash
         set -uo pipefail
         NEW=%@
         CURRENT=%@
+        WAIT_PID=%@
         BACKUP="${CURRENT}.previous"
 
         # Wait for the running app to exit before touching its bundle.
+        #
+        # This waits on our own process id rather than pattern-matching the bundle path.
+        # `pgrep -f "$CURRENT/..."` reads its argument as an extended regular expression, so a
+        # bundle at "BetterClaude (1).app" — precisely what a browser produces on a second
+        # download — never matches, the loop falls through immediately, and the script replaces
+        # the bundle out from under the running app. A pid is exact and has no syntax.
         for _ in $(seq 1 100); do
-          pgrep -f "$CURRENT/Contents/MacOS/" >/dev/null 2>&1 || break
+          kill -0 "$WAIT_PID" 2>/dev/null || break
           sleep 0.2
         done
 
@@ -234,7 +243,8 @@ public enum Updater {
         open "$CURRENT"
         """
         let filled = String(format: script,
-                            shellQuoted(newApp.path), shellQuoted(currentApp.path))
+                            shellQuoted(newApp.path), shellQuoted(currentApp.path),
+                            String(pid))
 
         let scriptURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("betterclaude-update-\(UUID().uuidString).sh")

@@ -81,4 +81,41 @@ struct UpdaterTests {
         #expect(Updater.systemMeets("10.0"))
         #expect(!Updater.systemMeets("99.0"))
     }
+
+    /// The swap script must wait on a pid, never on a regex over the bundle path.
+    ///
+    /// `pgrep -f "$CURRENT/Contents/MacOS/"` reads its argument as an extended regular
+    /// expression. A bundle at `BetterClaude (1).app` — what a browser produces on a second
+    /// download — therefore never matches, so the wait loop falls straight through and the
+    /// script replaces the bundle while the app is still running. Verified against a real
+    /// `pgrep` before this was changed: it reported no match for a live process.
+    @Test("The swap waits on a pid, not on a pattern over the bundle path")
+    func swapWaitsOnPid() throws {
+        let staging = FileManager.default.temporaryDirectory
+            .appendingPathComponent("updater-wait-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: staging) }
+
+        // A path holding characters that are regex metacharacters but ordinary in a filename.
+        let awkward = staging.appendingPathComponent("My (Apps) [v2]/BetterClaude (1).app")
+        let process = try Updater.install(newApp: staging.appendingPathComponent("new.app"),
+                                          replacing: awkward,
+                                          waitFor: 999_999)
+        process.terminate()
+
+        let scripts = try FileManager.default.contentsOfDirectory(
+            at: FileManager.default.temporaryDirectory, includingPropertiesForKeys: nil)
+        let script = scripts.filter { $0.lastPathComponent.hasPrefix("betterclaude-update-") }
+            .compactMap { try? String(contentsOf: $0, encoding: .utf8) }
+            .first { $0.contains("BetterClaude (1).app") }
+        let body = try #require(script, "the generated swap script should be on disk")
+
+        #expect(body.contains("WAIT_PID=999999"))
+        #expect(body.contains("kill -0"))
+        // The regression itself: no pattern-matching over the path. Comments are excluded
+        // because the script explains the bug it is avoiding, and says its name to do so.
+        let executable = body.split(separator: "\n")
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }
+        #expect(!executable.contains { $0.contains("pgrep") })
+    }
 }
