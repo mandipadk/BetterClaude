@@ -138,6 +138,23 @@ end timeout
 APPLESCRIPT
 }
 
+# A layout captured earlier beats asking the Finder, because the Finder will refuse in every
+# environment that matters: CI has no logged-in session, and a local run needs the terminal to
+# hold an Automation grant for Finder. Without this the window layout is never applied
+# anywhere, which makes style_window decorative rather than functional.
+#
+# To produce the template: run this script once on a Mac where the Finder does answer (grant
+# the terminal Automation → Finder in System Settings → Privacy & Security), then
+#   cp /Volumes/Better\ Claude/.DS_Store Scripts/dmg-DS_Store
+# before it detaches, and commit that file.
+TEMPLATE="$ROOT/Scripts/dmg-DS_Store"
+if [ -f "$TEMPLATE" ]; then
+    cp "$TEMPLATE" "$MOUNT/.DS_Store"
+    echo "make-dmg: applied the committed window layout"
+    STYLE_PID=""
+    STYLE_OK=1
+else
+
 style_window & STYLE_PID=$!
 STYLE_OK=1
 for _ in $(seq 1 60); do
@@ -154,7 +171,10 @@ else
 fi
 if [ "$STYLE_OK" -eq 0 ]; then
     echo "make-dmg: warning — the Finder would not accept the layout script;" >&2
-    echo "make-dmg:           the dmg is valid but uses default icon positions" >&2
+    echo "make-dmg:           the dmg is valid but uses default icon positions." >&2
+    echo "make-dmg:           See the Scripts/dmg-DS_Store note above to fix this once." >&2
+fi
+
 fi
 
 sync
