@@ -43,17 +43,36 @@ FETCHING = {
     # <base> does not fetch anything itself; it re-points every relative URL on the page,
     # which is a more complete compromise than any single asset.
     "base": ("href",),
+    # Presentational attributes from HTML 4. Current Chrome ignored `<body background>` in
+    # testing, but other engines honour it and the cost of covering it is one line.
+    "body": ("background",),
+    "table": ("background",),
+    "td": ("background",),
+    "th": ("background",),
 }
 
-# rel values that name a URL rather than fetching one.
-INERT_REL = {"canonical", "alternate", "license", "author", "help", "search", "me"}
+# rel values that DO fetch. A rel list is whitelisted only when it contains none of these:
+# `rel="canonical stylesheet"` is one inert token plus one fetching token, and testing for
+# the presence of an inert token let the whole element through.
+FETCHING_REL = {"stylesheet", "preload", "prefetch", "preconnect", "dns-prefetch",
+                "modulepreload", "prerender", "icon", "apple-touch-icon", "manifest",
+                "mask-icon", "shortcut"}
 
-OFF_ORIGIN = re.compile(r"^\s*(?:https?:)?//", re.I)
+OFF_ORIGIN = re.compile(r"^(?:https?:)?//", re.I)
+
+# Tab, newline and other C0 controls are stripped by the URL parser before the scheme is
+# read, so `h&#9;ttp://host` loads. Backslashes are folded to forward slashes, so
+# `/\host/x.css` is protocol-relative. Normalise the same way before matching.
+CONTROLS = re.compile(r"[\x00-\x20\x7f]")
+
+
+def normalise(value: str) -> str:
+    return CONTROLS.sub("", value).replace("\\", "/")
 
 
 def offsite(value: str) -> bool:
     """True for absolute and protocol-relative URLs. Relative paths and data: are fine."""
-    return bool(value) and bool(OFF_ORIGIN.match(value))
+    return bool(value) and bool(OFF_ORIGIN.match(normalise(value)))
 
 
 def offsite_in_srcset(value: str) -> list[str]:
@@ -66,22 +85,45 @@ def offsite_in_srcset(value: str) -> list[str]:
     return hits
 
 
+META_REFRESH_URL = re.compile(r"url\s*=\s*(.+)$", re.I | re.S)
+
+
 class Scanner(HTMLParser):
     def __init__(self, path: Path) -> None:
         super().__init__(convert_charrefs=True)
         self.path = path
         self.problems: list[str] = []
+        self._in_style = False
+        self._style_line = 0
+        self._style_text: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        got = {k.lower(): (v or "") for k, v in attrs}
+        # First occurrence wins, matching how a browser resolves a duplicated attribute.
+        # Building the dict in order let a second `href` override the one Chrome actually
+        # uses, so `<link href="ok.css" href="//cdn/evil.css">` scanned clean and fetched
+        # the first while the check inspected the second.
+        got: dict[str, str] = {}
+        for key, value in attrs:
+            got.setdefault(key.lower(), value or "")
         line = self.getpos()[0]
 
+        if tag == "style":
+            self._in_style = True
+            self._style_line = line
+            self._style_text = []
+
+        # Inline CSS, in a <style> block or a style="" attribute, was not scanned at all —
+        # and an @import or a url() there fetches exactly like one in a .css file. This was
+        # the largest hole in the check: adding a webfont inline is the most natural way the
+        # page's promise would have been broken.
+        if "style" in got:
+            self.problems += [f"{self.path}:{line}: style attribute: {problem}"
+                              for problem in scan_css_text(got["style"])]
+
         if tag == "meta" and got.get("http-equiv", "").lower() == "refresh":
-            # content="0; url=https://elsewhere"
-            target = got.get("content", "")
-            url = target.partition("url=")[2].strip().strip("'\"")
-            if offsite(url):
-                self.problems.append(f"{self.path}:{line}: <meta refresh> to {url}")
+            match = META_REFRESH_URL.search(got.get("content", ""))
+            if match and offsite(match.group(1).strip().strip("'\"")):
+                self.problems.append(f"{self.path}:{line}: <meta refresh> to {match.group(1).strip()}")
             return
 
         for attr in FETCHING.get(tag, ()):
@@ -90,7 +132,7 @@ class Scanner(HTMLParser):
                 continue
             if tag == "link" and attr == "href":
                 rels = set(got.get("rel", "").lower().split())
-                if rels & INERT_REL:
+                if rels and rels.isdisjoint(FETCHING_REL):
                     continue
             if attr.endswith("srcset"):
                 for hit in offsite_in_srcset(value):
@@ -98,23 +140,40 @@ class Scanner(HTMLParser):
             elif offsite(value):
                 self.problems.append(f"{self.path}:{line}: <{tag} {attr}> -> {value}")
 
+    def handle_data(self, data: str) -> None:
+        if self._in_style:
+            self._style_text.append(data)
 
-CSS_URL = re.compile(r"url\(\s*['\"]?\s*((?:https?:)?//[^)'\"\s]+)", re.I)
-CSS_IMPORT = re.compile(r"@import\s+(?:url\()?\s*['\"]?\s*((?:https?:)?//[^)'\";\s]+)", re.I)
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "style" and self._in_style:
+            self._in_style = False
+            self.problems += [f"{self.path}:{self._style_line}: <style>: {problem}"
+                              for problem in scan_css_text("".join(self._style_text))]
+
+
+# DOTALL and \s* between the tokens: a declaration split across lines is still one
+# declaration to a CSS parser, and the previous line-at-a-time scan could not see it.
+CSS_URL = re.compile(r"url\(\s*['\"]?\s*([^)'\"]+)", re.I | re.S)
+CSS_IMPORT = re.compile(r"@import\s+(?:url\(\s*)?['\"]?\s*([^)'\";\s]+)", re.I | re.S)
 CSS_FONTFACE = re.compile(r"@font-face", re.I)
 
 
-def scan_css(path: Path) -> list[str]:
-    text = path.read_text(encoding="utf-8")
+def scan_css_text(text: str) -> list[str]:
+    """Problems in a stylesheet, a <style> block, or a style="" attribute."""
     problems = []
-    for number, line in enumerate(text.splitlines(), 1):
-        for match in CSS_URL.finditer(line):
-            problems.append(f"{path}:{number}: css url() -> {match.group(1)}")
-        for match in CSS_IMPORT.finditer(line):
-            problems.append(f"{path}:{number}: @import -> {match.group(1)}")
-        if CSS_FONTFACE.search(line):
-            problems.append(f"{path}:{number}: @font-face (the page ships no fonts)")
+    for match in CSS_URL.finditer(text):
+        if offsite(match.group(1)):
+            problems.append(f"css url() -> {match.group(1).strip()}")
+    for match in CSS_IMPORT.finditer(text):
+        if offsite(match.group(1)):
+            problems.append(f"@import -> {match.group(1).strip()}")
+    if CSS_FONTFACE.search(text):
+        problems.append("@font-face (the page ships no fonts)")
     return problems
+
+
+def scan_css(path: Path) -> list[str]:
+    return [f"{path}: {problem}" for problem in scan_css_text(path.read_text(encoding="utf-8"))]
 
 
 def main(root: str) -> int:

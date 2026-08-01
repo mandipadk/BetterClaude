@@ -50,11 +50,18 @@ jobs:
           cp site/index.html site/styles.css _site/
           ls -la _site/
 
-      - name: Verify the site is self-contained
-        # The page tells its readers it loads no fonts, no scripts and no third-party
-        # assets. This enforces that rather than trusting it. Runs against the staged copy,
-        # so it checks precisely what will be published.
+      - name: Scan the markup for external references
+        # A fast static pre-check that reads the markup and predicts what will be fetched.
+        # Advisory in nature — it can only catch what its author thought of, and a review
+        # defeated an earlier version of it 22 times. The real gate is the next step.
         run: python3 Scripts/check-selfcontained.py _site
+
+      - name: Assert the page fetches nothing off-origin
+        # The gate. Loads the staged page in headless Chrome with every hostname mapped to a
+        # local server, so any request the page makes is observed with the host it asked
+        # for. This measures what the browser does instead of predicting it, which is the
+        # only version of this check that cannot be out-argued.
+        run: python3 Scripts/assert-same-origin.py _site
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

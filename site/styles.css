@@ -298,9 +298,15 @@ code {
    A direct-child selector rather than a chain of :not(). The denylist form already
    matched p.actions, and at specificity 41 it outranked .lede and .lede-small — so any
    paragraph class added later would silently take this colour unless someone remembered
-   to exclude it. This states what it means: prose directly inside a section. */
-.band > p,
-.item > p:not(.index):not(.evidence) { color: var(--ink-2); }
+   to exclude it. This states what it means: prose directly inside a section.
+
+   Both selectors exclude .meta and .actions explicitly. .band > p is specificity 11 and
+   .meta is 10, so dropping the exclusion made a .meta that happens to be a direct child of
+   a section win the wrong tier — the Parallex "a site and releases are coming" line
+   rendered at 7.81:1 while the two other .meta instances sat at 4.95:1. Three instances of
+   one role, two weights. */
+.band > p:not(.meta):not(.actions),
+.item > p:not(.index):not(.evidence):not(.actions) { color: var(--ink-2); }
 
 /* ---------- Description pairs (no boxes, hairlines only) ---------- */
 
@@ -346,7 +352,11 @@ code {
   font-size: 0.9375rem;
   font-weight: 600;
   text-decoration: none;
-  transition: background-color 0.12s ease;
+  /* No transition on background-color. When the OS appearance flips with the page open,
+     `color` re-resolves immediately but a transitioned `background-color` keeps its old
+     computed value, because the change arrived through a custom property. The button then
+     sits at white-on-light-clay — 3.07:1 — and it does not self-heal. Anyone on macOS Auto
+     appearance hits this at sunset. The fade bought 0.12s on a fill that reads as instant. */
 }
 
 .btn:hover,
