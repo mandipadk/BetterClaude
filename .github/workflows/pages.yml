@@ -1,0 +1,77 @@
+name: Pages
+
+# Publishes site/ to GitHub Pages.
+#
+# This exists because branch-deploy cannot do it. "Deploy from a branch" offers exactly two
+# source folders — / (root) and /docs — so a site living in /site is not reachable that way
+# at all. The alternatives were to move the directory to docs/ or to name it in a workflow;
+# naming it here keeps the directory called what it is.
+#
+# Set Settings → Pages → Source to "GitHub Actions" once. After that this runs on every push
+# to main that touches the site, and can be run by hand from the Actions tab.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it: a half-published site is worse
+# than a slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Verify the site is self-contained
+        # The page's stated promise is that it loads nothing from a third party. A stray
+        # CDN link or webfont added later would break that silently, so fail the deploy
+        # instead.
+        #
+        # Matches by tag rather than by file extension. An earlier version keyed on
+        # extensions and sailed straight past
+        # <link href="https://fonts.googleapis.com/css?family=Inter"> — no extension, and
+        # the single most likely way this promise gets broken.
+        #
+        # <a href="https://..."> is deliberately allowed: a link is fetched when someone
+        # clicks it, which is not the page loading an asset.
+        run: |
+          set -uo pipefail
+          pattern='<script|<iframe|@import|@font-face'
+          pattern="$pattern"'|<link[^>]+href="https?://'
+          pattern="$pattern"'|<(img|source|video|audio|embed|object|track)[^>]+src="https?://'
+          pattern="$pattern"'|url\(\s*.?https?://'
+          # rel="canonical" and rel="alternate" name a URL, they do not fetch one.
+          if grep -rniE "$pattern" site/ | grep -vE 'rel="(canonical|alternate)"'; then
+            echo "::error::site/ references an external asset; the page claims it loads none"
+            exit 1
+          fi
+          echo "No external assets referenced."
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy
+        id: deploy
+        uses: actions/deploy-pages@v4

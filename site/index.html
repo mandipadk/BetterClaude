@@ -4,8 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Better Claude — move Claude conversations between installs</title>
-<meta name="description" content="A macOS app that moves a Claude conversation between Claude Desktop installs and into Claude Code, inventories every install's configuration, collects every artifact Claude produced, and forks a conversation at any message.">
+<meta name="description" content="A macOS app that moves a Claude conversation between Claude Desktop installs and into Claude Code, forks it at any message, and finds every file Claude made for you.">
 <meta name="color-scheme" content="light dark">
+<link rel="canonical" href="https://mandipadk.github.io/BetterClaude/">
+<!-- Text-only, so a shared link renders with a title and summary instead of a bare URL.
+     No image: that would be a third-party-shaped request on a page that promises none. -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Better Claude — move Claude conversations between installs">
+<meta property="og:description" content="Move a Claude conversation between Desktop installs and into Claude Code, with the chat intact. Fork it at any message. Everything stays on your Mac.">
+<meta property="og:url" content="https://mandipadk.github.io/BetterClaude/">
+<meta name="twitter:card" content="summary">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.5v19' stroke='%23ba5631' stroke-width='1.5' stroke-linecap='round' opacity='.45'/%3E%3Cpath d='M4 12h15.5M15.5 7.75 19.75 12l-4.25 4.25' fill='none' stroke='%23ba5631' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -38,15 +46,17 @@
     <p class="lede">
       Better Claude operates on the conversation stores that Claude Desktop and Claude
       Code already keep on your Mac. Move a chat between installs. Fork it at any
-      message. Find every file Claude ever wrote for you. Nothing leaves the machine.
+      message. Find every file Claude ever wrote for you. Your conversations never leave
+      the machine.
     </p>
     <p class="actions">
       <a class="btn" href="https://github.com/mandipadk/BetterClaude/releases/latest">Download for macOS</a>
       <a class="btn-quiet" href="https://github.com/mandipadk/BetterClaude">Read the source</a>
     </p>
     <p class="meta">
-      Requires macOS 14 or later. Not on the Mac App Store, for a reason described
-      <a href="#limits">below</a>. You can also build it from source in one command.
+      Requires macOS 14 or later. Not on the Mac App Store, and not notarised — both
+      explained <a href="#limits">below</a>. You can also build it from source:
+      <code>./Scripts/make-app.sh</code>.
     </p>
   </section>
 
@@ -168,6 +178,31 @@
         Every import writes a receipt listing exactly what it created, and any import can
         be undone. The undo refuses to delete anything you have edited since.
       </dd>
+
+      <dt>Ad-hoc signed, not notarised</dt>
+      <dd>
+        A downloaded build arrives quarantined, so Gatekeeper blocks the first launch:
+        right-click the app and choose Open, once per version. The in-app updater checks
+        each download against a SHA-256 published with the release, which catches
+        tampering in transit but not a compromised release account — the archive and its
+        checksum are published by the same one.
+      </dd>
+
+      <dt>A destination install must have been signed into once</dt>
+      <dd>
+        Claude Desktop only ever reads the account it is signed into, so a conversation
+        filed under any other account is invisible rather than broken. Model availability
+        is not checked either: a conversation that used a model the destination does not
+        offer still imports, and the destination picks one when you continue it.
+      </dd>
+
+      <dt>Verified against one machine's data</dt>
+      <dd>
+        The path encoder is checked against every project directory present there, and
+        transfers are verified by comparing per-message checksums — but this has not been
+        tested across many accounts or Claude versions. The figures above come from that
+        same machine.
+      </dd>
     </dl>
   </section>
 
@@ -195,7 +230,8 @@
     <p class="lede-small">
       One download, no account, no telemetry. The app reads directories that are not in a
       privacy-protected category, so there is nothing to allow in System Settings and Full
-      Disk Access is not required.
+      Disk Access is not required. The only request it ever makes is to GitHub, when you
+      ask it to check for an update.
     </p>
     <p class="actions">
       <a class="btn" href="https://github.com/mandipadk/BetterClaude/releases/latest">Download for macOS</a>
@@ -213,7 +249,7 @@
       <a href="https://github.com/mandipadk/BetterClaude/releases/latest">Releases</a>
       <a href="https://github.com/mandipadk/parallex">Parallex</a>
     </nav>
-    <p class="meta">This page loads no fonts, no scripts and no third-party assets. It makes no network requests at all.</p>
+    <p class="meta">This page loads no fonts, no scripts and no third-party assets — nothing from anyone but this server.</p>
   </div>
 </footer>
 

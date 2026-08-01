@@ -16,7 +16,13 @@
   --on-accent: #ffffff;
   --rule:      #dcdcdc;   /* non-text hairline */
 
-  --measure: 40rem;
+  /* 37rem lands body copy near 72 characters per line. At 40rem the item paragraphs
+     measured 78 cpl, past the comfortable 65–75 window. */
+  --measure: 37rem;
+  /* The headline gets a wider measure than the body. At the body's width, "Move a Claude
+     conversation" cannot fit one line, so the H1 broke 57%/99%/64% — a rag that neither
+     text-wrap: balance nor pretty can improve, because no rebreak exists. */
+  --measure-display: 40rem;
   --gutter: clamp(1.25rem, 5vw, 2.5rem);
   --rhythm: clamp(4.5rem, 9vw, 7.5rem);
 
@@ -152,10 +158,19 @@ a:hover { text-decoration-thickness: 2px; }
 
 h1 {
   margin: 0.35em 0 0;
+  /* The headline reaches past the body measure. Inside it, "Move a Claude conversation"
+     cannot fit one line, so the H1 broke into three or four lines filling as little as
+     52% — a rag no rebreak can fix, because there is no better break to find. Widening
+     the measure to 40rem is what actually fixes it: two lines at 96% and 98%.
+     A max-width, not a wider block: the second clamp keeps it inside the viewport at
+     narrow widths, where it collapses back to the body measure and never overflows. */
+  width: calc(100% + 8rem);
+  max-width: calc(100vw - 2 * var(--gutter));
   font-size: clamp(2.125rem, 6.2vw, 3.125rem);
   line-height: 1.08;
   font-weight: 700;
   letter-spacing: -0.025em;
+  text-wrap: balance;
 }
 
 h2 {
@@ -186,8 +201,11 @@ p:last-child { margin-bottom: 0; }
   color: var(--ink-3);
 }
 
+/* Deliberately not the accent. Design.swift reserves it for "the action the user came
+   here to take", and four decorative ordinals in the accent outnumbered the one real
+   CTA, which is exactly the dilution that rule exists to prevent. */
 .index {
-  color: var(--accent);
+  color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
 
@@ -207,6 +225,17 @@ p:last-child { margin-bottom: 0; }
   font-size: 0.875rem;
   line-height: 1.6;
   color: var(--ink-3);
+}
+
+/* Monospace only, with no fill. A tinted inline-code background would be the third
+   filled box on a page whose whole grouping language is whitespace and hairlines. */
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  color: var(--ink-2);
+  /* A command is one token. Left to wrap, "./Scripts/make-app.sh" breaks at its hyphen
+     and reads as two paths. It is short enough to always move to the next line whole. */
+  white-space: nowrap;
 }
 
 .evidence {
@@ -244,7 +273,10 @@ p:last-child { margin-bottom: 0; }
 
 .item .index { margin-bottom: 0.6rem; }
 
-.item p:not(.index):not(.evidence) { color: var(--ink-2); }
+/* Body copy in every section, not just .item. Scoping this to .item once left the
+   Parallex paragraphs inheriting --ink, which made the cross-promotion the darkest
+   body text on the page — the least important section rendering heaviest. */
+.band p:not(.index):not(.evidence):not(.meta) { color: var(--ink-2); }
 
 /* ---------- Description pairs (no boxes, hairlines only) ---------- */
 
@@ -357,5 +389,7 @@ p:last-child { margin-bottom: 0; }
   body { font-size: 1rem; }
   .bar-inner { padding-block: 0.9rem; }
   .actions { gap: 0.5rem 1.25rem; }
-  .btn { width: 100%; text-align: center; }
+  /* Both actions go full width and centre together. Stacking a centred full-width button
+     above a left-aligned quiet link put two alignment logics in one pair. */
+  .btn, .btn-quiet { width: 100%; text-align: center; }
 }
