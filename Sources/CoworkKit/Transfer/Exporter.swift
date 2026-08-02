@@ -113,6 +113,13 @@ public enum Exporter {
                 if space == nil {
                     warnings.append("\(session.title): belongs to a project this install no "
                                     + "longer defines, so its folders cannot travel")
+                } else {
+                    // The project's own memory — MEMORY.md, user_profile.md and its notes.
+                    // Rides in the slot under its own prefix so the assembled-bundle
+                    // credential scan sees it like everything else. Same profile gate as the
+                    // project itself: this is the user's own writing about their own work.
+                    extras.append(contentsOf: collectSpaceMemory(
+                        orgRoot: session.account.root, spaceId: spaceId))
                 }
             }
 
@@ -274,6 +281,19 @@ public enum Exporter {
         guard let projectDir = session.projectDirURL else { return [] }
         return collect(dir: projectDir.appendingPathComponent("memory"), as: "memory", options: nil)
             .map { (relativePath: $0.relativePath, source: $0.source) }
+    }
+
+    /// A project's memory directory, `<org>/spaces/<spaceId>/memory/`.
+    ///
+    /// Distinct from `collectMemory`, which is the *session's* memory. A project's memory is
+    /// what it has learned across every conversation in it, so a conversation that arrives
+    /// without it lands in a project that has forgotten everything.
+    static func collectSpaceMemory(orgRoot: URL, spaceId: String) -> [(relativePath: String, source: URL)] {
+        let dir = orgRoot
+            .appendingPathComponent("spaces", isDirectory: true)
+            .appendingPathComponent(spaceId, isDirectory: true)
+            .appendingPathComponent("memory", isDirectory: true)
+        return collect(dir: dir, as: BundleLayout.spaceMemoryDirName, options: nil)
     }
 
     static func collect(dir: URL, as prefix: String, options: ExportOptions?) -> [(relativePath: String, source: URL)] {

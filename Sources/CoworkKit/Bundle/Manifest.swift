@@ -208,6 +208,10 @@ public enum BundleLayout {
     public static let scanReportFileName = "scan-report.json"
     public static let sessionsDirName = "sessions"
     public static let metadataFileName = "metadata.json"
+    /// The Project's own memory, kept apart from the session's `memory/` because the two land
+    /// in different places: the session's inside its workspace, the project's beside every
+    /// other conversation in that project.
+    public static let spaceMemoryDirName = "space-memory"
     public static let transcriptFileName = "transcript.jsonl"
     public static let subagentsDirName = "subagents"
 

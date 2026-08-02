@@ -131,6 +131,11 @@ the `spaceId` is cleared rather than left dangling. `userApprovedFileAccessPaths
 cleared in every mode: it is a permission grant, not a preference, and re-granting it silently
 at the destination would hand over access that was never approved there.
 
+A project also owns a memory directory — what it has learned across every conversation in it.
+That travels too, but only into a project this import *creates*. A project that already exists
+at the destination has its own memory, written by conversations that live there, and copying
+over it would destroy work the transfer has no claim on.
+
 The plan says which projects will be created before anything is written, and names any project
 folder that no longer exists on this Mac.
 

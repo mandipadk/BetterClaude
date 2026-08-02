@@ -103,6 +103,29 @@ struct SpaceTests {
         #expect(try SpaceStore.remove(id: "drop", fromOrg: org) == false)
     }
 
+    @Test("A project's memory is collected under its own slot prefix")
+    func spaceMemoryIsCollected() throws {
+        let org = try makeOrg()
+        defer { try? FileManager.default.removeItem(at: org) }
+
+        let memory = org.appendingPathComponent("spaces/space-1/memory", isDirectory: true)
+        try FileManager.default.createDirectory(at: memory, withIntermediateDirectories: true)
+        try Data("# what this project knows".utf8)
+            .write(to: memory.appendingPathComponent("MEMORY.md"))
+        try Data("# who they are".utf8)
+            .write(to: memory.appendingPathComponent("user_profile.md"))
+
+        let collected = Exporter.collectSpaceMemory(orgRoot: org, spaceId: "space-1")
+        #expect(collected.count == 2)
+        // Its own prefix, kept apart from the session's `memory/`: the two land in different
+        // places, one inside the workspace and one beside every conversation in the project.
+        #expect(collected.allSatisfy { $0.relativePath.hasPrefix(BundleLayout.spaceMemoryDirName) })
+        #expect(collected.contains { $0.relativePath.hasSuffix("MEMORY.md") })
+
+        // A project with no memory yet contributes nothing rather than failing.
+        #expect(Exporter.collectSpaceMemory(orgRoot: org, spaceId: "never-used").isEmpty)
+    }
+
     @Test("A malformed spaces.json degrades to no projects rather than throwing")
     func tolerant() throws {
         let org = try makeOrg()

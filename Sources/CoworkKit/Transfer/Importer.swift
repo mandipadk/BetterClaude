@@ -375,10 +375,40 @@ public enum Importer {
                 created.append(ImportReceipt.CreatedSpace(
                     spaceId: space.id, orgRoot: account.root.path, name: space.name))
                 resolved[entry.slot] = space.id
+                // Only for a project brought into being here. A project that already existed
+                // has its own memory, written by conversations that live in it, and copying
+                // over that would destroy work this transfer has no claim on.
+                try installSpaceMemory(slot: entry.slot, plan: plan, spaceId: space.id,
+                                       account: account, receipt: &receipt)
             }
         }
         if !created.isEmpty { receipt.createdSpaces = created }
         return resolved
+    }
+
+    /// Put a carried project's memory in place, for a project this import created.
+    ///
+    /// A project's memory is what it has learned across every conversation in it. Without it a
+    /// conversation arrives in a project that has forgotten everything it knew.
+    static func installSpaceMemory(slot: String, plan: ImportPlan, spaceId: String,
+                                   account: AccountRef, receipt: inout ImportReceipt) throws {
+        let fm = FileManager.default
+        let source = BundleReader.slotURL(slot, in: plan.bundleURL)
+            .appendingPathComponent(BundleLayout.spaceMemoryDirName, isDirectory: true)
+        guard fm.fileExists(atPath: source.path) else { return }
+
+        let destination = account.root
+            .appendingPathComponent("spaces", isDirectory: true)
+            .appendingPathComponent(spaceId, isDirectory: true)
+            .appendingPathComponent("memory", isDirectory: true)
+        // Create-only, like every other write this tool makes.
+        guard !fm.fileExists(atPath: destination.path) else { return }
+
+        try fm.createDirectory(at: destination.deletingLastPathComponent(),
+                               withIntermediateDirectories: true)
+        try fm.copyItem(at: source, to: destination)
+        // Fingerprinted, so undo refuses to delete anything edited since the import.
+        try receipt.recordCreatedTree(at: destination)
     }
 
     static func applyIntoCowork(_ plan: ImportPlan, account: AccountRef, options: ImportOptions,
