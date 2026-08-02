@@ -108,12 +108,16 @@ public enum Discovery {
     }
 
     /// The `<accountId>/<orgId>` pairs inside a store, including pairs with no sessions yet.
-    public static func accounts(in store: StoreRef) throws -> [AccountRef] {
+    /// `orgDirectory` is passed in when several stores are enumerated together, so the scan
+    /// for organisation names happens once for the machine rather than once per store.
+    public static func accounts(in store: StoreRef,
+                                orgDirectory: OrgDirectory.Resolved? = nil) throws -> [AccountRef] {
         let level1 = (try? FileManager.default.contentsOfDirectory(
             at: store.sessionsRoot, includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles])) ?? []
 
         let signedIn = signedInAccountId(in: store)
+        let directory = orgDirectory ?? OrgDirectory.build(stores: [store])
         var result: [AccountRef] = []
         for accountDir in level1.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             let accountId = accountDir.lastPathComponent
@@ -141,10 +145,23 @@ public enum Discovery {
                     sessionCount: metadataFiles.count,
                     emailAddress: identity.emailAddress,
                     accountName: identity.accountName,
-                    isSignedIn: signedIn == accountId))
+                    isSignedIn: signedIn == accountId,
+                    org: directory.orgs[orgId],
+                    orgAccountCount: directory.accountsPerOrg[orgId] ?? 1))
             }
         }
-        return propagatingIdentityAcrossOrgs(result)
+        return propagatingIdentityAcrossOrgs(result).map { account in
+            // An install signed into but never used has no session to read an address from,
+            // yet Claude Code's own record names it. Better than a bare UUID.
+            guard account.emailAddress == nil,
+                  let email = directory.accountEmails[account.accountId] else { return account }
+            return AccountRef(store: account.store, accountId: account.accountId,
+                              orgId: account.orgId, dirScheme: account.dirScheme,
+                              root: account.root, sessionCount: account.sessionCount,
+                              emailAddress: email, accountName: account.accountName,
+                              isSignedIn: account.isSignedIn, org: account.org,
+                              orgAccountCount: account.orgAccountCount)
+        }
     }
 
     /// Give an account's empty orgs the identity read from its populated ones.
@@ -169,7 +186,12 @@ public enum Discovery {
                               orgId: account.orgId, dirScheme: account.dirScheme,
                               root: account.root, sessionCount: account.sessionCount,
                               emailAddress: known.email, accountName: known.name,
-                              isSignedIn: account.isSignedIn)
+                              // Carried through explicitly. Dropping it here silently
+                              // un-resolved the org of every account whose address was
+                              // inherited — the same org id showed a name under one install
+                              // and a bare UUID under another.
+                              isSignedIn: account.isSignedIn, org: account.org,
+                              orgAccountCount: account.orgAccountCount)
         }
     }
 

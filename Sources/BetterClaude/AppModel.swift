@@ -459,8 +459,14 @@ final class AppModel {
         do {
             stores = try Discovery.stores()
             accounts = [:]
+            // Built once for the machine, not once per store. An organisation's name lives in
+            // whichever install happened to record it, and the same org is shared across
+            // installs — resolving per store left the shared Team org named under the install
+            // that had a record for it and a bare UUID everywhere else.
+            let orgDirectory = OrgDirectory.build(stores: stores,
+                                                  claudeCodeConfigDir: claudeCodeConfigDir)
             for store in stores {
-                accounts[store] = try Discovery.accounts(in: store)
+                accounts[store] = try Discovery.accounts(in: store, orgDirectory: orgDirectory)
             }
             runningVariants = (try? Guards.runningVariants()) ?? []
             claudeCodeProjects = (try? Discovery.claudeCodeProjects(configDir: claudeCodeConfigDir)) ?? []

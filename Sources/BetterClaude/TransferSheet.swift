@@ -474,13 +474,12 @@ struct TransferSheet: View {
                         // of session metadata — so a signed-in empty account is named by its
                         // install instead of by a pair of raw UUIDs.
                         title: account.emailAddress ?? store.variantDirName,
-                        // Empty orgs carry their org id, because one account can offer several
-                        // and they are otherwise identical rows — an account's identity is now
-                        // shared across its orgs, so the name alone no longer separates them.
-                        detail: account.sessionCount == 0
-                            ? "\(store.variantDirName) · signed in, no conversations yet · "
-                              + "org \(account.orgId.prefix(8))…"
-                            : "\(store.variantDirName) · \(Self.conversationCount(account))",
+                        // The org is what separates one row from another. A single account
+                        // belongs to a shared Team and its own Personal org at once, so an
+                        // install offers two destinations under one address; naming only the
+                        // install and the count made them indistinguishable.
+                        detail: "\(store.variantDirName) · \(account.orgLabel) · "
+                            + Self.conversationCount(account),
                         warning: app.isRunning(store)
                             ? "\(store.variantDirName) is running — it must be quit first"
                             : nil)
@@ -492,7 +491,7 @@ struct TransferSheet: View {
     /// state here, not a shortfall.
     private static func conversationCount(_ account: AccountRef) -> String {
         switch account.sessionCount {
-        case 0: return "signed in, no conversations yet"
+        case 0: return "no conversations yet"
         case 1: return "1 conversation"
         default: return "\(account.sessionCount) conversations"
         }
@@ -540,11 +539,23 @@ private struct DestinationRow: View {
                         .font(Design.Typography.body)
                         .foregroundStyle(Design.Palette.primary)
                         .lineLimit(1)
-                    Text(option.warning ?? option.detail)
+                    // Both lines, never one instead of the other. A warning used to replace
+                    // the detail, which erased the only thing distinguishing two rows: an
+                    // install signed into one account offers its Team org and its Personal
+                    // org, and while that install is running both rendered as the same
+                    // address above the same "it must be quit first".
+                    Text(option.detail)
                         .font(Design.Typography.caption)
-                        .foregroundStyle(option.warning == nil ? Design.Palette.muted : Design.Palette.accent)
+                        .foregroundStyle(Design.Palette.muted)
                         .lineLimit(1)
-                        .truncationMode(.head)
+                        .truncationMode(.middle)
+                    if let warning = option.warning {
+                        Text(warning)
+                            .font(Design.Typography.caption)
+                            .foregroundStyle(Design.Palette.accent)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
                 }
                 Spacer(minLength: 0)
             }
@@ -558,6 +569,7 @@ private struct DestinationRow: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .accessibilityLabel(option.title)
+        .accessibilityValue([option.detail, option.warning].compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 }

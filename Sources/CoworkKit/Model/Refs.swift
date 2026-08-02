@@ -85,12 +85,24 @@ public struct AccountRef: Hashable, Sendable, Identifiable {
     /// signed into" was inferred from an empty session list, which is simply not what an
     /// empty session list means — a freshly signed-in install has none.
     public let isSignedIn: Bool
+    /// The organisation this pair's sessions live under, once it can be named.
+    ///
+    /// One account belongs to several organisations at once — a shared Team and the personal
+    /// one carrying its own plan — and the store distinguishes them only by UUID. Without
+    /// this, an install offers two destinations reading `org 16a5cf52…` and `org 27450961…`,
+    /// which is not a choice anyone can make.
+    public let org: OrgIdentity?
+    /// How many accounts on this machine hold this organisation. A personal org belongs to
+    /// one; anything higher is shared, which is what a Team is. It is the only distinguishing
+    /// fact left for an org whose `oauthAccount` record carries a null name and type.
+    public let orgAccountCount: Int
 
     public var id: String { root.path }
 
     public init(store: StoreRef, accountId: String, orgId: String, dirScheme: DirScheme,
                 root: URL, sessionCount: Int, emailAddress: String?, accountName: String?,
-                isSignedIn: Bool = false) {
+                isSignedIn: Bool = false, org: OrgIdentity? = nil,
+                orgAccountCount: Int = 1) {
         self.store = store
         self.accountId = accountId
         self.orgId = orgId
@@ -100,6 +112,8 @@ public struct AccountRef: Hashable, Sendable, Identifiable {
         self.emailAddress = emailAddress
         self.accountName = accountName
         self.isSignedIn = isSignedIn
+        self.org = org
+        self.orgAccountCount = orgAccountCount
     }
 
     /// Can this account receive a transfer?
@@ -111,6 +125,25 @@ public struct AccountRef: Hashable, Sendable, Identifiable {
     public var displayIdentity: String {
         if let emailAddress { return emailAddress }
         return "\(accountId.prefix(8))…/\(orgId.prefix(8))…"
+    }
+
+    /// How to name this org in a list: its name and plan when known, its id when not.
+    public var orgLabel: String {
+        switch (org?.displayName(besideAccount: emailAddress), org?.planLabel) {
+        case (let name?, let plan?): return "\(name) · \(plan)"
+        case (let name?, nil): return name
+        case (nil, let plan?): return plan
+        default: return unnamedOrgLabel
+        }
+    }
+
+    /// Some orgs cannot be named: their `oauthAccount` record carries a UUID with a null name
+    /// and type, and nothing else on disk holds one. Say what is still true about them rather
+    /// than showing a bare identifier.
+    private var unnamedOrgLabel: String {
+        let id = "org \(orgId.prefix(8))…"
+        guard orgAccountCount > 1 else { return id }
+        return "\(id) · shared by \(orgAccountCount) accounts"
     }
 }
 

@@ -102,6 +102,9 @@ func cmdStores() throws {
         print("No Claude Desktop session stores found.")
         return
     }
+    // Machine-wide: an organisation's name lives in whichever install recorded it, and the
+    // same org is shared across installs.
+    let orgDirectory = OrgDirectory.build(stores: stores)
     let running = (try? Guards.runningVariants()) ?? []
     for store in stores {
         var tags: [String] = []
@@ -112,8 +115,10 @@ func cmdStores() throws {
         let suffix = tags.isEmpty ? "" : "  (\(tags.joined(separator: ", ")))"
         print("\(store.variantDirName)\(suffix)")
         print("  \(store.userDataDir.path)")
-        for account in try Discovery.accounts(in: store) {
-            print("  · \(account.displayIdentity)  \(account.sessionCount) session(s)")
+        for account in try Discovery.accounts(in: store, orgDirectory: orgDirectory) {
+            print("  · \(account.displayIdentity)  ·  \(account.orgLabel)"
+                  + "  \(account.sessionCount) session(s)"
+                  + (account.isSignedIn ? "  [signed in]" : ""))
             print("      --account \(account.accountId) --org \(account.orgId)")
         }
     }
