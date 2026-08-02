@@ -106,6 +106,34 @@ Before a bundle is written, the **assembled** bundle is scanned for credential-s
 content. A hit blocks the export. The scan reports the file and the rule that matched and
 never the matched value, because a report containing the secret is a second copy of it.
 
+## Projects and folders
+
+A conversation is attached to folders two ways, and both are handled.
+
+`userSelectedFolders` lists folders attached to that one conversation. A **Project** — a
+*space* on disk — owns a folder list shared by every conversation in it, and a session points
+at one by `spaceId`.
+
+Spaces are defined per organisation, so a `spaceId` means nothing in another install. Moving a
+conversation used to carry the id but not the project, leaving it pointing at nothing; Claude
+Desktop then reports the project folder as no longer connected.
+
+A transfer between your own installs now carries the project itself. At the destination it
+resolves in that order: the same project is reused if it is already there; a project with the
+same name and folders is matched and the conversation is pointed at it, rather than creating a
+second project with an identical name; otherwise the project is created, recorded in the
+receipt, and removed again by `cowork undo` — unless you have renamed it since, in which case
+undo leaves it alone.
+
+Because folders are absolute paths on one machine, this only applies to the **same-user**
+profile. Under *another account* or *share*, the project and the folder list do not travel and
+the `spaceId` is cleared rather than left dangling. `userApprovedFileAccessPaths` is always
+cleared in every mode: it is a permission grant, not a preference, and re-granting it silently
+at the destination would hand over access that was never approved there.
+
+The plan says which projects will be created before anything is written, and names any project
+folder that no longer exists on this Mac.
+
 ## Install
 
 Requires macOS 14 or later. Download the latest `.dmg` from

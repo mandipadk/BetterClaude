@@ -572,7 +572,12 @@ struct Empty: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: 440)
+        // A floor as well as a ceiling. `fixedSize(vertical:)` under a maxWidth with no
+        // minimum answers a zero-width proposal by wrapping to roughly one character per
+        // line, which published a 1828pt minimum height for the first-run Library pane. The
+        // window's own minimum absorbs it today, so this is a landmine rather than a live
+        // defect — but any future container that asks Empty for its minimum would get that.
+        .frame(minWidth: 240, maxWidth: 440)
         .gutter()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

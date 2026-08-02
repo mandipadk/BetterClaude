@@ -16,19 +16,23 @@ public enum BundleWriter {
         /// Extra content copied into the slot, e.g. `subagents`, `memory`, `uploads`,
         /// `outputs`. A directory source is copied recursively under `relativePath`.
         public var extraFiles: [(relativePath: String, source: URL)]
+        /// The Project this conversation belongs to, when one travels with it.
+        public var space: SpaceRef?
 
         public init(origin: Manifest.Origin,
                     chat: Manifest.ChatSummary,
                     pathMap: Manifest.PathMap,
                     metadata: JSONValue?,
                     transcript: Data,
-                    extraFiles: [(relativePath: String, source: URL)] = []) {
+                    extraFiles: [(relativePath: String, source: URL)] = [],
+                    space: SpaceRef? = nil) {
             self.origin = origin
             self.chat = chat
             self.pathMap = pathMap
             self.metadata = metadata
             self.transcript = transcript
             self.extraFiles = extraFiles
+            self.space = space
         }
     }
 
@@ -105,7 +109,8 @@ public enum BundleWriter {
                 origin: slot.origin,
                 chat: slot.chat,
                 files: try fileEntries(in: slotDir),
-                pathMap: slot.pathMap))
+                pathMap: slot.pathMap,
+                space: slot.space))
         }
 
         let manifest = Manifest(createdAt: Date(), producer: producer,

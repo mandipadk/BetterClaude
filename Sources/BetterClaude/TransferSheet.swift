@@ -270,7 +270,13 @@ struct TransferSheet: View {
                 .padding(.vertical, Design.Space.l)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .fadingBottomEdge(56)
+            // No bottom fade here, unlike `configure`. A fade is a cue that content continues
+            // below; this step sizes to its content and measured 417pt against a 680pt
+            // ceiling, so nothing was ever below the fold and the gradient only ever dimmed
+            // the last thing in the list. That last thing is the "Show exact paths"
+            // disclosure — an interactive control, sitting at 2.41:1, under the 3:1 floor for
+            // non-text. A cue for scrolling that never happens is not worth an unreadable
+            // control.
         } else {
             VStack { ProgressView().controlSize(.small) }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -146,6 +146,41 @@ public enum Importer {
                 : "\(account.store.variantDirName) is not signed into this account and it holds "
                   + "no conversations, so an import here would be invisible rather than broken"))
 
+        // What will happen to each incoming conversation's Project, stated before anything is
+        // written. A folder that no longer exists is worth knowing about here rather than
+        // discovering as a project that connects to nothing.
+        let existingSpaces = SpaceStore.spaces(inOrg: account.root)
+        var missingFolders: [String] = []
+        var spacesToCreate: [String] = []
+        for entry in manifest.sessions {
+            guard let space = entry.space else { continue }
+            if case .absent = SpaceStore.match(space, against: existingSpaces) {
+                spacesToCreate.append(space.name)
+            }
+            for folder in space.folders
+            where !fm.fileExists(atPath: folder) {
+                missingFolders.append(folder)
+            }
+        }
+        if !spacesToCreate.isEmpty {
+            checks.append(PreconditionResult(
+                id: "PC12", title: "Project will be created in the destination",
+                passed: true,
+                detail: spacesToCreate.joined(separator: ", ")))
+        }
+        if !missingFolders.isEmpty {
+            // Informational, not blocking. The conversation transfers perfectly well; it is
+            // the project's folder that will connect to nothing, and the person who moved the
+            // folder is the only one who can fix that.
+            let home = FileManager.default.homeDirectoryForCurrentUser.path
+            checks.append(PreconditionResult(
+                id: "PC13", title: "A project folder no longer exists on this Mac",
+                passed: true,
+                detail: missingFolders
+                    .map { $0.hasPrefix(home) ? "~" + $0.dropFirst(home.count) : $0 }
+                    .joined(separator: ", ")))
+        }
+
         var takenNames = ProcessName.namesInUse(at: account.root)
         var computed: [SlotComputation] = []
         var willCreate: [URL] = []
@@ -308,11 +343,50 @@ public enum Importer {
         return receipt
     }
 
+    /// Work out which Project each incoming conversation should belong to here.
+    ///
+    /// A space id is only meaningful inside the organisation that defined it, so a conversation
+    /// arriving from another install names a project this organisation has never heard of. Left
+    /// alone the id dangles and Claude Desktop reports the folder as no longer connected —
+    /// which is exactly what it did.
+    ///
+    /// Three outcomes, in order of preference: the same project is already here and is reused;
+    /// a project with the same name and folders is here under a different id, so the session is
+    /// pointed at that one rather than creating a duplicate with an identical name; or nothing
+    /// like it exists and it is created. A conversation whose project could not travel — any
+    /// profile but `sameUser` — resolves to `nil`, which clears the id rather than leaving it
+    /// pointing at nothing.
+    ///
+    /// Returns slot → space id. A missing entry means "clear it".
+    static func resolveSpaces(_ plan: ImportPlan, account: AccountRef,
+                              receipt: inout ImportReceipt) throws -> [String: String?] {
+        var resolved: [String: String?] = [:]
+        var known = SpaceStore.spaces(inOrg: account.root)
+        var created: [ImportReceipt.CreatedSpace] = []
+
+        for entry in plan.manifest.sessions {
+            guard let space = entry.space else { continue }
+            switch SpaceStore.match(space, against: known) {
+            case .sameId(let existing), .equivalent(let existing):
+                resolved[entry.slot] = existing.id
+            case .absent:
+                try SpaceStore.add(space, toOrg: account.root)
+                known.append(space)
+                created.append(ImportReceipt.CreatedSpace(
+                    spaceId: space.id, orgRoot: account.root.path, name: space.name))
+                resolved[entry.slot] = space.id
+            }
+        }
+        if !created.isEmpty { receipt.createdSpaces = created }
+        return resolved
+    }
+
     static func applyIntoCowork(_ plan: ImportPlan, account: AccountRef, options: ImportOptions,
                                 receipt: inout ImportReceipt,
                                 progress: (@Sendable (String) -> Void)?) throws {
         let fm = FileManager.default
         let donor = try donorSession(in: account)
+        let spaceIds = try resolveSpaces(plan, account: account, receipt: &receipt)
 
         for computation in plan.computed {
             guard let workspace = computation.workspaceURL,
@@ -369,7 +443,9 @@ public enum Importer {
                 entry: entry, slotDir: slotDir, donor: donor, account: account,
                 computation: computation, processName: processName,
                 newSessionId: newSessionId, minimal: options.minimalMetadata,
-                transcript: transcript)
+                transcript: transcript,
+                spaceId: spaceIds[computation.slot] ?? nil,
+                profile: plan.manifest.redactionProfile)
 
             // Workspace first, metadata last. Claude Desktop's janitor deletes workspace
             // directories that no session file claims, so a metadata file that appears before
@@ -515,7 +591,9 @@ public enum Importer {
                                     donor: MetadataDocument?, account: AccountRef,
                                     computation: SlotComputation, processName: String,
                                     newSessionId: String, minimal: Bool,
-                                    transcript: Transcript) throws -> MetadataDocument {
+                                    transcript: Transcript,
+                                    spaceId: String?,
+                                    profile: RedactionProfile) throws -> MetadataDocument {
         var doc: MetadataDocument
         let metadataURL = slotDir.appendingPathComponent("metadata.json")
         if FileManager.default.fileExists(atPath: metadataURL.path) {
@@ -540,7 +618,25 @@ public enum Importer {
             doc.root["initialMessage"] = .string(entry.chat.title)
         }
         if doc.root["memoryEnabled"] == nil { doc.root["memoryEnabled"] = .bool(true) }
-        doc.root["userSelectedFolders"] = .array([])
+        // The Project, resolved against this organisation rather than trusted from the bundle.
+        // `nil` means the project could not travel, and clearing beats leaving an id that
+        // names nothing — a dangling id is what made Claude report the folder as disconnected.
+        doc.spaceId = spaceId
+        if spaceId == nil { doc.root["spaceIdSetBy"] = nil }
+
+        // Folders the user attached to this specific conversation.
+        //
+        // These used to be cleared unconditionally, which quietly undid half the point of a
+        // same-machine transfer: the folders exist, they belong to the same person, and the
+        // conversation is about them. They are absolute host paths, so they only survive a
+        // `sameUser` move; anywhere else they would name directories that do not exist and
+        // disclose the sender's layout.
+        if profile != .sameUser {
+            doc.root["userSelectedFolders"] = .array([])
+        }
+        // Always cleared. This is a permission grant, not a preference: it records paths the
+        // source session was allowed to read, and re-granting that silently at the destination
+        // would hand over access the user never approved there.
         doc.root["userApprovedFileAccessPaths"] = .array([])
 
         // Identity always comes from the destination: a session filed under a different
@@ -567,6 +663,9 @@ public enum Importer {
                 "lastActivityAt", "title", "initialMessage", "model", "isArchived", "accountName",
                 "emailAddress", "systemPrompt", "slashCommands", "egressAllowedDomains",
                 "remoteMcpServersConfig", "userSelectedFolders", "hostLoopMode", "memoryEnabled",
+                // Kept in the minimal set: the project link is the thing a conversation loses
+                // most visibly when it moves, and it is one string.
+                "spaceId",
             ]
             if let object = doc.root.objectValue {
                 doc.removeKeys(object.keys.filter { !keep.contains($0) })

@@ -57,6 +57,26 @@ public struct ImportReceipt: Codable, Sendable {
     /// `false` until the import finishes. A receipt still `false` on next launch is the
     /// signature of a crash mid-import, and is what `Undo.incomplete()` surfaces.
     public var completed: Bool
+    /// Projects this import added to the destination's `spaces.json`.
+    ///
+    /// Recorded separately from `created` because a space is an entry merged into a file that
+    /// already existed, not a path brought into being — so undo has to remove one array
+    /// element rather than delete a file. Optional so receipts written before this existed
+    /// still decode.
+    public var createdSpaces: [CreatedSpace]?
+
+    /// One project added to an organisation, and where to take it back out of.
+    public struct CreatedSpace: Codable, Sendable {
+        public let spaceId: String
+        public let orgRoot: String
+        public let name: String
+
+        public init(spaceId: String, orgRoot: String, name: String) {
+            self.spaceId = spaceId
+            self.orgRoot = orgRoot
+            self.name = name
+        }
+    }
 
     /// One created path plus the fingerprint it had when we wrote it.
     ///
@@ -96,7 +116,8 @@ public struct ImportReceipt: Codable, Sendable {
                 destination: String,
                 created: [CreatedEntry] = [],
                 modified: [ModifiedFile] = [],
-                completed: Bool = false) {
+                completed: Bool = false,
+                createdSpaces: [CreatedSpace]? = nil) {
         self.receiptVersion = Self.currentVersion
         self.id = id
         self.timestamp = timestamp
@@ -107,6 +128,7 @@ public struct ImportReceipt: Codable, Sendable {
         self.created = created
         self.modified = modified
         self.completed = completed
+        self.createdSpaces = createdSpaces
     }
 
     /// Fingerprint a file we just wrote and add it to `created`.

@@ -100,9 +100,26 @@ public enum Exporter {
             total += session.byteSize
             for extra in extras { total += fileSize(extra.source) }
 
+            // The Project the conversation belongs to, carried alongside it.
+            //
+            // Only under `sameUser`. A space's folders are absolute paths on the machine that
+            // wrote them: on another machine they name directories that do not exist, and to
+            // another person they disclose host layout. `redact` already strips `spaceId`
+            // itself for the other two profiles, so nothing is left dangling there either.
+            var space: SpaceRef?
+            if options.redactionProfile == .sameUser, let spaceId = doc.spaceId {
+                space = SpaceStore.spaces(inOrg: session.account.root)
+                    .first { $0.id == spaceId }
+                if space == nil {
+                    warnings.append("\(session.title): belongs to a project this install no "
+                                    + "longer defines, so its folders cannot travel")
+                }
+            }
+
             slots.append(BundleWriter.SlotInput(
                 origin: origin, chat: chat, pathMap: pathMap,
-                metadata: redacted.root, transcript: transcript.serializedData(), extraFiles: extras))
+                metadata: redacted.root, transcript: transcript.serializedData(),
+                extraFiles: extras, space: space))
         }
         return ExportPlan(slots: slots, warnings: warnings, totalBytes: total)
     }

@@ -57,14 +57,23 @@ public struct Manifest: Codable, Sendable {
         /// Every regular file in the slot, relative to the slot directory, sorted.
         public var files: [FileEntry]
         public var pathMap: PathMap
+        /// The Project this conversation belongs to, when one travels with it.
+        ///
+        /// Carried only under the `sameUser` profile: a space's folders are absolute paths on
+        /// the machine that wrote them, so they are both meaningless and disclosing anywhere
+        /// else. Without it the session's `spaceId` arrives pointing at a project the
+        /// destination organisation has never heard of, and Claude Desktop reports the folder
+        /// as no longer connected.
+        public var space: SpaceRef?
 
         public init(slot: String, origin: Origin, chat: ChatSummary,
-                    files: [FileEntry], pathMap: PathMap) {
+                    files: [FileEntry], pathMap: PathMap, space: SpaceRef? = nil) {
             self.slot = slot
             self.origin = origin
             self.chat = chat
             self.files = files
             self.pathMap = pathMap
+            self.space = space
         }
     }
 

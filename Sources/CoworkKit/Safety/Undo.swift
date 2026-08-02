@@ -165,6 +165,29 @@ public enum Undo {
             }
         }
 
+        // Projects this import added. Removed only when still empty of anything the user has
+        // since attached: an extra folder means they adopted the project, and taking it away
+        // would delete their work rather than ours.
+        for space in receipt.createdSpaces ?? [] {
+            let orgRoot = URL(fileURLWithPath: space.orgRoot)
+            guard let current = SpaceStore.spaces(inOrg: orgRoot).first(where: { $0.id == space.spaceId })
+            else {
+                skipped.append(("project “\(space.name)”", "already absent"))
+                continue
+            }
+            guard current.name == space.name else {
+                skipped.append(("project “\(space.name)”", "has been renamed since the import; leaving it"))
+                continue
+            }
+            do {
+                if try SpaceStore.remove(id: space.spaceId, fromOrg: orgRoot) {
+                    deleted.append("project “\(space.name)” in \(orgRoot.lastPathComponent)")
+                }
+            } catch {
+                skipped.append(("project “\(space.name)”", "could not be removed: \(error.localizedDescription)"))
+            }
+        }
+
         for file in receipt.modified {
             guard fm.fileExists(atPath: file.backupPath) else {
                 skipped.append((file.path, "backup is missing at \(file.backupPath)"))
