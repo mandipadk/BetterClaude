@@ -474,11 +474,12 @@ struct TransferSheet: View {
                         // of session metadata — so a signed-in empty account is named by its
                         // install instead of by a pair of raw UUIDs.
                         title: account.emailAddress ?? store.variantDirName,
-                        // The install name is only repeated in the detail when the title is an
-                        // email; when the title *is* the install name, the org distinguishes
-                        // the row instead.
-                        detail: account.emailAddress == nil
-                            ? "\(Self.conversationCount(account)) · org \(account.orgId.prefix(8))…"
+                        // Empty orgs carry their org id, because one account can offer several
+                        // and they are otherwise identical rows — an account's identity is now
+                        // shared across its orgs, so the name alone no longer separates them.
+                        detail: account.sessionCount == 0
+                            ? "\(store.variantDirName) · signed in, no conversations yet · "
+                              + "org \(account.orgId.prefix(8))…"
                             : "\(store.variantDirName) · \(Self.conversationCount(account))",
                         warning: app.isRunning(store)
                             ? "\(store.variantDirName) is running — it must be quit first"

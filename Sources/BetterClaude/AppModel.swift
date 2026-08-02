@@ -549,22 +549,35 @@ final class AppModel {
     /// shared between them anyway.
     /// Accounts worth showing in the sidebar for one store.
     ///
-    /// Everything that can receive a transfer, except that an account with no conversations
-    /// contributes a single row rather than one per org: with no email to distinguish them
-    /// every org falls back to the same label, and three identical rows is worse than one.
-    /// The most recently touched org represents it, being the likeliest one in use.
+    /// The sidebar browses conversations, so each account appears exactly once. An account's
+    /// orgs that hold conversations are the ones worth listing; its empty orgs have nothing
+    /// to browse and are dropped, because listing them put the same account on screen twice
+    /// under two different names — "iris" for the org with conversations and "Claude-Work"
+    /// for the org without, reading as two unrelated accounts.
+    ///
+    /// An account with no conversations anywhere still gets one row. That is the whole point:
+    /// it is a valid transfer destination, and hiding it made the install you are signed into
+    /// look undiscovered. The most recently touched org stands for it.
+    ///
+    /// The transfer picker is deliberately not filtered this way — there the org decides where
+    /// a conversation lands, so every eligible org is offered.
     func sidebarAccounts(in store: StoreRef) -> [AccountRef] {
         let eligible = (accounts[store] ?? []).filter { $0.canReceiveTransfer }
+        let populatedAccountIDs = Set(eligible.filter { $0.sessionCount > 0 }.map(\.accountId))
+
         var kept: [AccountRef] = []
-        var collapsed: [String: AccountRef] = [:]
+        var standIns: [String: AccountRef] = [:]
         for account in eligible {
-            guard account.sessionCount == 0 else { kept.append(account); continue }
-            let existing = collapsed[account.accountId]
-            if existing == nil || Self.lastTouched(account) > Self.lastTouched(existing!) {
-                collapsed[account.accountId] = account
+            if account.sessionCount > 0 {
+                kept.append(account)
+            } else if !populatedAccountIDs.contains(account.accountId) {
+                let existing = standIns[account.accountId]
+                if existing == nil || Self.lastTouched(account) > Self.lastTouched(existing!) {
+                    standIns[account.accountId] = account
+                }
             }
         }
-        return kept + collapsed.values.sorted { $0.orgId < $1.orgId }
+        return kept + standIns.values.sorted { $0.orgId < $1.orgId }
     }
 
     private static func lastTouched(_ account: AccountRef) -> Date {

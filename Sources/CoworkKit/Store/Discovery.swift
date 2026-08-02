@@ -144,7 +144,33 @@ public enum Discovery {
                     isSignedIn: signedIn == accountId))
             }
         }
-        return result
+        return propagatingIdentityAcrossOrgs(result)
+    }
+
+    /// Give an account's empty orgs the identity read from its populated ones.
+    ///
+    /// `emailAddress` comes out of session metadata, so an org with no sessions has none —
+    /// even when a sibling org of the *same account* names the person plainly. Left alone,
+    /// one account renders under two different names: "iris@…" for the org that has
+    /// conversations and the bare install name for the org that does not, which reads as two
+    /// unrelated accounts rather than one.
+    static func propagatingIdentityAcrossOrgs(_ accounts: [AccountRef]) -> [AccountRef] {
+        var identity: [String: (email: String?, name: String?)] = [:]
+        for account in accounts where account.emailAddress != nil {
+            if identity[account.accountId] == nil {
+                identity[account.accountId] = (account.emailAddress, account.accountName)
+            }
+        }
+        guard !identity.isEmpty else { return accounts }
+        return accounts.map { account in
+            guard account.emailAddress == nil,
+                  let known = identity[account.accountId] else { return account }
+            return AccountRef(store: account.store, accountId: account.accountId,
+                              orgId: account.orgId, dirScheme: account.dirScheme,
+                              root: account.root, sessionCount: account.sessionCount,
+                              emailAddress: known.email, accountName: known.name,
+                              isSignedIn: account.isSignedIn)
+        }
     }
 
     // MARK: - Sessions

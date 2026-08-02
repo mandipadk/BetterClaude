@@ -41,6 +41,39 @@ struct DestinationEligibilityTests {
         #expect(account(sessions: 9, signedIn: false).canReceiveTransfer)
     }
 
+    /// One account rendering under two names is what this prevents.
+    ///
+    /// `emailAddress` is read out of session metadata, so an org with no sessions has none —
+    /// even when a sibling org of the same account names the person. Before this, Claude-Work
+    /// showed "iris" for the org holding conversations and "Claude-Work" for the org holding
+    /// none, side by side in the sidebar, reading as two unrelated accounts.
+    @Test("An account's empty orgs inherit the identity of its populated ones")
+    func identityPropagatesAcrossOrgs() {
+        func org(_ id: String, sessions: Int, email: String?, account: String) -> AccountRef {
+            AccountRef(store: StoreRef(variantDirName: "Claude-Work",
+                                       userDataDir: URL(fileURLWithPath: "/tmp/w"),
+                                       sessionsRoot: URL(fileURLWithPath: "/tmp/w/s"),
+                                       launcher: nil),
+                       accountId: account, orgId: id, dirScheme: .fullUUID,
+                       root: URL(fileURLWithPath: "/tmp/w/s/\(account)/\(id)"),
+                       sessionCount: sessions, emailAddress: email, accountName: nil,
+                       isSignedIn: true)
+        }
+        let resolved = Discovery.propagatingIdentityAcrossOrgs([
+            org("empty-a", sessions: 0, email: nil, account: "5f327c44"),
+            org("populated", sessions: 3, email: "iris@example.com", account: "5f327c44"),
+            org("empty-b", sessions: 0, email: nil, account: "5f327c44"),
+            // A different account must not borrow it.
+            org("other", sessions: 0, email: nil, account: "c29bdd82"),
+        ])
+        #expect(resolved.filter { $0.accountId == "5f327c44" }
+            .allSatisfy { $0.emailAddress == "iris@example.com" })
+        #expect(resolved.first { $0.accountId == "c29bdd82" }?.emailAddress == nil)
+        // Session counts are untouched — only the identity is shared.
+        #expect(resolved.first { $0.orgId == "empty-a" }?.sessionCount == 0)
+        #expect(resolved.first { $0.orgId == "populated" }?.sessionCount == 3)
+    }
+
     @Test("The signed-in account is read from config.json, not inferred from session count")
     func readsSignedInAccountFromConfig() throws {
         let dir = FileManager.default.temporaryDirectory
