@@ -129,11 +129,22 @@ public enum Importer {
             detail: donor == nil && anyFromClaudeCode
                 ? "sign in and open one session in \(account.store.variantDirName) first" : nil))
 
+        // This check always meant "will Claude Desktop actually read what we write here", and
+        // used an empty session list as a proxy for "never signed in". That proxy is wrong in
+        // the one case that matters most: an install you just signed into has no sessions and
+        // is exactly where you would want to send a conversation. `isSignedIn` reads the
+        // install's own record instead of guessing from emptiness.
+        //
+        // Still a union rather than `isSignedIn` alone: a store records one signed-in account,
+        // so a second account that already holds conversations would otherwise start failing a
+        // check it has always passed.
         checks.append(PreconditionResult(
-            id: "PC9b", title: "Account is the one Claude is signed into",
-            passed: account.sessionCount > 0 || options.allowEmptyAccount,
-            detail: account.sessionCount == 0
-                ? "this account has no sessions; if it is not the signed-in account the import will be invisible" : nil))
+            id: "PC9b", title: "Account is one Claude Desktop will read",
+            passed: account.canReceiveTransfer || options.allowEmptyAccount,
+            detail: account.canReceiveTransfer
+                ? nil
+                : "\(account.store.variantDirName) is not signed into this account and it holds "
+                  + "no conversations, so an import here would be invisible rather than broken"))
 
         var takenNames = ProcessName.namesInUse(at: account.root)
         var computed: [SlotComputation] = []

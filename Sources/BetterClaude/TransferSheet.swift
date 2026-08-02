@@ -452,26 +452,48 @@ struct TransferSheet: View {
         }
     }
 
-    /// Only accounts that already hold conversations are offered.
+    /// Accounts Claude Desktop will actually read from: signed-in, or already holding
+    /// conversations.
     ///
-    /// An account with none has never been signed into on this machine, and Claude Desktop
-    /// only ever reads the account it is signed into — so a conversation imported there
-    /// would sit on disk permanently invisible, with nothing to explain why. The command
-    /// line keeps an escape hatch for the rare case where it is wanted.
+    /// This used to require `sessionCount > 0`, on the reasoning that an account with none
+    /// had never been signed into, so an import would sit there permanently invisible. The
+    /// premise was wrong. An empty account disqualifies itself as a *source*; it says nothing
+    /// about it as a *destination*, and a freshly signed-in install — the one you are most
+    /// likely to be transferring *to* — has no sessions by definition. `isSignedIn` reads the
+    /// install's own record of which account it is signed into, which is the thing the old
+    /// check was trying to infer.
     private var installs: [DestinationOption] {
         let sourceIDs = Set(model.sessions.compactMap { $0.cowork?.account.id })
         return app.stores.flatMap { store in
             (app.accounts[store] ?? [])
-                .filter { !sourceIDs.contains($0.id) && $0.sessionCount > 0 }
+                .filter { !sourceIDs.contains($0.id) && $0.canReceiveTransfer }
                 .map { account in
                     DestinationOption(
                         destination: .coworkAccount(account),
-                        title: account.emailAddress ?? account.displayIdentity,
-                        detail: "\(store.variantDirName) · \(account.sessionCount) conversation\(account.sessionCount == 1 ? "" : "s")",
+                        // No email exists until a conversation does — it is only ever read out
+                        // of session metadata — so a signed-in empty account is named by its
+                        // install instead of by a pair of raw UUIDs.
+                        title: account.emailAddress ?? store.variantDirName,
+                        // The install name is only repeated in the detail when the title is an
+                        // email; when the title *is* the install name, the org distinguishes
+                        // the row instead.
+                        detail: account.emailAddress == nil
+                            ? "\(Self.conversationCount(account)) · org \(account.orgId.prefix(8))…"
+                            : "\(store.variantDirName) · \(Self.conversationCount(account))",
                         warning: app.isRunning(store)
                             ? "\(store.variantDirName) is running — it must be quit first"
                             : nil)
                 }
+        }
+    }
+
+    /// "no conversations yet" rather than "0 conversations": an empty destination is a normal
+    /// state here, not a shortfall.
+    private static func conversationCount(_ account: AccountRef) -> String {
+        switch account.sessionCount {
+        case 0: return "signed in, no conversations yet"
+        case 1: return "1 conversation"
+        default: return "\(account.sessionCount) conversations"
         }
     }
 

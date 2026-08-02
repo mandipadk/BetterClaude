@@ -77,11 +77,20 @@ public struct AccountRef: Hashable, Sendable, Identifiable {
     /// Read from any session in this account; `nil` when the account has no sessions yet.
     public let emailAddress: String?
     public let accountName: String?
+    /// Whether this is the account its install is currently signed into.
+    ///
+    /// Kept separate from `sessionCount` because the two answer different questions, and
+    /// conflating them was a real bug: an account with no sessions cannot be a *source*, but
+    /// it is a perfectly good *destination*, and the app hid it from both. "Has never been
+    /// signed into" was inferred from an empty session list, which is simply not what an
+    /// empty session list means — a freshly signed-in install has none.
+    public let isSignedIn: Bool
 
     public var id: String { root.path }
 
     public init(store: StoreRef, accountId: String, orgId: String, dirScheme: DirScheme,
-                root: URL, sessionCount: Int, emailAddress: String?, accountName: String?) {
+                root: URL, sessionCount: Int, emailAddress: String?, accountName: String?,
+                isSignedIn: Bool = false) {
         self.store = store
         self.accountId = accountId
         self.orgId = orgId
@@ -90,7 +99,14 @@ public struct AccountRef: Hashable, Sendable, Identifiable {
         self.sessionCount = sessionCount
         self.emailAddress = emailAddress
         self.accountName = accountName
+        self.isSignedIn = isSignedIn
     }
+
+    /// Can this account receive a transfer?
+    ///
+    /// Either it already holds conversations, or the install is signed into it right now.
+    /// Both mean Claude Desktop will actually read what gets written there.
+    public var canReceiveTransfer: Bool { sessionCount > 0 || isSignedIn }
 
     public var displayIdentity: String {
         if let emailAddress { return emailAddress }

@@ -88,12 +88,32 @@ public enum Discovery {
 
     // MARK: - Accounts
 
+    /// The account id an install is currently signed into, or `nil`.
+    ///
+    /// `config.json` records this as `lastKnownAccountUuid`, independently of whether any
+    /// conversation has been started. That is the honest signal for "Claude Desktop will read
+    /// what I write here"; session count is not, because a freshly signed-in install has no
+    /// sessions and is still a valid destination.
+    ///
+    /// Exactly one key is read. The same file holds `oauth:tokenCache`, which is a credential
+    /// and is never read, logged, or carried into a bundle.
+    public static func signedInAccountId(in store: StoreRef) -> String? {
+        let configURL = store.userDataDir.appendingPathComponent("config.json")
+        guard let data = try? Data(contentsOf: configURL),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let uuid = object["lastKnownAccountUuid"] as? String,
+              !uuid.isEmpty
+        else { return nil }
+        return uuid
+    }
+
     /// The `<accountId>/<orgId>` pairs inside a store, including pairs with no sessions yet.
     public static func accounts(in store: StoreRef) throws -> [AccountRef] {
         let level1 = (try? FileManager.default.contentsOfDirectory(
             at: store.sessionsRoot, includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles])) ?? []
 
+        let signedIn = signedInAccountId(in: store)
         var result: [AccountRef] = []
         for accountDir in level1.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             let accountId = accountDir.lastPathComponent
@@ -120,7 +140,8 @@ public enum Discovery {
                     root: orgDir,
                     sessionCount: metadataFiles.count,
                     emailAddress: identity.emailAddress,
-                    accountName: identity.accountName))
+                    accountName: identity.accountName,
+                    isSignedIn: signedIn == accountId))
             }
         }
         return result

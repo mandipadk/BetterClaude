@@ -522,7 +522,15 @@ final class AppModel {
 
     var desktopSources: [SidebarItem] {
         stores.flatMap { store -> [SidebarItem] in
-            (accounts[store] ?? []).filter { $0.sessionCount > 0 }.map { account in
+            // Signed-in accounts appear even with nothing in them. An empty account cannot be
+            // a source, but it is a valid destination, and hiding it made the install you are
+            // signed into look undiscovered — indistinguishable from the app being broken.
+            //
+            // One row per org while an account has conversations, because each org is a
+            // distinct place to browse. Once it has none, every org would render the same
+            // fallback label — the install's name — so they collapse to a single row. The
+            // transfer picker still lists each org separately, where the choice matters.
+            sidebarAccounts(in: store).map { account in
                 SidebarItem(
                     source: .coworkAccount(account),
                     title: Self.shortIdentity(account),
@@ -539,6 +547,31 @@ final class AppModel {
     /// The local part of the address. Middle-truncating a full address destroys exactly the
     /// characters that distinguish one account from another, and the domain is almost always
     /// shared between them anyway.
+    /// Accounts worth showing in the sidebar for one store.
+    ///
+    /// Everything that can receive a transfer, except that an account with no conversations
+    /// contributes a single row rather than one per org: with no email to distinguish them
+    /// every org falls back to the same label, and three identical rows is worse than one.
+    /// The most recently touched org represents it, being the likeliest one in use.
+    func sidebarAccounts(in store: StoreRef) -> [AccountRef] {
+        let eligible = (accounts[store] ?? []).filter { $0.canReceiveTransfer }
+        var kept: [AccountRef] = []
+        var collapsed: [String: AccountRef] = [:]
+        for account in eligible {
+            guard account.sessionCount == 0 else { kept.append(account); continue }
+            let existing = collapsed[account.accountId]
+            if existing == nil || Self.lastTouched(account) > Self.lastTouched(existing!) {
+                collapsed[account.accountId] = account
+            }
+        }
+        return kept + collapsed.values.sorted { $0.orgId < $1.orgId }
+    }
+
+    private static func lastTouched(_ account: AccountRef) -> Date {
+        (try? account.root.resourceValues(forKeys: [.contentModificationDateKey])
+            .contentModificationDate) ?? .distantPast
+    }
+
     static func shortIdentity(_ account: AccountRef) -> String {
         guard let email = account.emailAddress else { return account.store.variantDirName }
         return String(email.split(separator: "@").first ?? Substring(email))
