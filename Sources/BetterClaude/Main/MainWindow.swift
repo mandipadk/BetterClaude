@@ -92,6 +92,8 @@ struct MainWindow: View {
             LibraryPage()
         case .history:
             HistoryPage()
+        case .kept:
+            KeptPage()
         case .install(let id):
             if let install = services.install(id) {
                 InstallPage(install: install)
@@ -130,6 +132,9 @@ struct Sidebar: View {
             }
 
             Section("Upkeep") {
+                Label("Kept", systemImage: "archivebox")
+                    .badge(services.kept.onlyHere.count)
+                    .tag(SidebarDestination.kept)
                 Label("History", systemImage: "clock.arrow.circlepath")
                     .tag(SidebarDestination.history)
             }

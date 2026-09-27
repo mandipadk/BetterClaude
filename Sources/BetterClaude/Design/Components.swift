@@ -106,13 +106,38 @@ struct ExplainedToggle: View {
             Spacer(minLength: Theme.Space.l)
             Toggle(title, isOn: $isOn)
                 .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .tint(Theme.accent)
+                .toggleStyle(AccentSwitchStyle())
         }
         .contentShape(.rect)
         .onTapGesture { isOn.toggle() }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// A switch in the accent. The system switch ignores the app's tint with the classic
+/// window chrome and draws its "on" state grey, which reads as off.
+struct AccentSwitchStyle: ToggleStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            Capsule()
+                .fill(configuration.isOn ? Theme.accentFill : Color(nsColor: .quaternaryLabelColor))
+                .frame(width: 32, height: 18)
+                .overlay(alignment: configuration.isOn ? .trailing : .leading) {
+                    Circle()
+                        .fill(.white)
+                        .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
+                        .padding(2)
+                }
+                .opacity(isEnabled ? 1 : 0.5)
+                .animation(reduceMotion ? nil : Theme.Motion.snappy, value: configuration.isOn)
+        }
+        .buttonStyle(.plain)
+        .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label } }
     }
 }
 

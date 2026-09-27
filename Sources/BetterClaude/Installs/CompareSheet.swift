@@ -26,10 +26,12 @@ struct CompareSheet: View {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             HStack {
-                Toggle("Only differences", isOn: $onlyDifferences)
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .tint(Theme.accent)
+                HStack(spacing: 8) {
+                    Toggle("Only differences", isOn: $onlyDifferences)
+                        .labelsHidden()
+                        .toggleStyle(AccentSwitchStyle())
+                    Text("Only differences").font(Theme.Font.body)
+                }
                 Spacer()
                 Button("Done") { services.comparing = nil }
                     .prominentAction()

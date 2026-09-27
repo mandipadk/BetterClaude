@@ -9,6 +9,7 @@ enum SidebarDestination: Hashable {
     case library
     case install(String)
     case history
+    case kept
 }
 
 /// Narrows the conversation timeline to one install or one project folder.
@@ -42,6 +43,7 @@ final class AppServices {
     let reader = ReaderModel()
     let search = SearchModel()
     let library = LibraryModel()
+    let kept = KeptModel()
     /// Bumped each time a fresh snapshot lands, so pages that derive from it know to redo
     /// their work.
     private(set) var generation = 0
@@ -83,6 +85,9 @@ final class AppServices {
             self.search.invalidate()
             self.watch(fresh)
             self.reopenIfChanged(fresh)
+            if UserDefaults.standard.object(forKey: "keepAutomatically") as? Bool ?? true {
+                self.kept.keep(fresh.conversations)
+            }
             if let id = self.selectedConversationID, fresh.conversations.contains(where: { $0.id == id }) {
                 // Still there; keep reading it.
             } else if self.selectedConversationID != nil {

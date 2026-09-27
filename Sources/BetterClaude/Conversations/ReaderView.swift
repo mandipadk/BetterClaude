@@ -101,7 +101,8 @@ struct ReaderHeader: View {
                 .disabled(conversation.isTranscriptMissing)
                 .help("Carry this conversation to another Claude or to Claude Code")
                 MoreMenu {
-                    if let session = conversation.claudeCodeSession, !session.resolvedCwd.isEmpty {
+                    if let session = conversation.claudeCodeSession, !session.resolvedCwd.isEmpty,
+                       !session.transcriptURL.path.hasPrefix(Vault.root.path) {
                         Button("Resume in Terminal") {
                             services.resumeInTerminal(cwd: session.resolvedCwd, sessionId: session.sessionId)
                         }
@@ -135,12 +136,28 @@ struct ReaderHeader: View {
                 if let readable {
                     Fact(label: "Messages") { Text("\(readable.messageCount)") }
                 }
+                if let deletion = deletionText {
+                    Fact(label: "Claude Code deletes it") { Text(deletion) }
+                        .help("Claude Code removes conversations \(Int(services.kept.period / 86_400)) days after they were last used. Better Claude keeps a copy.")
+                }
                 Spacer(minLength: 0)
             }
 
             FindField(text: $reader.findQuery)
                 .frame(maxWidth: 260)
         }
+    }
+}
+
+extension ReaderHeader {
+    /// "in 3 days" when Claude Code's cleanup is near, for a conversation Claude Code owns.
+    var deletionText: String? {
+        guard let url = conversation.claudeCodeSession?.transcriptURL,
+              !url.path.hasPrefix(Vault.root.path),
+              let expiry = Vault.expiry(of: url, period: services.kept.period) else { return nil }
+        let days = Calendar.current.dateComponents([.day], from: .now, to: expiry).day ?? 0
+        guard days < 10 else { return nil }
+        return days <= 0 ? "Today" : days == 1 ? "Tomorrow" : "In \(days) days"
     }
 }
 

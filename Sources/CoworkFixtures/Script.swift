@@ -231,6 +231,15 @@ enum Script {
                          assistant: "Merged 14 duplicates and protected proper nouns in titles with braces. Two entries were missing a year; I flagged them with a comment instead of guessing.")]),
     ]
 
+    /// Deleted by Claude Code's cleanup; only Better Claude's copy remains.
+    static let alreadyDeleted = Conversation(
+        title: "Draft the conference talk abstract", model: "claude-opus-5-5", age: 44 * day,
+        project: "Documents/thesis",
+        turns: [
+            Turn(user: "Turn my thesis summary into a 200-word abstract for the systems conference.",
+                 assistant: "Here's a draft that leads with the result:\n\n> We show that a scheduler aware of cache topology cuts tail latency by 38% on commodity hardware, without changing application code…"),
+        ])
+
     // MARK: Memory and skills
 
     static let memory: [(String, [(String, String)])] = [

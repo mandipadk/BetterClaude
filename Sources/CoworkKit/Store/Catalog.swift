@@ -21,6 +21,19 @@ public struct ConversationRef: Sendable, Hashable, Identifiable {
     public let isStarred: Bool
     public let isArchived: Bool
 
+    public init(origin: Origin, installID: String, title: String, lastActivity: Date,
+                projectPath: String?, model: String?, bytes: Int64, isStarred: Bool, isArchived: Bool) {
+        self.origin = origin
+        self.installID = installID
+        self.title = title
+        self.lastActivity = lastActivity
+        self.projectPath = projectPath
+        self.model = model
+        self.bytes = bytes
+        self.isStarred = isStarred
+        self.isArchived = isArchived
+    }
+
     public var id: String {
         switch origin {
         case .cowork(let session): return "cowork:" + session.metadataURL.path

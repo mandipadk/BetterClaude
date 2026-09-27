@@ -46,7 +46,9 @@ final class ReaderModel {
         }
         if !force || readable == nil { state = .loading }
         loadTask = Task {
-            let forkable = conversation.claudeCodeSession != nil
+            // A kept copy lives in Better Claude's own folder; a fork beside it would land
+            // somewhere Claude Code never looks.
+            let forkable = conversation.claudeCodeSession != nil && !url.path.hasPrefix(Vault.root.path)
             let result = await Task.detached(priority: .userInitiated) { () -> Result<(Transcript, ReadableConversation, [BranchPoint]), Error> in
                 do {
                     let transcript = try Transcript(contentsOf: url)

@@ -53,6 +53,24 @@ public struct FixtureHome {
         try makeParallexWork()
         try makeScience()
         try makeClaudeCode()
+        try makeKept()
+    }
+
+    /// One conversation Claude Code has already deleted, still held by Better Claude.
+    func makeKept() throws {
+        let conversation = Script.alreadyDeleted
+        let cwd = paths.home.appendingPathComponent(conversation.project ?? "Code").path
+        let transcript = Transcriber(conversation: conversation, cwd: cwd,
+                                     start: now.addingTimeInterval(-conversation.age))
+        try writeClaudeCodeTranscript(transcript, cwd: cwd, id: conversation.cliId)
+        let url = paths.claudeCodeConfigDir.appendingPathComponent("projects", isDirectory: true)
+            .appendingPathComponent(PathEncoder.encode(cwd), isDirectory: true)
+            .appendingPathComponent("\(conversation.cliId).jsonl")
+        try HostPaths.$current.withValue(paths) {
+            try Vault.keep(transcriptAt: url, title: conversation.title, sessionId: conversation.cliId,
+                           projectPath: cwd, installID: "claude-code:\(paths.claudeCodeConfigDir.path)")
+        }
+        try FileManager.default.removeItem(at: url)
     }
 
     // MARK: - Apps

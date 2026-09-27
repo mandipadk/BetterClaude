@@ -12,7 +12,7 @@ import Foundation
 /// Routes: `conversations`, `reader:<title words>`, `install:<name>`, `library[:everything|files|images|code|uploads]`,
 /// `filter:<install name>`, `search:<query>`, `messages:<query>`, `history`,
 /// `continue:<title words>`, `continue-review:<title words>`, `fork:<title words>`,
-/// `compare:<install>|<install>`, `panel`.
+/// `compare:<install>|<install>`, `panel`, `kept`.
 enum DebugRoute {
     @MainActor
     static func apply(to services: AppServices) {
@@ -63,6 +63,8 @@ enum DebugRoute {
                 services.previewsMenuBarPanel = true
             case "history":
                 services.destination = .history
+            case "kept":
+                services.destination = .kept
             case "continue", "continue-review":
                 if let match = services.snapshot.conversations.first(where: {
                     $0.title.localizedCaseInsensitiveContains(argument)

@@ -9,6 +9,8 @@ public enum TransferDirection: String, Codable, Sendable {
     case codeToCowork
     /// A conversation forked beside the original.
     case branch
+    /// A kept conversation put back where Claude Code reads it.
+    case restore
 }
 
 /// SHA-256 helpers.
