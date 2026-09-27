@@ -40,9 +40,12 @@ struct BetterClaudeApp: App {
             MenuBarPanel()
                 .environment(services)
         } label: {
-            Image(systemName: "bubble.left.and.text.bubble.right")
-                .accessibilityLabel("Better Claude")
+            Image(nsImage: MenuBarIcon.image)
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            SettingsView()
+        }
     }
 }

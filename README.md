@@ -1,8 +1,9 @@
 # Better Claude
 
-Your Claude conversations are already on your disk. Better Claude is a macOS app that lets
-you **move them between installs, fork them, audit what every install is configured with,
-and find everything Claude ever made for you.**
+Your Claude conversations are already on your disk. Better Claude is a macOS app that puts
+**every Claude on your Mac in one place** — Claude, its copies, Claude Science and Claude
+Code — so you can read any conversation, continue it somewhere else, keep it before Claude
+Code deletes it, and see what each install is set up with and how much space it takes.
 
 A macOS app plus a command line tool sharing one engine. Nothing leaves the machine.
 
@@ -15,13 +16,31 @@ account — a conversation started in one is stranded there. There is no export,
 no way to pick up a thread in Claude Code where you left it in Cowork. Meanwhile the
 skills, MCP servers and hooks each install is running are invisible to each other, and the
 files Claude wrote for you three weeks ago are somewhere in a session directory you will
-never find again.
+never find again — if Claude Code hasn't already deleted the conversation, which it does 30
+days after you last used it.
 
 All of it is on your disk in a readable format. This tool operates on it.
 
-## The four things it does
+## What it does
 
-### 1. Transfer a conversation, with the chat intact
+### Every conversation, in one timeline
+
+Conversations from every install appear together, newest first: Cowork sessions from
+Claude and any copy of it (including copies made by [Parallex](https://github.com/mandipadk/parallex)),
+Claude Code sessions, and the Desktop app's Code tab. Filter by install or project, search
+titles instantly, or search inside every message. Read any conversation without opening
+Claude — Markdown, code, tables and tool use included — and it updates live while Claude
+writes to it. A menu bar panel finds any conversation from anywhere.
+
+### Continue anywhere, and undo it
+
+**Continue in…** carries a conversation to another install or into a Claude Code project,
+with the chat intact: user turns, assistant turns, tool calls, and inline images and
+documents byte for byte. You see where it's going and what will happen before anything is
+written, and afterwards you can open it there directly — or resume it in Terminal.
+
+**Fork from here** starts a new Claude Code conversation from any message; the original is
+not changed. Every copy and fork is listed in **History** with **Undo**.
 
 | From | To | Status |
 |---|---|---|
@@ -29,48 +48,30 @@ All of it is on your disk in a readable format. This tool operates on it.
 | Cowork session | a Claude Code project | works |
 | Claude Code session | a Cowork install | works |
 
-Every transfer carries the full conversation: user turns, assistant turns, tool calls, and
-inline images and documents byte-for-byte. Attachments and generated files are opt-in.
+### Kept: conversations Claude Code would delete
 
-Verified by comparing per-message SHA-256 fingerprints: every message and every inline
-image or document is byte-identical in all three directions.
+Claude Code deletes a conversation 30 days after it was last used. Better Claude keeps a
+copy as each one changes — as APFS clones that take no space until the original is gone —
+so you can still read it, continue it, or put it back where `claude --resume` finds it.
 
-### 2. Control what every install is running
+### What each install is set up with
 
-Inventories every skill, MCP server, subagent, slash command, hook and memory file across
-every install on the machine, then diffs two of them so you can see what one has that the
-other does not. It is read-only — it reports, it changes nothing.
+Each install has its own page: who it's signed into, its conversations, and everything it's
+set up with — skills, MCP servers, plugins (including Cowork plugins kept per organisation),
+hooks, memory and settings. **Compare** puts two installs side by side. A notice points out
+API keys saved in plain text in settings, by name only.
 
-On the development machine: 215 configuration items across 16 scopes — one global Claude
-Code config, ten projects, and five Desktop installs.
+### Library, Storage and Memory
 
-### 3. Keep a library of everything Claude produced
+- **Library** gathers what Claude made in every conversation — files, images, code, and what
+  you gave it — each linked back to the conversation it came from.
+- **Storage** shows where Claude's disk space goes and moves only what is safe to the Trash:
+  caches, stuck uploads, older bundled Claude Code versions, and Cowork's virtual machine in
+  an install that has no Cowork conversations. Conversations and credentials are never
+  offered, and everything can be put back.
+- **Memory** shows what Claude is told to remember — global and project `CLAUDE.md` files,
+  Claude Code project memory, Cowork project memory — and flags memory whose folder is gone.
 
-Every code block, generated file and upload, deduplicated by content hash, each carrying
-provenance back to the conversation it came from. The script you half-remember from three
-weeks ago becomes findable.
-
-On the development machine: 699 artifacts, 178.9 MB, across 102 conversations, with 90
-duplicates collapsed — in about a second.
-
-### 4. Branch a conversation at any message
-
-Choose a message and fork the conversation there into a new one. The original is left as it
-was. Neither Claude app can do this. The fork follows the `parentUuid` chain rather than
-line order, so its ancestry is intact rather than merely plausible.
-
-## And the smaller things
-
-**Find a conversation.** Filtering the selected account is instant. "Search every
-conversation" reads every transcript on the machine once — across every install and every
-Claude Code project — and ranks whole conversations, with the matching passages underneath
-as evidence. ⌘F focuses the field.
-
-**Read a conversation.** Open any conversation in the app without launching Claude, with
-inline Markdown, code blocks, and its own search. ⌘O.
-
-**Take a conversation with you.** Export to Markdown — speakers, timestamps, and prose,
-with the tool plumbing left behind.
 
 ## Works best with Parallex
 
@@ -191,14 +192,15 @@ hiding it behind a progress bar.
 
 ## Using it
 
-Pick a source on the left, select conversations, press **Transfer…**. You get a plan
-first — every check, every path that will be created — and nothing is written until you
-confirm.
+Pick a conversation in the timeline, read it, and press **Continue in…**. You see where it
+is going and what will happen first; nothing is written until you confirm.
 
 From the command line:
 
 ```bash
-cowork stores                                   # what is installed, and which accounts
+cowork installs                                 # every Claude on this Mac
+cowork storage                                  # where Claude's disk space goes
+cowork stores                                   # Desktop installs and their accounts
 cowork list --store Claude                      # conversations in an install
 cowork list --code                              # conversations in Claude Code
 
@@ -220,9 +222,9 @@ first run there shows a one-time trust prompt.
 
 ## Safety model
 
-**Imports create; they never overwrite.** Every import writes a receipt listing exactly
-what it created, and `cowork undo` removes precisely that — refusing to delete anything
-you have edited since.
+**Imports create; they never overwrite.** Every import, fork and restore writes a receipt
+listing exactly what it created, and Undo — in History, or `cowork undo` — removes precisely
+that, refusing to delete anything you have edited since.
 
 **It will not write to a running Claude.** A running install holds sessions in memory and
 can overwrite an imported one from its own stale copy. Quitting the destination app first
@@ -259,10 +261,12 @@ can lose data.
 Sources/CoworkKit/     the engine — discovery, transcripts, path encoding, bundles,
                        transfer, branching, config inventory, artifact harvest,
                        search index, Markdown export, updates
+Sources/CoworkFixtures/  a sample Mac with invented conversations, for tests and screenshots
 Sources/cowork/        command line front end
 Sources/BetterClaude/  SwiftUI app
 Scripts/make-app.sh    assembles and ad-hoc signs the .app, generating the icon
 Scripts/make-icon.swift  draws the app icon at every size from one geometry
+Scripts/capture.sh     photographs every screen from the sample Mac, in light and dark
 site/                  the public website (static, no scripts, no third-party assets)
 ```
 

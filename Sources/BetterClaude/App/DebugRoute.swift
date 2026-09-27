@@ -9,7 +9,7 @@ import Foundation
 ///
 /// `BC_APPEARANCE=light|dark` pins the appearance for the capture.
 ///
-/// Routes: `conversations`, `reader:<title words>`, `install:<name>`, `library[:everything|files|images|code|uploads]`,
+/// Routes: `onboarding:<page>`, `conversations`, `reader:<title words>`, `install:<name>`, `library[:everything|files|images|code|uploads]`,
 /// `filter:<install name>`, `search:<query>`, `messages:<query>`, `history`,
 /// `continue:<title words>`, `continue-review:<title words>`, `fork:<title words>`,
 /// `compare:<install>|<install>`, `panel`, `kept`, `storage`, `memory`.

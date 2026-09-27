@@ -18,7 +18,7 @@ let plateInset = 100.0
 let plateSize = canvas - plateInset * 2
 let plateRadius = 185.0
 
-let plateColour = NSColor(srgbRed: 0.129, green: 0.125, blue: 0.122, alpha: 1)   // a hair off #1E1E1E
+let plateColour = NSColor(srgbRed: 0.118, green: 0.122, blue: 0.133, alpha: 1)   // #1E1F22, Parallex's graphite
 let markColour  = NSColor(srgbRed: 0.180, green: 0.698, blue: 0.494, alpha: 1)   // dark-mode jade, #2EB27E
 
 func drawIcon(size: Double) -> NSBitmapImageRep {
@@ -40,6 +40,14 @@ func drawIcon(size: Double) -> NSBitmapImageRep {
                              xRadius: plateRadius, yRadius: plateRadius)
     plateColour.setFill()
     plate.fill()
+    // The same faint inner edge as Parallex's icon, so the plate reads as an object on a
+    // dark Dock rather than a hole in it.
+    let edge = NSBezierPath(roundedRect: NSRect(x: plateInset + 7, y: plateInset + 7,
+                                                width: plateSize - 14, height: plateSize - 14),
+                            xRadius: plateRadius - 7, yRadius: plateRadius - 7)
+    edge.lineWidth = 14
+    NSColor(white: 1, alpha: 0.07).setStroke()
+    edge.stroke()
 
     // Fork. Straight arms with a round join rather than curves: two curves meeting at the
     // split overlapped their own end caps and read as a lump at small sizes, where this

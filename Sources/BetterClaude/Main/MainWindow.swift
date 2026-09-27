@@ -4,6 +4,18 @@ import SwiftUI
 /// The main window: a full-height sidebar and one frosted surface, like Parallex.
 struct MainWindow: View {
     @Environment(AppServices.self) private var services
+    @State private var showsOnboarding = false
+    @FocusState private var searchFocused: Bool
+
+    static var firstRun: Bool {
+        #if DEBUG
+        // A capture asks for the screen it wants; onboarding only when that's the one.
+        if let route = ProcessInfo.processInfo.environment["BC_UI_ROUTE"] {
+            return route.hasPrefix("onboarding")
+        }
+        #endif
+        return !UserDefaults.standard.bool(forKey: "onboardingCompleted")
+    }
 
     var body: some View {
         @Bindable var services = services
@@ -42,6 +54,17 @@ struct MainWindow: View {
             }
         }
         .searchable(text: $services.query, placement: .toolbar, prompt: "Search conversations")
+        .modifier(SearchFocus(focused: $searchFocused))
+        .background {
+            // ⌘F finds conversations from anywhere in the window.
+            Button("") {
+                services.destination = .conversations
+                searchFocused = true
+            }
+            .keyboardShortcut("f", modifiers: .command)
+            .opacity(0)
+            .accessibilityHidden(true)
+        }
         .onChange(of: services.query) { _, query in
             if !query.isEmpty, services.destination != .conversations {
                 services.destination = .conversations
@@ -50,6 +73,17 @@ struct MainWindow: View {
         .tint(Theme.accent)
         .task {
             if !services.hasLoaded { services.refresh() }
+            // After the window has its toolbar: a sheet raised during the very first layout
+            // leaves the columns laid out as if there were none, scrolled up under the title.
+            if MainWindow.firstRun {
+                try? await Task.sleep(for: .milliseconds(350))
+                showsOnboarding = true
+            }
+        }
+        .sheet(isPresented: $showsOnboarding) {
+            OnboardingView { showsOnboarding = false }
+                .environment(services)
+                .interactiveDismissDisabled()
         }
         .sheet(item: $services.comparing) { pair in
             CompareSheet(pair: pair).environment(services)
@@ -194,6 +228,19 @@ struct InstallRow: View {
         case 0: return install.kind == .science ? "Projects and files" : "No conversations"
         case 1: return "1 conversation"
         default: return "\(count) conversations"
+        }
+    }
+}
+
+/// Focus for the toolbar search field, where the system offers it (macOS 15 and later).
+private struct SearchFocus: ViewModifier {
+    var focused: FocusState<Bool>.Binding
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content.searchFocused(focused)
+        } else {
+            content
         }
     }
 }

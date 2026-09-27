@@ -185,7 +185,10 @@ struct EmptyState<Actions: View>: View {
                 .font(Theme.Font.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 340)
+                // A floor as well as a ceiling. Asked for its minimum at zero width, text that
+                // is fixed-size vertically wraps a character per line and reports a height of
+                // thousands of points, and the whole window shifts up to make room for it.
+                .frame(minWidth: 220, maxWidth: 340)
                 .fixedSize(horizontal: false, vertical: true)
             actions.padding(.top, Theme.Space.xs)
         }
