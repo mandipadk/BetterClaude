@@ -94,6 +94,10 @@ struct MainWindow: View {
             HistoryPage()
         case .kept:
             KeptPage()
+        case .storage:
+            StoragePage()
+        case .memory:
+            MemoryPage()
         case .install(let id):
             if let install = services.install(id) {
                 InstallPage(install: install)
@@ -135,6 +139,10 @@ struct Sidebar: View {
                 Label("Kept", systemImage: "archivebox")
                     .badge(services.kept.onlyHere.count)
                     .tag(SidebarDestination.kept)
+                Label("Storage", systemImage: "internaldrive")
+                    .tag(SidebarDestination.storage)
+                Label("Memory", systemImage: "brain")
+                    .tag(SidebarDestination.memory)
                 Label("History", systemImage: "clock.arrow.circlepath")
                     .tag(SidebarDestination.history)
             }

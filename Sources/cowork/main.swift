@@ -12,6 +12,9 @@ USAGE
       List every Claude on this Mac, including Parallex copies, Claude Science and
       Claude Code, with how many conversations each holds.
 
+  cowork storage
+      Show where Claude's disk space goes on this Mac, and what can safely be freed.
+
   cowork stores
       List Claude Desktop installs, their accounts, and session counts.
 
@@ -80,6 +83,28 @@ func cmdInstalls() {
         print("  \(HostPaths.current.abbreviating(install.dataRoot.path))")
         if let app = install.appURL { print("  \(app.path)") }
     }
+}
+
+func cmdStorage() {
+    let snapshot = runBlocking { await Catalog().snapshot() }
+    var total: Int64 = 0
+    var freeable: Int64 = 0
+    for install in snapshot.installs {
+        let cowork = snapshot.conversations.filter { $0.installID == install.id && $0.coworkSession != nil }.count
+        let categories = Storage.categories(for: install, coworkConversations: cowork).map { Storage.measure($0) }
+        guard !categories.isEmpty else { continue }
+        print(install.name)
+        for category in categories where category.bytes > 0 {
+            let size = ByteCountFormatter.string(fromByteCount: category.bytes, countStyle: .file)
+            let tag = category.safety == .yours ? "" : "  (can be freed)"
+            print("  \(category.title.padding(toLength: 30, withPad: " ", startingAt: 0))"
+                  + "\(size.leftPadded(to: 10))\(category.isApproximate ? "+" : "")\(tag)")
+            total += category.bytes
+            if category.safety != .yours { freeable += category.bytes }
+        }
+    }
+    print("\nIn total \(ByteCountFormatter.string(fromByteCount: total, countStyle: .file)); "
+          + "\(ByteCountFormatter.string(fromByteCount: freeable, countStyle: .file)) can be freed.")
 }
 
 extension String {
@@ -413,6 +438,7 @@ let args = Args(Array(argv.dropFirst()))
 do {
     switch command {
     case "installs": cmdInstalls()
+    case "storage": cmdStorage()
     case "stores": try cmdStores()
     case "list": try cmdList(args)
     case "export": try cmdExport(args)

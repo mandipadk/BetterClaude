@@ -10,6 +10,8 @@ enum SidebarDestination: Hashable {
     case install(String)
     case history
     case kept
+    case storage
+    case memory
 }
 
 /// Narrows the conversation timeline to one install or one project folder.
@@ -44,6 +46,8 @@ final class AppServices {
     let search = SearchModel()
     let library = LibraryModel()
     let kept = KeptModel()
+    let storage = StorageModel()
+    let memory = MemoryModel()
     /// Bumped each time a fresh snapshot lands, so pages that derive from it know to redo
     /// their work.
     private(set) var generation = 0

@@ -12,7 +12,7 @@ import Foundation
 /// Routes: `conversations`, `reader:<title words>`, `install:<name>`, `library[:everything|files|images|code|uploads]`,
 /// `filter:<install name>`, `search:<query>`, `messages:<query>`, `history`,
 /// `continue:<title words>`, `continue-review:<title words>`, `fork:<title words>`,
-/// `compare:<install>|<install>`, `panel`, `kept`.
+/// `compare:<install>|<install>`, `panel`, `kept`, `storage`, `memory`.
 enum DebugRoute {
     @MainActor
     static func apply(to services: AppServices) {
@@ -65,6 +65,14 @@ enum DebugRoute {
                 services.destination = .history
             case "kept":
                 services.destination = .kept
+            case "storage":
+                services.destination = .storage
+            case "memory":
+                services.destination = .memory
+                if !argument.isEmpty {
+                    while !services.memory.loaded { try? await Task.sleep(for: .milliseconds(50)) }
+                    services.memory.selectedID = services.memory.groups.first { $0.title == argument }?.id
+                }
             case "continue", "continue-review":
                 if let match = services.snapshot.conversations.first(where: {
                     $0.title.localizedCaseInsensitiveContains(argument)

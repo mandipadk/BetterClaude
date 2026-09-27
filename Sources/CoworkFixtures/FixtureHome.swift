@@ -157,6 +157,19 @@ public struct FixtureHome {
         for conversation in conversations {
             try writeCowork(conversation, orgDir: orgDir, email: email, name: name)
         }
+        if account == Self.workAccount {
+            let spaceID = "5d0c7a1e-3b2f-4c8d-9e6a-1f2b3c4d5e6f"
+            try writeJSON(["spaces": [["id": spaceID, "name": "Q4 planning",
+                                       "folders": [["path": paths.home.appendingPathComponent("Documents/Q4 planning").path]]]]],
+                          to: orgDir.appendingPathComponent("spaces.json"))
+            try FileManager.default.createDirectory(
+                at: paths.home.appendingPathComponent("Documents/Q4 planning", isDirectory: true),
+                withIntermediateDirectories: true)
+            let memory = orgDir.appendingPathComponent("spaces/\(spaceID)/memory", isDirectory: true)
+            try FileManager.default.createDirectory(at: memory, withIntermediateDirectories: true)
+            try Data("- Headcount plan is due to finance on the 15th.\n- Hiring order: reliability first.\n".utf8)
+                .write(to: memory.appendingPathComponent("MEMORY.md"))
+        }
         try writeCoworkPlugins(orgDir: orgDir, plugins: account == Self.workAccount
                                 ? ["design", "engineering", "sales"] : ["design", "productivity"],
                                organisationPlugin: account == Self.workAccount ? "northwind-handbook" : nil)
@@ -370,7 +383,14 @@ public struct FixtureHome {
                                                            "command": "afplay /System/Library/Sounds/Glass.aiff"]]]]],
             "env": ["SEARCH_API_KEY": "sk-sample-0000000000000000"],
         ], to: config.appendingPathComponent("settings.json"))
+        var recorded: [String: Any] = [:]
+        for project in Script.projects {
+            recorded[paths.home.appendingPathComponent(project).path] = ["allowedTools": [] as [String]]
+        }
+        try Data("# journal-app\n\nSwiftUI app. Run tests with `swift test` before committing.\n".utf8)
+            .write(to: paths.home.appendingPathComponent("Code/journal-app/CLAUDE.md"))
         try writeJSON([
+            "projects": recorded,
             "oauthAccount": ["accountUuid": Self.personalAccount, "emailAddress": "alex@rivera.studio",
                              "organizationUuid": Self.personalOrg,
                              "organizationName": "alex@rivera.studio's Organization",
