@@ -9,7 +9,8 @@ enum Theme {
 
     // MARK: Accent
 
-    /// Candidates for the one accent, each tuned per appearance: deep enough in light mode to
+    /// The accent is jade. The other candidates stay for comparison in debug builds. Each is
+    /// tuned per appearance: deep enough in light mode to
     /// carry white text at 4.5:1 or better, brighter in dark mode where it sits on graphite.
     enum Accent: String, CaseIterable {
         case jade, teal, cobalt
@@ -46,6 +47,16 @@ enum Theme {
             ? accentChoice.dark : accentChoice.light
     }
     static let accent = Color(nsColor: accentNS)
+
+    /// The accent as a fill under white text. In light mode it is the accent itself; in dark
+    /// mode the accent is bright enough to glow on graphite, which leaves white labels on it
+    /// at 2.7:1, so filled buttons use a deeper jade that holds 3.7:1 for their bold labels.
+    static let accentFill = Color(nsColor: NSColor(name: "BetterClaudeAccentFill") { appearance in
+        guard appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua else { return accentChoice.light }
+        return accentChoice == .jade
+            ? NSColor(srgbRed: 0.133, green: 0.596, blue: 0.416, alpha: 1)   // #22986A
+            : accentChoice.dark.blended(withFraction: 0.25, of: .black) ?? accentChoice.dark
+    })
 
     static let attention = Color(nsColor: .systemOrange)
     static let failure = Color(nsColor: .systemRed)

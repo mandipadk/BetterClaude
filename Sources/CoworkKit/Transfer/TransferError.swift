@@ -14,6 +14,9 @@ public enum TransferError: Error, CustomStringConvertible {
     case insufficientSpace(needed: Int64, available: Int64)
     case variantRunning([RunningVariant])
     case postConditionFailed(String)
+    /// The import stopped after writing part of what it meant to. `receiptID` names the
+    /// receipt that records exactly what was written, so it can be undone.
+    case partiallyApplied(receiptID: String, written: Int, underlying: String)
 
     public var description: String {
         switch self {
@@ -52,6 +55,9 @@ public enum TransferError: Error, CustomStringConvertible {
                 + "overwrite an imported session from its in-memory copy."
         case .postConditionFailed(let what):
             return "post-condition failed after writing: \(what)"
+        case .partiallyApplied(let receiptID, let written, let underlying):
+            return "stopped partway after writing \(written) item(s): \(underlying). "
+                + "Undo receipt \(receiptID) removes what was written."
         }
     }
 }
@@ -62,11 +68,16 @@ public struct PreconditionResult: Sendable {
     public let title: String
     public let passed: Bool
     public let detail: String?
+    /// Something worth telling the person before they continue, that does not stop the
+    /// transfer: a project that will be created, a folder that has moved.
+    public let isNotice: Bool
 
-    public init(id: String, title: String, passed: Bool, detail: String? = nil) {
+    public init(id: String, title: String, passed: Bool, detail: String? = nil,
+                isNotice: Bool = false) {
         self.id = id
         self.title = title
         self.passed = passed
         self.detail = detail
+        self.isNotice = isNotice
     }
 }

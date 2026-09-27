@@ -21,6 +21,9 @@ final class ReaderModel {
     private(set) var install: Install?
     private(set) var readable: ReadableConversation?
     private(set) var transcript: Transcript?
+    /// Messages a fork can start from, by message id. Empty for conversations that can't be
+    /// forked in place.
+    private(set) var forkPoints: [String: BranchPoint] = [:]
     var findQuery = ""
 
     private var loadTask: Task<Void, Never>?
@@ -32,6 +35,7 @@ final class ReaderModel {
         self.install = install
         readable = nil
         transcript = nil
+        forkPoints = [:]
         findQuery = ""
         guard let url = conversation.transcriptURL else {
             state = .missing
@@ -39,19 +43,22 @@ final class ReaderModel {
         }
         state = .loading
         loadTask = Task {
-            let result = await Task.detached(priority: .userInitiated) { () -> Result<(Transcript, ReadableConversation), Error> in
+            let forkable = conversation.claudeCodeSession != nil
+            let result = await Task.detached(priority: .userInitiated) { () -> Result<(Transcript, ReadableConversation, [BranchPoint]), Error> in
                 do {
                     let transcript = try Transcript(contentsOf: url)
-                    return .success((transcript, ReadableConversation(transcript: transcript)))
+                    let points = forkable ? ConversationBranch.points(in: transcript) : []
+                    return .success((transcript, ReadableConversation(transcript: transcript), points))
                 } catch {
                     return .failure(error)
                 }
             }.value
             guard !Task.isCancelled, self.conversation?.id == conversation.id else { return }
             switch result {
-            case .success(let (transcript, readable)):
+            case .success(let (transcript, readable, points)):
                 self.transcript = transcript
                 self.readable = readable
+                self.forkPoints = Dictionary(points.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
                 self.state = .ready
             case .failure:
                 self.state = .failed("This conversation couldn't be read. It may be in use or damaged.")
@@ -78,6 +85,33 @@ final class ReaderModel {
             if case .message(let message) = entry { return message.text.localizedCaseInsensitiveContains(needle) }
             return false
         }
+    }
+
+    /// How many messages a fork from `messageID` keeps.
+    func messagesKept(upTo messageID: String) -> Int {
+        guard let readable else { return 0 }
+        var count = 0
+        for entry in readable.entries {
+            guard case .message(let message) = entry else { continue }
+            count += 1
+            if message.id == messageID { break }
+        }
+        return count
+    }
+
+    /// Forks the open conversation at a message into a new one beside it, with a receipt so
+    /// it can be undone. Returns the new transcript's location.
+    func fork(at messageID: String, title: String) async throws -> URL {
+        guard let transcript, let point = forkPoints[messageID] else {
+            throw BranchError.pointNotFound(messageID)
+        }
+        let name = title.trimmingCharacters(in: .whitespaces)
+        return try await Task.detached(priority: .userInitiated) {
+            let (plan, branch) = try ConversationBranch.plan(transcript: transcript, cutAt: point,
+                                                             newTitle: name.isEmpty ? nil : name)
+            _ = try ConversationBranch.write(branch, plan: plan)
+            return plan.destinationURL
+        }.value
     }
 
     /// Saves the conversation as Markdown where the person chooses.

@@ -36,7 +36,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 ICONSET="$(dirname "$APP")/BetterClaude.iconset"
 
 # Icon: generated rather than checked in, so the mark stays tied to the palette in
-# Design.swift and every size is redrawn from the same geometry.
+# Theme.swift and every size is redrawn from the same geometry.
 ICON_BIN=/tmp/bc-icon
 swiftc -O "$ROOT/Scripts/make-icon.swift" -o "$ICON_BIN"
 rm -rf "$ICONSET"

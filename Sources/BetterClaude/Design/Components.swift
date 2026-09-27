@@ -22,7 +22,7 @@ struct ActionButtonStyle: ButtonStyle {
             .background {
                 if prominent {
                     RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                        .fill(Theme.accent.opacity(isEnabled ? 1 : 0.4))
+                        .fill(Theme.accentFill.opacity(isEnabled ? 1 : 0.4))
                 } else {
                     RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
                         .fill(Color(nsColor: .quaternaryLabelColor)

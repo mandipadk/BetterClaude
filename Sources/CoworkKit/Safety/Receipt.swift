@@ -7,6 +7,8 @@ public enum TransferDirection: String, Codable, Sendable {
     case coworkToCowork
     case coworkToCode
     case codeToCowork
+    /// A conversation forked beside the original.
+    case branch
 }
 
 /// SHA-256 helpers.
@@ -64,6 +66,13 @@ public struct ImportReceipt: Codable, Sendable {
     /// element rather than delete a file. Optional so receipts written before this existed
     /// still decode.
     public var createdSpaces: [CreatedSpace]?
+    /// The conversation's title, for a history a person can read. Optional so older
+    /// receipts still decode.
+    public var title: String?
+    /// How many conversations this receipt covers.
+    public var itemCount: Int?
+    /// When this was undone, if it was.
+    public var revertedAt: Date?
 
     /// One project added to an organisation, and where to take it back out of.
     public struct CreatedSpace: Codable, Sendable {

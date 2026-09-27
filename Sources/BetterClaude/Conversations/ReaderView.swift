@@ -54,7 +54,10 @@ struct ReaderView: View {
                     ForEach(reader.visibleEntries) { entry in
                         switch entry {
                         case .message(let message):
-                            MessageView(message: message)
+                            MessageView(message: message,
+                                        onFork: reader.forkPoints[message.id] == nil ? nil : {
+                                            services.forking = ForkRequest(messageID: message.id)
+                                        })
                         case .tools(_, let names):
                             ToolsLine(names: names)
                         }
@@ -92,12 +95,18 @@ struct ReaderHeader: View {
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Button("Continue in…") {
-                    services.beginTransfer(conversation)
+                    services.beginContinue(conversation)
                 }
                 .buttonStyle(.primary)
                 .disabled(conversation.isTranscriptMissing)
                 .help("Carry this conversation to another Claude or to Claude Code")
                 MoreMenu {
+                    if let session = conversation.claudeCodeSession, !session.resolvedCwd.isEmpty {
+                        Button("Resume in Terminal") {
+                            services.resumeInTerminal(cwd: session.resolvedCwd, sessionId: session.sessionId)
+                        }
+                        Divider()
+                    }
                     Button("Export as Markdown…") { services.reader.exportMarkdown() }
                     Button("Show in Finder") { services.revealInFinder(conversation) }
                     if let install, install.appURL != nil {
@@ -189,6 +198,8 @@ struct FindField: View {
 
 struct MessageView: View {
     let message: MessageText
+    var onFork: (() -> Void)? = nil
+    @State private var hovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -200,6 +211,18 @@ struct MessageView: View {
                         .font(Theme.Font.caption)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
+                }
+                Spacer(minLength: 0)
+                if let onFork {
+                    Button(action: onFork) {
+                        Label("Fork from here", systemImage: "arrow.triangle.branch")
+                            .font(Theme.Font.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .opacity(hovering ? 1 : 0)
+                    .help("Start a new conversation with everything up to this message")
+                    .accessibilityHidden(!hovering)
                 }
             }
             if message.role == .user {
@@ -217,6 +240,9 @@ struct MessageView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(.rect)
+        .onHover { hovering = $0 }
+        .animation(Theme.Motion.fade, value: hovering)
     }
 }
 

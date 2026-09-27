@@ -21,7 +21,7 @@ enum Design {
         /// The accent. Used for exactly one thing per screen: the action the user came here
         /// to take. A warm clay rather than the system blue, which is both overused and
         /// carries no meaning here.
-        static let accent = Theme.accent
+        static let accent = Theme.accentFill
 
         /// Pressed / hovered accent.
         static let accentPressed = Theme.accent.opacity(0.85)

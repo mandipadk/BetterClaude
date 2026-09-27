@@ -108,11 +108,28 @@ public enum WriteFenceError: Error, CustomStringConvertible {
 public enum WriteFence {
     public static func check(_ url: URL, paths: HostPaths = .current) throws {
         guard let root = paths.fixtureRoot else { return }
-        let target = url.standardizedFileURL.resolvingSymlinksInPath().path
-        let allowed = [root.path,
-                       URL(fileURLWithPath: NSTemporaryDirectory()).resolvingSymlinksInPath().path]
+        let target = realPath(url)
+        let allowed = [realPath(root), realPath(URL(fileURLWithPath: NSTemporaryDirectory()))]
         guard allowed.contains(where: { target == $0 || target.hasPrefix($0 + "/") }) else {
             throw WriteFenceError.outsideFixture(target)
         }
+    }
+
+    /// The path with every symlink resolved, including `/var` → `/private/var`, for a file
+    /// that may not exist yet: the deepest existing ancestor goes through realpath(3) and the
+    /// rest is appended. Foundation's own resolution treats `/private` inconsistently between
+    /// paths that exist and paths that don't, which is fatal to a prefix comparison.
+    static func realPath(_ url: URL) -> String {
+        var existing = url.standardizedFileURL
+        var rest: [String] = []
+        while !FileManager.default.fileExists(atPath: existing.path), existing.path != "/" {
+            rest.insert(existing.lastPathComponent, at: 0)
+            existing.deleteLastPathComponent()
+        }
+        guard let resolved = Darwin.realpath(existing.path, nil) else { return url.standardizedFileURL.path }
+        defer { free(resolved) }
+        var path = String(cString: resolved)
+        for component in rest { path += (path.hasSuffix("/") ? "" : "/") + component }
+        return path
     }
 }

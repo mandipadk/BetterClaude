@@ -8,6 +8,7 @@ enum SidebarDestination: Hashable {
     case conversations
     case library
     case install(String)
+    case history
 }
 
 /// Narrows the conversation timeline to one install or one project folder.
@@ -170,26 +171,57 @@ final class AppServices {
 
     // MARK: Carrying a conversation elsewhere
 
-    /// The transfer in progress, shown as a sheet.
-    var transfer: TransferModel?
+    /// The conversation being continued elsewhere, shown as a sheet.
+    var continuing: ContinueModel?
 
-    func beginTransfer(_ conversation: ConversationRef) {
-        let row: SessionRow
-        if let session = conversation.coworkSession {
-            row = SessionRow(session)
-        } else if let session = conversation.claudeCodeSession {
-            row = SessionRow(session)
-        } else {
-            return
-        }
-        // The transfer sheet still reads its destinations from the previous model.
-        legacy.refresh()
-        transfer = TransferModel(sessions: [row])
+    func beginContinue(_ conversation: ConversationRef) {
+        guard !conversation.isTranscriptMissing else { return }
+        continuing = ContinueModel(conversation: conversation, source: install(for: conversation))
     }
 
-    func endTransfer() {
-        transfer = nil
+    func endContinue() {
+        continuing = nil
         refresh()
+    }
+
+    /// Opens Terminal in `cwd` and resumes a Claude Code conversation there.
+    ///
+    /// A `.command` file rather than scripting Terminal: opening a file needs no permission,
+    /// where telling Terminal what to run asks for control of it.
+    func resumeInTerminal(cwd: String, sessionId: String) {
+        let folder = snapshot.paths.betterClaudeSupport.appendingPathComponent("Resume", isDirectory: true)
+        let script = folder.appendingPathComponent("resume-\(sessionId.prefix(8)).command")
+        let quoted = "'" + cwd.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let body = "#!/bin/zsh -l\ncd \(quoted) && exec claude --resume \(sessionId)\n"
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data(body.utf8).write(to: script, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+            NSWorkspace.shared.open(script)
+        } catch {
+            errorMessage = "Couldn't open Terminal: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: Forking
+
+    /// A fork being set up, shown as a sheet.
+    var forking: ForkRequest?
+
+    func fork(_ request: ForkRequest, title: String) async {
+        do {
+            let url = try await reader.fork(at: request.messageID, title: title)
+            forking = nil
+            refresh()
+            // Open the fork once the catalog has it.
+            while isLoading { try? await Task.sleep(for: .milliseconds(50)) }
+            if let fork = snapshot.conversations.first(where: { $0.transcriptURL?.standardizedFileURL == url.standardizedFileURL }) {
+                show(fork)
+            }
+        } catch {
+            forking = nil
+            errorMessage = "Couldn't fork it: \(ContinueModel.explain(error))"
+        }
     }
 
     // MARK: Actions
@@ -205,4 +237,3 @@ final class AppServices {
     }
 }
 
-extension TransferModel: Identifiable {}

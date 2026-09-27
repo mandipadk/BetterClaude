@@ -34,18 +34,12 @@ extension View {
         }
     }
 
-    /// The prominent action: tinted glass capsule on macOS 26, a solid
-    /// capsule before it.
-    @ViewBuilder
+    /// The prominent action: a solid accent capsule on every system.
+    ///
+    /// Not tinted glass: with the classic window chrome this app opts into, glass drops its
+    /// tint and the one action that matters renders as grey as the one beside it.
     func prominentAction() -> some View {
-        if #available(macOS 26.0, *) {
-            // A custom style rather than `.glassProminent`: as the default
-            // (Return) button, the system style is drawn as a rounded
-            // rectangle, which breaks the capsule language.
-            self.buttonStyle(GlassCapsuleButtonStyle(prominent: true))
-        } else {
-            self.buttonStyle(CapsuleButtonStyle(prominent: true))
-        }
+        self.buttonStyle(CapsuleButtonStyle(prominent: true))
     }
 
     /// A quiet capsule action next to a prominent one.
@@ -96,7 +90,7 @@ struct CapsuleButtonStyle: ButtonStyle {
             .frame(height: 38)
             .background {
                 if prominent {
-                    Capsule().fill(Theme.accent.opacity(isEnabled ? 1 : 0.4))
+                    Capsule().fill(Theme.accentFill.opacity(isEnabled ? 1 : 0.4))
                 } else {
                     Capsule().fill(.regularMaterial)
                         .overlay(Capsule().strokeBorder(Theme.hairline))

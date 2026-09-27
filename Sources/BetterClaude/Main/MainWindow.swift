@@ -51,8 +51,12 @@ struct MainWindow: View {
         .task {
             if !services.hasLoaded { services.refresh() }
         }
-        .sheet(item: $services.transfer) { model in
-            TransferSheet(model: model, app: services.legacy) { services.endTransfer() }
+        .sheet(item: $services.forking) { request in
+            ForkSheet(request: request).environment(services)
+        }
+        .sheet(item: $services.continuing) { model in
+            ContinueSheet(model: model) { services.endContinue() }
+                .environment(services)
         }
         .alert("Something went wrong",
                isPresented: Binding(get: { services.errorMessage != nil },
@@ -70,6 +74,8 @@ struct MainWindow: View {
             ConversationsView()
         case .library:
             LibraryPage()
+        case .history:
+            HistoryPage()
         case .install(let id):
             if let install = services.install(id) {
                 InstallPage(install: install)
@@ -105,6 +111,11 @@ struct Sidebar: View {
                             .tag(SidebarDestination.install(install.id))
                     }
                 }
+            }
+
+            Section("Upkeep") {
+                Label("History", systemImage: "clock.arrow.circlepath")
+                    .tag(SidebarDestination.history)
             }
         }
         .listStyle(.sidebar)

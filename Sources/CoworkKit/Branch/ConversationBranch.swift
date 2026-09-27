@@ -358,6 +358,26 @@ public enum ConversationBranch {
         return (plan, branch)
     }
 
+    // MARK: - Write
+
+    /// Writes a planned branch beside its source and records it, so it can be undone like
+    /// any other change this app makes.
+    public static func write(_ branch: Transcript, plan: BranchPlan) throws -> ImportReceipt {
+        let destination = plan.destinationURL
+        guard !FileManager.default.fileExists(atPath: destination.path) else {
+            throw TransferError.destinationExists(destination)
+        }
+        var receipt = ImportReceipt(direction: .branch, destination: "Claude Code · \(destination.deletingLastPathComponent().path)")
+        receipt.title = plan.title
+        receipt.itemCount = 1
+        try Undo.save(receipt)
+        try branch.write(to: destination)
+        try receipt.recordCreatedFile(at: destination)
+        receipt.completed = true
+        try Undo.save(receipt)
+        return receipt
+    }
+
     // MARK: - Helpers
 
     static func sessionId(of transcript: Transcript) -> String? {

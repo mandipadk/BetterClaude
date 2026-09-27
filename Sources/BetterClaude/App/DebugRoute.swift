@@ -10,7 +10,8 @@ import Foundation
 /// `BC_APPEARANCE=light|dark` pins the appearance for the capture.
 ///
 /// Routes: `conversations`, `reader:<title words>`, `install:<name>`, `library`,
-/// `filter:<install name>`, `search:<query>`, `messages:<query>`.
+/// `filter:<install name>`, `search:<query>`, `messages:<query>`, `history`,
+/// `continue:<title words>`, `continue-review:<title words>`, `fork:<title words>`.
 enum DebugRoute {
     @MainActor
     static func apply(to services: AppServices) {
@@ -46,6 +47,34 @@ enum DebugRoute {
                 }
             case "library":
                 services.destination = .library
+            case "history":
+                services.destination = .history
+            case "continue", "continue-review":
+                if let match = services.snapshot.conversations.first(where: {
+                    $0.title.localizedCaseInsensitiveContains(argument)
+                }) {
+                    services.selectedConversationID = match.id
+                    services.beginContinue(match)
+                    if parts[0] == "continue-review", let model = services.continuing {
+                        model.destination = services.installs
+                            .first { $0.isParallex }
+                            .flatMap { install in
+                                services.snapshot.accounts[install.id]?.first(where: \.isSignedIn)
+                                    .map { .account(installID: install.id, $0) }
+                            }
+                        model.review(in: services.snapshot)
+                    }
+                }
+            case "fork":
+                if let match = services.snapshot.conversations.first(where: {
+                    $0.title.localizedCaseInsensitiveContains(argument)
+                }) {
+                    services.selectedConversationID = match.id
+                    while services.reader.state != .ready { try? await Task.sleep(for: .milliseconds(50)) }
+                    if let first = services.reader.forkPoints.keys.sorted().first {
+                        services.forking = ForkRequest(messageID: first)
+                    }
+                }
             case "search":
                 services.query = argument
             case "messages":

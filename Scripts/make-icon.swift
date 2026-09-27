@@ -4,7 +4,7 @@ import Foundation
 // Draws the app icon and writes a full .iconset.
 //
 // Generated rather than hand-drawn so the mark is identical at every size and the palette
-// stays tied to the one in Design.swift. The glyph is a fork: a single stroke rising and
+// stays tied to the one in Theme.swift. The glyph is a fork: a single stroke rising and
 // splitting in two — the app's whole argument in one shape, since transferring a
 // conversation and branching one are the same move made in different directions.
 //
@@ -19,7 +19,7 @@ let plateSize = canvas - plateInset * 2
 let plateRadius = 185.0
 
 let plateColour = NSColor(srgbRed: 0.129, green: 0.125, blue: 0.122, alpha: 1)   // a hair off #1E1E1E
-let markColour  = NSColor(srgbRed: 0.851, green: 0.475, blue: 0.349, alpha: 1)   // dark-mode clay
+let markColour  = NSColor(srgbRed: 0.180, green: 0.698, blue: 0.494, alpha: 1)   // dark-mode jade, #2EB27E
 
 func drawIcon(size: Double) -> NSBitmapImageRep {
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil,

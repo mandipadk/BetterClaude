@@ -166,7 +166,7 @@ public enum Importer {
             checks.append(PreconditionResult(
                 id: "PC12", title: "Project will be created in the destination",
                 passed: true,
-                detail: spacesToCreate.joined(separator: ", ")))
+                detail: spacesToCreate.joined(separator: ", "), isNotice: true))
         }
         if !missingFolders.isEmpty {
             // Informational, not blocking. The conversation transfers perfectly well; it is
@@ -178,7 +178,7 @@ public enum Importer {
                 passed: true,
                 detail: missingFolders
                     .map { $0.hasPrefix(home) ? "~" + $0.dropFirst(home.count) : $0 }
-                    .joined(separator: ", ")))
+                    .joined(separator: ", "), isNotice: true))
         }
 
         var takenNames = ProcessName.namesInUse(at: account.root)
@@ -326,6 +326,8 @@ public enum Importer {
             bundlePath: plan.bundleURL.path,
             bundleSha256: nil,
             destination: plan.endpoint.describedDestination)
+        receipt.title = plan.manifest.sessions.map(\.chat.title).first { !$0.isEmpty }
+        receipt.itemCount = plan.manifest.sessions.count
         try Undo.save(receipt)
 
         do {
@@ -339,6 +341,14 @@ public enum Importer {
             }
         } catch {
             try? Undo.save(receipt)
+            // Say so when something was written: "nothing happened" would be a lie, and the
+            // receipt is exactly what undoes it.
+            if !receipt.created.isEmpty || !(receipt.createdSpaces ?? []).isEmpty {
+                throw TransferError.partiallyApplied(
+                    receiptID: receipt.id,
+                    written: receipt.created.filter { !$0.isDirectory }.count,
+                    underlying: String(describing: error))
+            }
             throw error
         }
 
@@ -489,7 +499,10 @@ public enum Importer {
                 throw TransferError.destinationExists(workspaceDestination)
             }
             try AtomicWrite.replaceDirectory(stagedAt: staging, with: workspaceDestination)
-            receipt.created.append(.init(path: workspaceDestination.path, isDirectory: true, sha256: nil))
+            // Every file inside, fingerprinted, not just the folder: undo removes a folder
+            // only once it is empty, so a receipt naming the folder alone left the whole
+            // copied conversation behind.
+            try receipt.recordCreatedTree(at: workspaceDestination)
 
             try metadata.write(to: metadataDestination)
             receipt.created.append(.init(path: metadataDestination.path, isDirectory: false,

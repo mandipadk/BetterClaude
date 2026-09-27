@@ -21,9 +21,12 @@ public struct RevertResult: Sendable {
 public enum UndoError: Error, CustomStringConvertible {
     case receiptsDirectoryUnavailable(path: String, underlying: String)
     case encodingFailed(id: String, underlying: String)
+    case receiptNotFound(id: String)
 
     public var description: String {
         switch self {
+        case .receiptNotFound(let id):
+            return "no receipt \(id) was found"
         case .receiptsDirectoryUnavailable(let path, let underlying):
             return "could not open the receipts directory at \(path): \(underlying)"
         case .encodingFailed(let id, let underlying):
@@ -99,7 +102,16 @@ public enum Undo {
     /// Receipts whose import never reported completion — the fingerprint of a crash or a
     /// kill partway through a write.
     public static func incomplete() throws -> [ImportReceipt] {
-        try receipts().filter { !$0.completed }
+        try receipts().filter { !$0.completed && $0.revertedAt == nil }
+    }
+
+    /// Undo, and remember that it was undone so it is not offered again.
+    public static func revertAndRecord(_ receipt: ImportReceipt) throws -> RevertResult {
+        let result = try revert(receipt)
+        var updated = receipt
+        updated.revertedAt = Date()
+        try save(updated)
+        return result
     }
 
     /// Undo an import.
