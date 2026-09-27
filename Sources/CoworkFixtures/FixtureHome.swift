@@ -139,6 +139,9 @@ public struct FixtureHome {
         for conversation in conversations {
             try writeCowork(conversation, orgDir: orgDir, email: email, name: name)
         }
+        try writeCoworkPlugins(orgDir: orgDir, plugins: account == Self.workAccount
+                                ? ["design", "engineering", "sales"] : ["design", "productivity"],
+                               organisationPlugin: account == Self.workAccount ? "northwind-handbook" : nil)
 
         let codeTabDir = userData.appendingPathComponent("claude-code-sessions", isDirectory: true)
             .appendingPathComponent(account, isDirectory: true)
@@ -190,6 +193,36 @@ public struct FixtureHome {
             "accountName": name,
             "initialMessage": conversation.turns.first?.user ?? "",
         ], to: orgDir.appendingPathComponent("\(sessionId).json"))
+    }
+
+    /// Cowork's plugins live beside the conversations, per organisation.
+    func writeCoworkPlugins(orgDir: URL, plugins: [String], organisationPlugin: String?) throws {
+        var installed: [String: Any] = [:]
+        var enabled: [String: Bool] = [:]
+        for plugin in plugins {
+            let key = "\(plugin)@knowledge-work-plugins"
+            let install = orgDir.appendingPathComponent(
+                "cowork_plugins/cache/knowledge-work-plugins/\(plugin)/1.1.0", isDirectory: true)
+            let skill = install.appendingPathComponent("skills/\(plugin)-review", isDirectory: true)
+            try FileManager.default.createDirectory(at: skill, withIntermediateDirectories: true)
+            try Data("---\nname: \(plugin)-review\ndescription: Review work with the \(plugin) checklist\n---\n".utf8)
+                .write(to: skill.appendingPathComponent("SKILL.md"))
+            installed[key] = [["scope": "user", "installPath": install.path, "version": "1.1.0"]]
+            enabled[key] = true
+        }
+        try writeJSON(["version": 2, "plugins": installed],
+                      to: orgDir.appendingPathComponent("cowork_plugins/installed_plugins.json"))
+        try writeJSON(["enabledPlugins": enabled], to: orgDir.appendingPathComponent("cowork_settings.json"))
+
+        if let organisationPlugin {
+            let plugin = orgDir.appendingPathComponent("rpm/plugin_01SAMPLE", isDirectory: true)
+            try writeJSON(["name": organisationPlugin, "version": "2.0.0"],
+                          to: plugin.appendingPathComponent(".claude-plugin/plugin.json"))
+            let skill = plugin.appendingPathComponent("skills/expense-policy", isDirectory: true)
+            try FileManager.default.createDirectory(at: skill, withIntermediateDirectories: true)
+            try Data("---\nname: expense-policy\ndescription: Answer questions about expenses\n---\n".utf8)
+                .write(to: skill.appendingPathComponent("SKILL.md"))
+        }
     }
 
     /// A Code tab session: metadata here, transcript in Claude Code's own projects folder.

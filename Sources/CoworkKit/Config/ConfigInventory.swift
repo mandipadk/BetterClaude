@@ -304,24 +304,25 @@ public enum ConfigInventory {
     /// directories are named by whoever created the launcher, and `Claude-3p` holds nothing
     /// but a `claude_desktop_config.json`.
     static func desktopScopes() -> [ConfigScope] {
-        let root = Discovery.applicationSupportDirectory()
-        let entries = (try? FileManager.default.contentsOfDirectory(
-            at: root, includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants])) ?? []
-
-        var result: [ConfigScope] = []
-        for entry in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
-        where Discovery.isDirectory(entry) {
-            let markers = ["claude_desktop_config.json", "cowork_settings.json",
-                           "cowork_plugins", "Claude Extensions",
-                           StoreLayout.sessionsDirName]
-            let matches = markers.contains {
-                FileManager.default.fileExists(atPath: entry.appendingPathComponent($0).path)
-            }
-            guard matches else { continue }
-            result.append(.desktopVariant(entry.lastPathComponent, Discovery.canonical(entry)))
+        // Every Claude Desktop, Parallex copies included: they keep their data inside
+        // Parallex's own folder, one level deeper than a scan of Application Support sees.
+        InstallDiscovery.all().filter(\.isDesktop).map {
+            .desktopVariant($0.name, Discovery.canonical($0.dataRoot))
         }
-        return result
+    }
+
+    /// What one install is set up with.
+    public static func items(for install: Install) -> [ConfigItem] {
+        switch install.kind {
+        case .desktop, .parallex:
+            let dir = Discovery.canonical(install.dataRoot)
+            return desktopItems(dir: dir, scope: .desktopVariant(install.name, dir))
+        case .claudeCode:
+            let dir = install.dataRoot
+            return globalItems(dir: dir, scope: .claudeCodeGlobal(dir))
+        case .science:
+            return []
+        }
     }
 
     // MARK: Items
@@ -449,6 +450,51 @@ public enum ConfigInventory {
         }
 
         result.append(contentsOf: extensionItems(dir: dir, scope: scope))
+        result.append(contentsOf: coworkOrgItems(dir: dir, scope: scope))
+
+        // One install can hold the same plugin in several of its organisations.
+        var seen = Set<String>()
+        return result.filter { seen.insert($0.id).inserted }
+    }
+
+    /// Cowork keeps plugins per organisation, beside the conversations:
+    /// `local-agent-mode-sessions/<account>/<org>/` holds `cowork_settings.json`,
+    /// `cowork_plugins/installed_plugins.json`, and `rpm/` for plugins the organisation
+    /// provides. Nothing at the install's top level lists them.
+    static func coworkOrgItems(dir: URL, scope: ConfigScope) -> [ConfigItem] {
+        let sessions = dir.appendingPathComponent(StoreLayout.sessionsDirName, isDirectory: true)
+        var result: [ConfigItem] = []
+        for account in visibleDirectories(sessions) where StoreLayout.isAccountDirName(account.lastPathComponent) {
+            for org in visibleDirectories(account) where StoreLayout.isAccountDirName(org.lastPathComponent) {
+                let settings = json(at: org.appendingPathComponent("cowork_settings.json"))
+                result.append(contentsOf: pluginItems(
+                    installedURL: org.appendingPathComponent("cowork_plugins/installed_plugins.json"),
+                    settings: settings, scope: scope))
+                result.append(contentsOf: organisationPluginItems(
+                    root: org.appendingPathComponent("rpm", isDirectory: true), scope: scope))
+            }
+        }
+        return result
+    }
+
+    /// Plugins an organisation provides to everyone in it: `rpm/plugin_<id>/`, each with a
+    /// `.claude-plugin/plugin.json` naming it.
+    static func organisationPluginItems(root: URL, scope: ConfigScope) -> [ConfigItem] {
+        var result: [ConfigItem] = []
+        for plugin in visibleDirectories(root) where plugin.lastPathComponent.hasPrefix("plugin_") {
+            let manifest = json(at: plugin.appendingPathComponent(".claude-plugin/plugin.json"))
+            let name = manifest["name"]?.stringValue ?? plugin.lastPathComponent
+            let version = manifest["version"]?.stringValue
+            result.append(ConfigItem(
+                id: itemID(scope: scope, kind: .plugin, key: name),
+                kind: .plugin, name: name, scope: scope, url: plugin,
+                detail: summary(["from your organisation", version].compactMap { $0 }.joined(separator: ", ")),
+                bytes: footprint(of: plugin), modified: modificationDate(plugin),
+                contentHash: hash(of: "\(name)|\(version ?? "")"), isEnabled: nil))
+            result.append(contentsOf: skillItems(
+                root: plugin.appendingPathComponent("skills", isDirectory: true),
+                scope: scope, source: name))
+        }
         return result
     }
 
@@ -731,9 +777,16 @@ public enum ConfigInventory {
 
     static func claudeCodePluginItems(configDir: URL, settings: JSONValue,
                                       scope: ConfigScope) -> [ConfigItem] {
-        let installedURL = configDir
-            .appendingPathComponent("plugins", isDirectory: true)
-            .appendingPathComponent("installed_plugins.json")
+        pluginItems(installedURL: configDir
+                        .appendingPathComponent("plugins", isDirectory: true)
+                        .appendingPathComponent("installed_plugins.json"),
+                    settings: settings, scope: scope)
+    }
+
+    /// Plugins from an `installed_plugins.json` and the `enabledPlugins` beside it, with each
+    /// plugin's own skills, agents and commands. Claude Code and Cowork share this format.
+    static func pluginItems(installedURL: URL, settings: JSONValue,
+                            scope: ConfigScope) -> [ConfigItem] {
         let installed = json(at: installedURL)["plugins"]?.objectValue
         let enabled = settings["enabledPlugins"]?.objectValue
 

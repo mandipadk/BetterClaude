@@ -26,6 +26,26 @@ struct InstallDiscoveryTests {
         }
     }
 
+    @Test("An install's setup includes Cowork plugins kept per organisation")
+    func coworkPluginsPerOrganisation() throws {
+        try FixtureHomeTests.withSample { _ in
+            let installs = InstallDiscovery.all()
+            let work = try #require(installs.first { $0.name == "Claude Work" })
+            let items = ConfigInventory.items(for: work)
+            let plugins = Set(items.filter { $0.kind == .plugin }.map(\.name))
+            #expect(plugins.isSuperset(of: ["design@knowledge-work-plugins", "sales@knowledge-work-plugins",
+                                            "northwind-handbook"]))
+            let skills = Set(items.filter { $0.kind == .skill }.map(\.name))
+            #expect(skills.contains("sales-review"))
+            #expect(skills.contains("expense-policy"))
+            #expect(items.contains { $0.kind == .mcpServer && $0.name == "linear" })
+
+            // Compare sees the Parallex copy as an install of its own.
+            let scopes = try ConfigInventory.scopes()
+            #expect(scopes.contains { $0.title == "Claude Work" })
+        }
+    }
+
     @Test("A Parallex copy's store is offered as a transfer destination")
     func parallexStoreIsAStore() throws {
         try FixtureHomeTests.withSample { _ in

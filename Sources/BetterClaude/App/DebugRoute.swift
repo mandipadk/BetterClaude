@@ -11,7 +11,8 @@ import Foundation
 ///
 /// Routes: `conversations`, `reader:<title words>`, `install:<name>`, `library`,
 /// `filter:<install name>`, `search:<query>`, `messages:<query>`, `history`,
-/// `continue:<title words>`, `continue-review:<title words>`, `fork:<title words>`.
+/// `continue:<title words>`, `continue-review:<title words>`, `fork:<title words>`,
+/// `compare:<install>|<install>`.
 enum DebugRoute {
     @MainActor
     static func apply(to services: AppServices) {
@@ -44,6 +45,14 @@ enum DebugRoute {
             case "install":
                 if let install = services.installs.first(where: { $0.name == argument }) {
                     services.destination = .install(install.id)
+                }
+            case "compare":
+                let names = argument.components(separatedBy: "|")
+                if names.count == 2,
+                   let left = services.installs.first(where: { $0.name == names[0] }),
+                   let right = services.installs.first(where: { $0.name == names[1] }) {
+                    services.destination = .install(left.id)
+                    services.comparing = InstallComparison(left: left, right: right)
                 }
             case "library":
                 services.destination = .library

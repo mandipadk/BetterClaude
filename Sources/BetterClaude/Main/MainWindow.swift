@@ -51,6 +51,9 @@ struct MainWindow: View {
         .task {
             if !services.hasLoaded { services.refresh() }
         }
+        .sheet(item: $services.comparing) { pair in
+            CompareSheet(pair: pair).environment(services)
+        }
         .sheet(item: $services.forking) { request in
             ForkSheet(request: request).environment(services)
         }

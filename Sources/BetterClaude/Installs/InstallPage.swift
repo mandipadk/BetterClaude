@@ -11,7 +11,9 @@ struct InstallPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header.padding(.bottom, Theme.Space.xl)
+                notices
                 conversations
+                SetupSection(install: install)
                 details
             }
             .padding(.horizontal, 32)
@@ -42,6 +44,17 @@ struct InstallPage: View {
                     .keyboardShortcut("o", modifiers: .command)
             }
             MoreMenu {
+                let others = services.installs.filter { $0.id != install.id && $0.kind != .science }
+                if !others.isEmpty {
+                    Menu("Compare With") {
+                        ForEach(others) { other in
+                            Button(other.name) {
+                                services.comparing = InstallComparison(left: install, right: other)
+                            }
+                        }
+                    }
+                    Divider()
+                }
                 Button("Show Data Folder") {
                     NSWorkspace.shared.activateFileViewerSelecting([install.dataRoot])
                 }
@@ -71,6 +84,31 @@ struct InstallPage: View {
     }
 
     // MARK: Sections
+
+    @ViewBuilder
+    private var notices: some View {
+        let hints = services.credentialHints[install.id] ?? []
+        let missing = services.snapshot.conversations(in: install.id).filter(\.isTranscriptMissing).count
+        if !hints.isEmpty || missing > 0 {
+            VStack(alignment: .leading, spacing: Theme.Space.s) {
+                if !hints.isEmpty {
+                    let names = hints.map(\.name)
+                    InstallNotice(
+                        symbol: "key.fill",
+                        title: names.count == 1 ? "A key is saved in plain text" : "\(names.count) keys are saved in plain text",
+                        detail: "\(names.joined(separator: ", ")) in \(hints[0].file.lastPathComponent). Any app that can read this folder can read \(names.count == 1 ? "it" : "them"). Keep keys in your shell profile or the Keychain instead.",
+                        action: ("Show File", { NSWorkspace.shared.activateFileViewerSelecting([hints[0].file]) }))
+                }
+                if missing > 0 {
+                    InstallNotice(
+                        symbol: "clock.badge.xmark",
+                        title: missing == 1 ? "One conversation lost its messages" : "\(missing) conversations lost their messages",
+                        detail: "Claude Code deletes conversations 30 days after they were last used. Their titles are still listed, but what was said is gone.")
+                }
+            }
+            .padding(.bottom, Theme.Space.xl)
+        }
+    }
 
     private var conversations: some View {
         let list = services.snapshot.conversations(in: install.id)

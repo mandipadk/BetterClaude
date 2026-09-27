@@ -65,6 +65,8 @@ final class AppServices {
     func refresh() {
         loadTask?.cancel()
         isLoading = true
+        setup = [:]
+        credentialHints = [:]
         loadTask = Task { [catalog] in
             let fresh = await catalog.snapshot()
             guard !Task.isCancelled else { return }
@@ -202,6 +204,26 @@ final class AppServices {
             errorMessage = "Couldn't open Terminal: \(error.localizedDescription)"
         }
     }
+
+    // MARK: Setup
+
+    /// What each install is set up with, by install id; filled on first look.
+    private(set) var setup: [String: [ConfigItem]] = [:]
+    private(set) var credentialHints: [String: [CredentialHints.Hint]] = [:]
+
+    func loadSetup(for install: Install) {
+        guard setup[install.id] == nil else { return }
+        Task {
+            let (items, hints) = await Task.detached(priority: .userInitiated) {
+                (ConfigInventory.items(for: install), CredentialHints.hints(for: install))
+            }.value
+            setup[install.id] = items
+            credentialHints[install.id] = hints
+        }
+    }
+
+    /// The comparison on screen, as a sheet.
+    var comparing: InstallComparison?
 
     // MARK: Forking
 
