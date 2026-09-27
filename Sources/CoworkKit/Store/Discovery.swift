@@ -205,12 +205,18 @@ public enum Discovery {
     /// A session whose metadata will not parse is dropped rather than thrown, because a
     /// single half-written file — Claude Desktop writes these while it runs — must not make
     /// the other fifty invisible.
-    public static func sessions(in account: AccountRef) throws -> [SessionRef] {
+    ///
+    /// `measuringWorkspaces: false` sizes a session by its metadata and transcript rather than
+    /// walking its whole workspace — which can hold thousands of files and would make a
+    /// listing that refreshes while Claude is writing expensive.
+    public static func sessions(in account: AccountRef,
+                                measuringWorkspaces: Bool = true) throws -> [SessionRef] {
         var result: [SessionRef] = []
         for metadataURL in sessionMetadataURLs(inOrg: account.root) {
             guard let document = try? MetadataDocument(contentsOf: metadataURL) else { continue }
             guard let session = makeSession(account: account, metadataURL: metadataURL,
-                                            document: document) else { continue }
+                                            document: document,
+                                            measuringWorkspace: measuringWorkspaces) else { continue }
             result.append(session)
         }
         return result.sorted {
@@ -444,7 +450,7 @@ extension Discovery {
     }
 
     static func makeSession(account: AccountRef, metadataURL: URL,
-                            document: MetadataDocument) -> SessionRef? {
+                            document: MetadataDocument, measuringWorkspace: Bool = true) -> SessionRef? {
         let filenameStem = String(metadataURL.lastPathComponent.dropLast(5))
         let sessionId = document.sessionId ?? filenameStem
         // Without the transcript's own id there is nothing to look up and nothing to
@@ -474,7 +480,9 @@ extension Discovery {
             projectDirURL: located.projectDir,
             transcriptURL: located.transcript,
             straySiblingTranscripts: located.strays,
-            byteSize: fileSize(metadataURL) + directorySize(workspaceURL))
+            byteSize: fileSize(metadataURL) + (measuringWorkspace
+                ? directorySize(workspaceURL)
+                : located.transcript.map(fileSize) ?? 0))
     }
 
     /// Find `<cliSessionId>.jsonl` beneath a workspace's `.claude/projects/`.

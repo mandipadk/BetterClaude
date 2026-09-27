@@ -165,6 +165,7 @@ struct Fact<Value: View>: View {
 
 struct FindField: View {
     @Binding var text: String
+    var prompt = "Find in conversation"
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -172,7 +173,7 @@ struct FindField: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-            TextField("Find in conversation", text: $text)
+            TextField(prompt, text: $text)
                 .textFieldStyle(.plain)
                 .font(Theme.Font.callout)
                 .focused($focused)

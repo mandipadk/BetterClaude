@@ -72,6 +72,19 @@ struct MainWindow: View {
 
     @ViewBuilder
     private var detail: some View {
+        if services.previewsMenuBarPanel {
+            MenuBarPanel()
+                .background(.regularMaterial, in: .rect(cornerRadius: Theme.Radius.panel))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.panel).strokeBorder(Theme.hairline))
+                .shadow(color: .black.opacity(0.2), radius: 20, y: 8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            destinationView
+        }
+    }
+
+    @ViewBuilder
+    private var destinationView: some View {
         switch services.destination {
         case .conversations, nil:
             ConversationsView()

@@ -5,6 +5,7 @@ import SwiftUI
 struct BetterClaudeApp: App {
     @State private var services = AppServices()
     @State private var updates = UpdateModel()
+    @AppStorage("showInMenuBar") private var showInMenuBar = true
 
     var body: some Scene {
         Window("Better Claude", id: "main") {
@@ -34,5 +35,14 @@ struct BetterClaudeApp: App {
                     .keyboardShortcut("2", modifiers: .command)
             }
         }
+
+        MenuBarExtra(isInserted: $showInMenuBar) {
+            MenuBarPanel()
+                .environment(services)
+        } label: {
+            Image(systemName: "bubble.left.and.text.bubble.right")
+                .accessibilityLabel("Better Claude")
+        }
+        .menuBarExtraStyle(.window)
     }
 }

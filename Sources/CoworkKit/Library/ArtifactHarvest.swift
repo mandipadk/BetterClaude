@@ -137,7 +137,7 @@ public enum ArtifactHarvest {
                 out.append(Artifact(
                     id: "\(digest)@\(conversationID)#\(ordinal)",
                     kind: .code,
-                    title: inferredTitle(forCode: block.content, language: language),
+                    title: title(forCode: block.content, language: language, context: block.context),
                     language: language.map(canonicalLanguage),
                     bytes: content.utf8.count,
                     lineCount: lineCount(of: content),
@@ -560,6 +560,9 @@ public enum ArtifactHarvest {
     struct FencedBlock {
         let language: String?
         let content: String
+        /// The last line of prose before the block — usually the sentence introducing it
+        /// ("Here's the retry helper:").
+        var context: String? = nil
     }
 
     /// Split a message on ``` fences.
@@ -572,26 +575,36 @@ public enum ArtifactHarvest {
         var language: String?
         var body: [Substring] = []
         var inside = false
+        var lastProse: String?
+        var context: String?
 
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
             let trimmed = line.drop(while: { $0 == " " || $0 == "\t" })
             if trimmed.hasPrefix("```") {
                 if inside {
                     blocks.append(FencedBlock(language: language,
-                                              content: body.joined(separator: "\n")))
+                                              content: body.joined(separator: "\n"),
+                                              context: context))
                     body = []
                     language = nil
                     inside = false
                 } else {
                     inside = true
                     language = fenceLanguage(trimmed.dropFirst(3))
+                    context = lastProse
+                    lastProse = nil
                 }
                 continue
             }
-            if inside { body.append(line) }
+            if inside {
+                body.append(line)
+            } else if !trimmed.trimmingCharacters(in: .whitespaces).isEmpty {
+                lastProse = String(trimmed)
+            }
         }
         if inside, !body.isEmpty {
-            blocks.append(FencedBlock(language: language, content: body.joined(separator: "\n")))
+            blocks.append(FencedBlock(language: language, content: body.joined(separator: "\n"),
+                                      context: context))
         }
         return blocks
     }
@@ -641,6 +654,47 @@ public enum ArtifactHarvest {
     ///
     /// "Untitled" is the last resort and is never reached while any line has a word in it,
     /// because a library of thirty rows all reading "Untitled" is not a library.
+    /// A block's own leading comment names it best; then the sentence that introduced it;
+    /// then whatever the code declares.
+    static func title(forCode content: String, language: String?, context: String?) -> String {
+        let firstLine = content.split(separator: "\n").first.map { $0.trimmingCharacters(in: .whitespaces) }
+        if let firstLine, let comment = commentText(firstLine) { return truncated(comment) }
+        if let context, let introduced = introducedTitle(context) { return introduced }
+        return inferredTitle(forCode: content, language: language)
+    }
+
+    /// "Here's the updated retry helper:" → "Updated retry helper". `nil` when what is left
+    /// says nothing about the code ("Here's the code:").
+    static func introducedTitle(_ sentence: String) -> String? {
+        // Only a line that hands off to the code ("…the retry helper:") is about the code. A
+        // line ending in a full stop is usually a result ("Tests pass.") and names nothing.
+        guard sentence.trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "*`")).hasSuffix(":") else { return nil }
+        var text = sentence
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "`", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: " #>-*"))
+        // Only the last sentence of a line introduces what follows it.
+        if let range = text.range(of: ". ", options: .backwards) { text = String(text[range.upperBound...]) }
+        text = text.trimmingCharacters(in: CharacterSet(charactersIn: " :.,;"))
+        let lowered = { text.lowercased() }
+        for lead in ["here's ", "here’s ", "here is ", "here are ", "this is ", "that's ", "you can use ",
+                     "you can ", "then ", "now ", "and ", "so ", "for example, ", "e.g. ",
+                     "try ", "use ", "run ", "add ", "with "] where lowered().hasPrefix(lead) {
+            text = String(text.dropFirst(lead.count))
+        }
+        for article in ["the ", "a ", "an ", "this ", "that ", "your ", "my ", "our "] where lowered().hasPrefix(article) {
+            text = String(text.dropFirst(article.count))
+        }
+        let words = text.split(whereSeparator: \.isWhitespace)
+        let generic: Set<String> = ["code", "example", "it", "snippet", "output", "result", "command",
+                                    "commands", "following", "script", "fix", "change", "changes",
+                                    "full code", "updated code", "complete code", "whole thing"]
+        guard words.count >= 2, words.count <= 16, !generic.contains(text.lowercased()) else { return nil }
+        guard let first = text.first else { return nil }
+        return truncated(first.uppercased() + text.dropFirst())
+    }
+
     public static func inferredTitle(forCode content: String, language: String?) -> String {
         let head = String(content.prefix(4000))
         let lines = head.split(separator: "\n", omittingEmptySubsequences: false)

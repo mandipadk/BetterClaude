@@ -36,16 +36,21 @@ final class AppServices {
         didSet { if selectedConversationID != oldValue { openSelected() } }
     }
     var query = ""
+    /// Debug builds only: shows the menu bar panel inside the window so it can be captured.
+    var previewsMenuBarPanel = false
 
     let reader = ReaderModel()
     let search = SearchModel()
+    let library = LibraryModel()
+    /// Bumped each time a fresh snapshot lands, so pages that derive from it know to redo
+    /// their work.
+    private(set) var generation = 0
     var errorMessage: String?
 
-    /// The previous app model, still behind Library, the install pages' setup lists, and the
-    /// transfer sheet while those are rebuilt.
-    let legacy = AppModel()
 
     private var loadTask: Task<Void, Never>?
+    private var watcher: DirectoryWatcher?
+    private var watchedRoots: [URL] = []
     private var observers: [NSObjectProtocol] = []
 
     init(paths: HostPaths = .current) {
@@ -71,16 +76,38 @@ final class AppServices {
             let fresh = await catalog.snapshot()
             guard !Task.isCancelled else { return }
             self.snapshot = fresh
+            self.generation += 1
             self.isLoading = false
             self.hasLoaded = true
             self.updateRunning()
             self.search.invalidate()
+            self.watch(fresh)
+            self.reopenIfChanged(fresh)
             if let id = self.selectedConversationID, fresh.conversations.contains(where: { $0.id == id }) {
                 // Still there; keep reading it.
             } else if self.selectedConversationID != nil {
                 self.selectedConversationID = nil
             }
         }
+    }
+
+    /// Refreshes on its own when Claude writes a conversation, so the timeline is live.
+    private func watch(_ snapshot: CatalogSnapshot) {
+        let roots = DirectoryWatcher.conversationRoots(for: snapshot.installs, paths: snapshot.paths)
+        guard roots != watchedRoots else { return }
+        watcher?.stop()
+        watchedRoots = roots
+        watcher = DirectoryWatcher(roots: roots) { [weak self] in
+            Task { @MainActor in self?.refresh() }
+        }
+    }
+
+    /// The open conversation grew while it was open: show the new messages.
+    private func reopenIfChanged(_ snapshot: CatalogSnapshot) {
+        guard let open = reader.conversation,
+              let current = snapshot.conversations.first(where: { $0.id == open.id }),
+              current.lastActivity != open.lastActivity || current.bytes != open.bytes else { return }
+        reader.open(current, in: install(for: current), force: true)
     }
 
     func updateRunning() {

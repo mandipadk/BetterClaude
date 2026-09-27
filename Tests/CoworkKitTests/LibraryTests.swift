@@ -209,6 +209,46 @@ struct LibraryTests {
         #expect(artifacts.first?.title == "Rebuild the nightly rollup from the raw events table")
     }
 
+    @Test("The sentence introducing a block names it")
+    func titleFromIntroducingSentence() {
+        let artifacts = harvestCode("""
+        Here's the updated retry helper with a ten-minute cap:
+        ```ts
+        export function nextDelay(attempt: number): number {
+          const base = 2 ** attempt * 1_000
+          return Math.min(base, 600_000)
+        }
+        ```
+        """)
+        #expect(artifacts.first?.title == "Updated retry helper with a ten-minute cap")
+    }
+
+    @Test("A sentence that reports a result is not a title")
+    func ignoresResultSentence() {
+        let artifacts = harvestCode("""
+        Failed deliveries now retry up to five times.
+        ```swift
+        func rebuildSearchIndex(force: Bool) throws {
+            try store.wipe()
+        }
+        ```
+        """)
+        #expect(artifacts.first?.title == "func rebuildSearchIndex")
+    }
+
+    @Test("An introduction that says nothing about the code is not a title")
+    func ignoresGenericIntroduction() {
+        let artifacts = harvestCode("""
+        Here's the code:
+        ```swift
+        func rebuildSearchIndex(force: Bool) throws {
+            try store.wipe()
+        }
+        ```
+        """)
+        #expect(artifacts.first?.title == "func rebuildSearchIndex")
+    }
+
     @Test("A comment that is only punctuation is not a title")
     func ignoresDecorativeComment() {
         let artifacts = harvestCode("""

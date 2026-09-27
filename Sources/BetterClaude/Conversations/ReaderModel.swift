@@ -28,20 +28,23 @@ final class ReaderModel {
 
     private var loadTask: Task<Void, Never>?
 
-    func open(_ conversation: ConversationRef, in install: Install?) {
-        guard conversation.id != self.conversation?.id || state != .ready else { return }
+    func open(_ conversation: ConversationRef, in install: Install?, force: Bool = false) {
+        guard force || conversation.id != self.conversation?.id || state != .ready else { return }
+        let keepFind = force ? findQuery : ""
         loadTask?.cancel()
         self.conversation = conversation
         self.install = install
-        readable = nil
-        transcript = nil
+        if !force {
+            readable = nil
+            transcript = nil
+        }
         forkPoints = [:]
-        findQuery = ""
+        findQuery = keepFind
         guard let url = conversation.transcriptURL else {
             state = .missing
             return
         }
-        state = .loading
+        if !force || readable == nil { state = .loading }
         loadTask = Task {
             let forkable = conversation.claudeCodeSession != nil
             let result = await Task.detached(priority: .userInitiated) { () -> Result<(Transcript, ReadableConversation, [BranchPoint]), Error> in

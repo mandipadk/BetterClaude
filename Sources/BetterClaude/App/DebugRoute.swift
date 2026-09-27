@@ -9,10 +9,10 @@ import Foundation
 ///
 /// `BC_APPEARANCE=light|dark` pins the appearance for the capture.
 ///
-/// Routes: `conversations`, `reader:<title words>`, `install:<name>`, `library`,
+/// Routes: `conversations`, `reader:<title words>`, `install:<name>`, `library[:everything|files|images|code|uploads]`,
 /// `filter:<install name>`, `search:<query>`, `messages:<query>`, `history`,
 /// `continue:<title words>`, `continue-review:<title words>`, `fork:<title words>`,
-/// `compare:<install>|<install>`.
+/// `compare:<install>|<install>`, `panel`.
 enum DebugRoute {
     @MainActor
     static func apply(to services: AppServices) {
@@ -56,6 +56,11 @@ enum DebugRoute {
                 }
             case "library":
                 services.destination = .library
+                if let filter = LibraryFilter(rawValue: argument) { services.library.filter = filter }
+                while services.library.summary == nil { try? await Task.sleep(for: .milliseconds(50)) }
+                services.library.selectedID = services.library.visible.first?.id
+            case "panel":
+                services.previewsMenuBarPanel = true
             case "history":
                 services.destination = .history
             case "continue", "continue-review":

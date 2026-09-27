@@ -96,6 +96,9 @@ public enum InstallDiscovery {
             at: root, includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants])) ?? []
         let launchers = Discovery.launcherIndex()
+        // A variant with no launcher of its own is still Claude's data, so it wears Claude's
+        // icon rather than a blank one.
+        let claudeApp = application(withIdentifier: Discovery.electronBundleIdentifier)
         let defaultRoot = Discovery.canonical(root.appendingPathComponent("Claude", isDirectory: true))
 
         var result: [Install] = []
@@ -113,7 +116,7 @@ public enum InstallDiscovery {
                 : (launcher?.displayName ?? entry.lastPathComponent)
             result.append(Install(
                 id: "desktop:\(dataRoot.path)", kind: .desktop, name: name, dataRoot: dataRoot,
-                appURL: launcher?.bundleURL, iconURL: launcher?.bundleURL, badge: nil,
+                appURL: launcher?.bundleURL, iconURL: launcher?.bundleURL ?? claudeApp, badge: nil,
                 store: store(at: dataRoot, name: entry.lastPathComponent, launcher: launcher)))
         }
         // The default install first, then the rest by name.

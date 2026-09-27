@@ -134,7 +134,7 @@ public actor Catalog {
             let found = (try? Discovery.accounts(in: store, orgDirectory: orgDirectory)) ?? []
             accounts[install.id] = found
             for account in found where account.sessionCount > 0 {
-                for session in (try? Discovery.sessions(in: account)) ?? [] {
+                for session in (try? Discovery.sessions(in: account, measuringWorkspaces: false)) ?? [] {
                     conversations.append(ConversationRef(
                         origin: .cowork(session), installID: install.id,
                         title: session.title.isEmpty ? "Untitled conversation" : session.title,
