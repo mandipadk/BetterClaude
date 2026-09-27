@@ -92,6 +92,7 @@ public enum SpaceStore {
     /// no-op rather than a duplicate.
     @discardableResult
     public static func add(_ space: SpaceRef, toOrg orgRoot: URL) throws -> Bool {
+        try WriteFence.check(orgRoot)
         var root = (try? document(inOrg: orgRoot)) ?? .object(JSONObject())
         if root.objectValue == nil { root = .object(JSONObject()) }
         var list = root["spaces"]?.arrayValue ?? []
@@ -122,6 +123,7 @@ public enum SpaceStore {
     /// Remove a space by id — used only by `undo`, to take back a space this tool created.
     @discardableResult
     public static func remove(id: String, fromOrg orgRoot: URL) throws -> Bool {
+        try WriteFence.check(orgRoot)
         guard var root = try? document(inOrg: orgRoot),
               let list = root["spaces"]?.arrayValue else { return false }
         let kept = list.filter { $0["id"]?.stringValue != id }

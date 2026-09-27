@@ -220,6 +220,7 @@ public struct MetadataDocument: Sendable {
     /// path at any instant sees either the whole previous file or the whole new one, which
     /// matters because Claude Desktop polls these files while it is running.
     public func write(to url: URL) throws {
+        try WriteFence.check(url)
         let data = root.serialized()
         let directory = url.deletingLastPathComponent()
         let temporary = directory.appendingPathComponent(

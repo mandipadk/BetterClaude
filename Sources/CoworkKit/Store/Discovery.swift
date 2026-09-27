@@ -50,6 +50,9 @@ public enum Discovery {
                 sessionsRoot: sessionsRoot,
                 launcher: index[canonical.path]))
         }
+        // Parallex keeps its copies' data inside its own folder rather than beside Claude's,
+        // so they are one level deeper than the scan above looks.
+        result += InstallDiscovery.parallexStores()
         return result.sorted { $0.variantDirName < $1.variantDirName }
     }
 
@@ -221,12 +224,7 @@ public enum Discovery {
 
     /// `$CLAUDE_CONFIG_DIR` if set, otherwise `~/.claude`.
     public static func defaultClaudeCodeConfigDir() -> URL {
-        if let override = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"],
-           !override.trimmingCharacters(in: .whitespaces).isEmpty {
-            return URL(fileURLWithPath: (override as NSString).expandingTildeInPath)
-                .standardizedFileURL
-        }
-        return homeDirectory().appendingPathComponent(".claude", isDirectory: true)
+        HostPaths.current.claudeCodeConfigDir
     }
 
     /// Project directories under `<configDir>/projects/`.
@@ -253,7 +251,11 @@ public enum Discovery {
     /// routinely pass 20 MB, and the title records the CLI appends (`custom-title`,
     /// `ai-title`, `last-prompt`) land at the end while the opening prompt and `cwd` land at
     /// the start, so both windows are needed and nothing in between is.
-    public static func claudeCodeSessions(projectDir: URL, configDir: URL) throws -> [CCSessionRef] {
+    ///
+    /// `countingRecords: false` skips the one step that reads the whole file. A listing that
+    /// never shows the count should not pay a sequential read of every transcript for it.
+    public static func claudeCodeSessions(projectDir: URL, configDir: URL,
+                                          countingRecords: Bool = true) throws -> [CCSessionRef] {
         let entries = (try? FileManager.default.contentsOfDirectory(
             at: projectDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
         let timestamps = TimestampParser()
@@ -261,7 +263,8 @@ public enum Discovery {
         var result: [CCSessionRef] = []
         for url in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
         where StoreLayout.isTranscriptFileName(url.lastPathComponent) {
-            guard let summary = summarizeTranscript(at: url, timestamps: timestamps) else { continue }
+            guard let summary = summarizeTranscript(at: url, timestamps: timestamps,
+                                                    countingRecords: countingRecords) else { continue }
             result.append(CCSessionRef(
                 configDir: configDir,
                 projectDir: projectDir,
@@ -283,18 +286,15 @@ public enum Discovery {
 extension Discovery {
 
     static func homeDirectory() -> URL {
-        URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        HostPaths.current.home
     }
 
     static func applicationSupportDirectory() -> URL {
-        homeDirectory()
-            .appendingPathComponent("Library", isDirectory: true)
-            .appendingPathComponent("Application Support", isDirectory: true)
+        HostPaths.current.applicationSupport
     }
 
     static func applicationDirectories() -> [URL] {
-        [URL(fileURLWithPath: "/Applications", isDirectory: true),
-         homeDirectory().appendingPathComponent("Applications", isDirectory: true)]
+        HostPaths.current.applicationDirectories
     }
 
     static func canonical(_ url: URL) -> URL {
@@ -398,7 +398,7 @@ extension Discovery {
     }
 
     static func expandHome(_ path: String) -> String {
-        let home = NSHomeDirectory()
+        let home = HostPaths.current.home.path
         for token in ["${HOME}", "$HOME"] where path.hasPrefix(token) {
             return home + String(path.dropFirst(token.count))
         }
@@ -563,7 +563,8 @@ extension Discovery {
         var hasTitle: Bool { customTitle != nil || aiTitle != nil || lastPrompt != nil }
     }
 
-    static func summarizeTranscript(at url: URL, timestamps: TimestampParser) -> TranscriptSummary? {
+    static func summarizeTranscript(at url: URL, timestamps: TimestampParser,
+                                    countingRecords: Bool = true) -> TranscriptSummary? {
         let size = fileSize(url)
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
@@ -605,8 +606,10 @@ extension Discovery {
                 ?? headFields.firstUserText ?? tailFields.firstUserText
                 ?? normalized(firstContentString(inRawHead: head)) ?? untitledTranscript,
             cwd: headFields.cwd ?? tailFields.cwd,
-            recordCount: countRecords(at: url, size: size, wholeFile: wholeFileFits ? head : nil,
-                                      tail: wholeFileFits ? head : tail),
+            recordCount: countingRecords
+                ? countRecords(at: url, size: size, wholeFile: wholeFileFits ? head : nil,
+                               tail: wholeFileFits ? head : tail)
+                : 0,
             firstTimestamp: firstTimestamp,
             lastTimestamp: lastTimestamp,
             byteSize: size)

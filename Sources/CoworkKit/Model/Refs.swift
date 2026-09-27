@@ -36,6 +36,9 @@ public struct LauncherRef: Hashable, Sendable {
         case electron
         /// An AppleScript applet wrapping `open -n -a Claude.app --args --user-data-dir=…`.
         case appleScriptWrapper
+        /// A copy of Claude made by Parallex: its own app, launching Claude with its own
+        /// `--user-data-dir`.
+        case parallexCopy
     }
 
     public let bundleURL: URL

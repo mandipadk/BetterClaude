@@ -64,6 +64,7 @@ public struct Transcript: Sendable {
     /// filesystem, and Claude Desktop's session workspaces are routinely on a different
     /// volume from `NSTemporaryDirectory()`.
     public func write(to url: URL) throws {
+        try WriteFence.check(url)
         let directory = url.deletingLastPathComponent()
         let tempURL = directory.appendingPathComponent(
             ".\(url.lastPathComponent).\(UUID().uuidString).tmp")

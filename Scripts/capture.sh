@@ -1,70 +1,47 @@
 #!/bin/bash
-# Captures the app's key screens for design review.
+# Photographs the app's screens for design review, from a sample Mac.
 #
-# Crops to the app window rather than the whole display: a full-screen grab pulls in
-# whatever else is on the desktop, which both distracts a reviewer and captures unrelated
-# windows that are nobody's business.
+#   Scripts/capture.sh <output-dir> [route ...]
+#
+# Builds a debug app, builds a sample Mac with invented conversations (bc-fixture), and opens
+# each screen straight from a route (BC_UI_ROUTE) in light and dark. No real conversation is
+# ever on screen, and nothing clicks: the mouse and keyboard stay yours while it runs.
+# `screencapture -l` grabs the window's own backing store, so other windows never leak in.
 set -uo pipefail
 
-# Hold the display awake for the duration. Synthetic clicks and the accessibility API are
-# inert while the screen is locked, so a machine that sleeps mid-run yields a directory of
-# identical screenshots rather than an error. This is a process assertion, not a settings
-# change — it releases when the script exits.
-caffeinate -d -i -w $$ &
-CAFFEINATE_PID=$!
-trap 'kill "$CAFFEINATE_PID" 2>/dev/null' EXIT
+OUT="${1:?usage: capture.sh <output-dir> [route ...]}"
+shift
+ROUTES=("$@")
+if [ ${#ROUTES[@]} -eq 0 ]; then
+  ROUTES=("conversations" "reader:Lisbon" "reader:webhook" "reader:standing desks"
+          "reader:flaky upload" "install:Claude Work" "install:Claude Code" "messages:backoff")
+fi
 
-OUT="${1:?usage: capture.sh <output-dir>}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"; pkill -f "dist/debug/BetterClaude.app" 2>/dev/null' EXIT
 mkdir -p "$OUT"
-rm -f "$OUT"/*.png
 
-WINDOWID_BIN=/tmp/bc-windowid
-[ -x "$WINDOWID_BIN" ] || swiftc -O "$ROOT/Scripts/windowid.swift" -o "$WINDOWID_BIN"
+[ -n "${SKIP_BUILD:-}" ] || bash "$ROOT/Scripts/make-app.sh" debug >/dev/null
+swift build --package-path "$ROOT" --product bc-fixture >/dev/null
+BIN="$(swift build --package-path "$ROOT" --show-bin-path)"
+"$BIN/bc-fixture" "$WORK/mac" >/dev/null
+swiftc -O "$ROOT/Scripts/windowid.swift" -o "$WORK/windowid"
 
-shot() {  # shot <name>
-  local id
-  id="$($WINDOWID_BIN "Better Claude" 2>/dev/null)"
-  if [ -z "$id" ]; then echo "  ! no BetterClaude window found for $1"; return 1; fi
-  # -l captures the window's own backing store, so an occluding window cannot leak in.
-  screencapture -x -o -l "$id" "$OUT/$1.png"
-  echo "  captured $1 (window $id)"
-}
-
-pkill -f "BetterClaude.app" 2>/dev/null
-sleep 1
-open "$ROOT/dist/BetterClaude.app"
-sleep 5
-
-osascript -e 'tell application "System Events" to tell process "BetterClaude" to set frontmost to true' >/dev/null 2>&1
-sleep 1
-shot "01-main"
-
-# Select a row and open the transfer sheet.
-osascript <<'EOF' >/dev/null 2>&1
-tell application "System Events" to tell process "BetterClaude"
-  set detail to group 1 of window 1
-  perform action "AXPress" of (UI element 1 of UI element 1 of scroll area 2 of detail)
-  delay 0.6
-  perform action "AXPress" of (last button of detail)
-end tell
-EOF
-sleep 2
-shot "02-transfer-configure"
-
-# Advance to the review step so its layout is reviewable too.
-osascript <<'EOF' >/dev/null 2>&1
-tell application "System Events" to tell process "BetterClaude"
-  -- Footer order is Cancel then the primary action, so the last button is "Review".
-  perform action "AXPress" of (last button of group 1 of sheet 1 of window 1)
-end tell
-EOF
-sleep 14
-shot "03-transfer-review"
-
-osascript -e 'tell application "System Events" to tell process "BetterClaude" to keystroke return' >/dev/null 2>&1
-sleep 1
-pkill -f "BetterClaude.app" 2>/dev/null
-
-echo "Screens in $OUT"
-ls -1 "$OUT"
+APP="$ROOT/dist/debug/BetterClaude.app/Contents/MacOS/BetterClaude"
+for route in "${ROUTES[@]}"; do
+  for appearance in light dark; do
+    name="$(echo "$route" | tr ':/ ' '---' | tr -cd '[:alnum:]-')-$appearance"
+    BC_FIXTURE_ROOT="$WORK/mac" BC_UI_ROUTE="$route" BC_APPEARANCE="$appearance" \
+      BC_ACCENT="${BC_ACCENT:-}" "$APP" >/dev/null 2>&1 &
+    pid=$!
+    sleep "${SETTLE:-3}"
+    id="$("$WORK/windowid" "Better Claude" 2>/dev/null)"
+    if [ -n "$id" ]; then
+      screencapture -x -o -l "$id" "$OUT/$name.png" && echo "  $name"
+    else
+      echo "  ! no window for $name"
+    fi
+    kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+  done
+done

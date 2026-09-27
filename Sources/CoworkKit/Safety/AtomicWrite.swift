@@ -51,6 +51,7 @@ public enum AtomicWrite {
     /// Write `data` so that `url` either has its old contents or the complete new contents,
     /// never a prefix of the new contents.
     public static func write(_ data: Data, to url: URL) throws {
+        try WriteFence.check(url)
         let directory = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
@@ -87,6 +88,7 @@ public enum AtomicWrite {
     /// displace-then-rename, which has a brief window where `finalURL` does not exist; the
     /// displaced original is renamed back if the second rename fails.
     public static func replaceDirectory(stagedAt staged: URL, with finalURL: URL) throws {
+        try WriteFence.check(finalURL)
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: staged.path, isDirectory: &isDirectory) else {
             throw AtomicWriteError.missing(staged.path)

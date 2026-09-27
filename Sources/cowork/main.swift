@@ -8,6 +8,10 @@ let usage = """
 cowork — move Claude Cowork sessions between Claude Desktop installs and Claude Code
 
 USAGE
+  cowork installs
+      List every Claude on this Mac, including Parallex copies, Claude Science and
+      Claude Code, with how many conversations each holds.
+
   cowork stores
       List Claude Desktop installs, their accounts, and session counts.
 
@@ -60,6 +64,27 @@ struct Args {
             }
             index += 1
         }
+    }
+}
+
+func cmdInstalls() {
+    let snapshot = runBlocking { await Catalog().snapshot() }
+    let counts = Dictionary(grouping: snapshot.conversations, by: \.installID)
+    for install in snapshot.installs {
+        let conversations = counts[install.id] ?? []
+        let missing = conversations.filter(\.isTranscriptMissing).count
+        var line = "\(install.name.padding(toLength: 18, withPad: " ", startingAt: 0))"
+            + "\(String(conversations.count).leftPadded(to: 5)) conversations"
+        if missing > 0 { line += ", \(missing) without messages" }
+        print(line)
+        print("  \(HostPaths.current.abbreviating(install.dataRoot.path))")
+        if let app = install.appURL { print("  \(app.path)") }
+    }
+}
+
+extension String {
+    func leftPadded(to width: Int) -> String {
+        count >= width ? self : String(repeating: " ", count: width - count) + self
     }
 }
 
@@ -387,6 +412,7 @@ let args = Args(Array(argv.dropFirst()))
 
 do {
     switch command {
+    case "installs": cmdInstalls()
     case "stores": try cmdStores()
     case "list": try cmdList(args)
     case "export": try cmdExport(args)

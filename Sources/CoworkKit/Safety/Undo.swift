@@ -40,12 +40,12 @@ public enum UndoError: Error, CustomStringConvertible {
 public enum Undo {
 
     public static var receiptsDirectory: URL {
-        Guards.applicationSupportDirectory
-            .appendingPathComponent("BetterClaude", isDirectory: true)
+        HostPaths.current.betterClaudeSupport
             .appendingPathComponent("receipts", isDirectory: true)
     }
 
     public static func save(_ receipt: ImportReceipt) throws {
+        try WriteFence.check(receiptsDirectory)
         let directory = receiptsDirectory
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -122,6 +122,10 @@ public enum Undo {
         }
 
         for entry in deepestFirst {
+            if (try? WriteFence.check(URL(fileURLWithPath: entry.path))) == nil {
+                skipped.append((entry.path, "outside the sample Mac this session is reading"))
+                continue
+            }
             var isDirectory: ObjCBool = false
             guard fm.fileExists(atPath: entry.path, isDirectory: &isDirectory) else {
                 skipped.append((entry.path, "already absent"))

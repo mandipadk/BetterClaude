@@ -1,4 +1,5 @@
 import AppKit
+import CoworkKit
 import SwiftUI
 
 /// The whole visual vocabulary of the app, in one file.
@@ -20,12 +21,10 @@ enum Design {
         /// The accent. Used for exactly one thing per screen: the action the user came here
         /// to take. A warm clay rather than the system blue, which is both overused and
         /// carries no meaning here.
-        static let accent = Color(light: NSColor(srgbRed: 0.729, green: 0.337, blue: 0.192, alpha: 1),
-                                  dark: NSColor(srgbRed: 0.851, green: 0.475, blue: 0.349, alpha: 1))
+        static let accent = Theme.accent
 
         /// Pressed / hovered accent.
-        static let accentPressed = Color(light: NSColor(srgbRed: 0.639, green: 0.290, blue: 0.161, alpha: 1),
-                                         dark: NSColor(srgbRed: 0.780, green: 0.412, blue: 0.290, alpha: 1))
+        static let accentPressed = Theme.accent.opacity(0.85)
 
         /// The neutral ramp, two values deep and no deeper.
         ///
@@ -60,8 +59,7 @@ enum Design {
         /// The dark-appearance accent is a light clay, so white on it measures 3.1:1 — the
         /// least readable text in the app, on its most important control. Near-black on the
         /// same fill measures about 5.5:1.
-        static let onAccent = Color(light: NSColor.white,
-                                    dark: NSColor(srgbRed: 0.11, green: 0.09, blue: 0.08, alpha: 1))
+        static let onAccent = Color.white
 
         static let separator = Color(nsColor: .separatorColor)
 
@@ -100,7 +98,7 @@ enum Design {
         static let bodyEmphasis = Font.system(size: 13, weight: .medium)
         /// Supporting text under a row.
         static let caption = Font.system(size: 11, weight: .regular)
-        /// Sidebar and column headings. Always paired with `.secondary` and tracking.
+        /// Sidebar and column headings. Always paired with `.secondary`.
         static let label = Font.system(size: 10, weight: .semibold)
         /// Numbers that sit in a column and must not jitter.
         static let numeric = Font.system(size: 11, weight: .regular).monospacedDigit()
@@ -147,14 +145,13 @@ extension Color {
 
 // MARK: - Primitives
 
-/// A small uppercase heading. The only place tracking is used in the app.
+/// A small sentence-case heading.
 struct SectionLabel: View {
     let text: String
 
     var body: some View {
-        Text(text.uppercased())
-            .font(Design.Typography.label)
-            .tracking(0.6)
+        Text(text)
+            .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(Design.Palette.muted)
     }
 }
@@ -284,11 +281,6 @@ extension View {
     }
 }
 
-extension Int64 {
-    var fileSize: String {
-        ByteCountFormatter.string(fromByteCount: self, countStyle: .file)
-    }
-}
 
 extension Date {
     /// Short, human, and stable in width: "12 Mar", "12 Mar 2025", "14:22" for today.
@@ -311,8 +303,7 @@ struct SubHead: View {
 
     var body: some View {
         Text(text)
-            .font(Design.Typography.label)
-            .tracking(0.6)
+            .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(Design.Palette.muted)
     }
 }
@@ -352,9 +343,9 @@ extension View {
 }
 
 extension String {
-    /// `/Users/me/Library/…` → `~/Library/…`.
+    /// `<home>/Library/…` → `~/Library/…`.
     var abbreviatingHome: String {
-        let home = NSHomeDirectory()
+        let home = HostPaths.current.home.path
         guard hasPrefix(home) else { return self }
         let tail = dropFirst(home.count)
         return tail.isEmpty ? "Home folder" : "~" + tail

@@ -8,6 +8,7 @@ let package = Package(
         .library(name: "CoworkKit", targets: ["CoworkKit"]),
         .executable(name: "cowork", targets: ["cowork"]),
         .executable(name: "BetterClaude", targets: ["BetterClaude"]),
+        .executable(name: "bc-fixture", targets: ["bc-fixture"]),
     ],
     targets: [
         .target(name: "CoworkKit"),
@@ -17,6 +18,9 @@ let package = Package(
             dependencies: ["CoworkKit"],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),
-        .testTarget(name: "CoworkKitTests", dependencies: ["CoworkKit"]),
+        // A synthetic Mac for tests and screenshots. Never linked into the shipped app.
+        .target(name: "CoworkFixtures", dependencies: ["CoworkKit"]),
+        .executableTarget(name: "bc-fixture", dependencies: ["CoworkFixtures"]),
+        .testTarget(name: "CoworkKitTests", dependencies: ["CoworkKit", "CoworkFixtures"]),
     ]
 )

@@ -172,7 +172,7 @@ public enum Importer {
             // Informational, not blocking. The conversation transfers perfectly well; it is
             // the project's folder that will connect to nothing, and the person who moved the
             // folder is the only one who can fix that.
-            let home = FileManager.default.homeDirectoryForCurrentUser.path
+            let home = HostPaths.current.home.path
             checks.append(PreconditionResult(
                 id: "PC13", title: "A project folder no longer exists on this Mac",
                 passed: true,
@@ -308,6 +308,10 @@ public enum Importer {
                              options: ImportOptions = ImportOptions(),
                              progress: (@Sendable (String) -> Void)? = nil) throws -> ImportReceipt {
         guard plan.isExecutable else { throw TransferError.preconditionsFailed(plan.failures) }
+        switch plan.endpoint {
+        case .cowork(let account): try WriteFence.check(account.root)
+        case .claudeCode(let projectDir, _): try WriteFence.check(projectDir)
+        }
 
         if !plan.conflicts.isEmpty {
             guard options.quitRunningVariant else { throw TransferError.variantRunning(plan.conflicts) }

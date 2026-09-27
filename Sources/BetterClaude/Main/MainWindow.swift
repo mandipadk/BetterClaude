@@ -1,0 +1,159 @@
+import CoworkKit
+import SwiftUI
+
+/// The main window: a full-height sidebar and one frosted surface, like Parallex.
+struct MainWindow: View {
+    @Environment(AppServices.self) private var services
+
+    var body: some View {
+        @Bindable var services = services
+        NavigationSplitView {
+            Sidebar()
+                .navigationSplitViewColumnWidth(min: 220, ideal: 244, max: 320)
+        } detail: {
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Content never scrolls up under the toolbar's title and controls.
+                .clipped()
+                .background(WindowGlassBackground(material: .sidebar).ignoresSafeArea())
+                .navigationTitle("")
+        }
+        .toolbarBackground(.hidden, for: .windowToolbar)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                HStack(spacing: 7) {
+                    ForkMark(size: 16)
+                    Text("Better Claude")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.leading, 6)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Better Claude")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    services.refresh()
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .help("Look for new conversations (⌘R)")
+                .keyboardShortcut("r", modifiers: .command)
+            }
+        }
+        .searchable(text: $services.query, placement: .toolbar, prompt: "Search conversations")
+        .onChange(of: services.query) { _, query in
+            if !query.isEmpty, services.destination != .conversations {
+                services.destination = .conversations
+            }
+        }
+        .tint(Theme.accent)
+        .task {
+            if !services.hasLoaded { services.refresh() }
+        }
+        .sheet(item: $services.transfer) { model in
+            TransferSheet(model: model, app: services.legacy) { services.endTransfer() }
+        }
+        .alert("Something went wrong",
+               isPresented: Binding(get: { services.errorMessage != nil },
+                                    set: { if !$0 { services.errorMessage = nil } })) {
+            Button("OK") { services.errorMessage = nil }
+        } message: {
+            Text(services.errorMessage ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        switch services.destination {
+        case .conversations, nil:
+            ConversationsView()
+        case .library:
+            LibraryPage()
+        case .install(let id):
+            if let install = services.install(id) {
+                InstallPage(install: install)
+            } else {
+                EmptyState(systemImage: "questionmark.app", title: "Not found",
+                           message: "This install isn't on this Mac anymore.")
+            }
+        }
+    }
+}
+
+// MARK: - Sidebar
+
+struct Sidebar: View {
+    @Environment(AppServices.self) private var services
+
+    var body: some View {
+        @Bindable var services = services
+        List(selection: $services.destination) {
+            Section {
+                Label("Conversations", systemImage: "bubble.left.and.bubble.right")
+                    .tag(SidebarDestination.conversations)
+                Label("Library", systemImage: "square.stack")
+                    .tag(SidebarDestination.library)
+            }
+
+            if !services.installs.isEmpty {
+                Section("Installs") {
+                    ForEach(services.installs) { install in
+                        InstallRow(install: install,
+                                   isRunning: services.isRunning(install),
+                                   count: services.conversationCount(in: install))
+                            .tag(SidebarDestination.install(install.id))
+                    }
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .bottomBar {
+            if services.isLoading && !services.hasLoaded {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Looking for Claude on this Mac…")
+                        .font(Theme.Font.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+        }
+    }
+}
+
+struct InstallRow: View {
+    let install: Install
+    let isRunning: Bool
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 10) {
+            InstallIcon(install: install, size: 26)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(install.name)
+                    .font(Theme.Font.bodyMedium)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .contentTransition(.numericText())
+            }
+        }
+        .padding(.vertical, 3)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var subtitle: String {
+        if isRunning { return "Open now" }
+        switch count {
+        case 0: return install.kind == .science ? "Projects and files" : "No conversations"
+        case 1: return "1 conversation"
+        default: return "\(count) conversations"
+        }
+    }
+}

@@ -64,6 +64,9 @@ public enum Guards {
     /// times. They are excluded by their `--type=` switch, which the browser process never
     /// carries.
     public static func runningVariants() throws -> [RunningVariant] {
+        // A sample Mac has no processes of its own, and the real ones have the real
+        // machine's stores open, not the sample's.
+        guard !HostPaths.current.isFixture else { return [] }
         var found: [RunningVariant] = []
         for app in NSWorkspace.shared.runningApplications {
             guard let identifier = app.bundleIdentifier?.lowercased(),
@@ -241,9 +244,7 @@ public enum Guards {
     // MARK: - Internals
 
     static var applicationSupportDirectory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory())
-                .appendingPathComponent("Library/Application Support", isDirectory: true)
+        HostPaths.current.applicationSupport
     }
 
     static func canonical(_ url: URL) -> URL {

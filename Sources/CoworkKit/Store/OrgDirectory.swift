@@ -104,7 +104,7 @@ public enum OrgDirectory {
         // an install that has been signed into but never used, which has no workspace to read.
         absorb(fileAt: claudeCodeConfigDir.deletingLastPathComponent()
                 .appendingPathComponent(".claude.json"), into: &resolved)
-        absorb(fileAt: FileManager.default.homeDirectoryForCurrentUser
+        absorb(fileAt: HostPaths.current.home
                 .appendingPathComponent(".claude.json"), into: &resolved)
 
         for store in stores {

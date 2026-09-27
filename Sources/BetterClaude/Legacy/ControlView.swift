@@ -333,7 +333,6 @@ private struct ComparisonPane: View {
     private func columnHeading(_ text: String) -> some View {
         Text(text)
             .font(Design.Typography.label)
-            .tracking(0.6)
             .foregroundStyle(Design.Palette.muted)
             .lineLimit(1)
             .truncationMode(.tail)

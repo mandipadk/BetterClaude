@@ -209,7 +209,6 @@ private struct BranchPointRow: View {
                     .frame(width: 26, alignment: .trailing)
                 Text(roleLabel(point.role))
                     .font(Design.Typography.label)
-                    .tracking(0.6)
                     .foregroundStyle(Design.Palette.muted)
                     .frame(width: 46, alignment: .leading)
                 Text(point.preview)
