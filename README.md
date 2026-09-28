@@ -27,10 +27,40 @@ All of it is on your disk in a readable format. This tool operates on it.
 
 Conversations from every install appear together, newest first: Cowork sessions from
 Claude and any copy of it (including copies made by [Parallex](https://github.com/mandipadk/parallex)),
-Claude Code sessions, and the Desktop app's Code tab. Filter by install or project, search
-titles instantly, or search inside every message. Read any conversation without opening
+Claude Code sessions, and the Desktop app's Code tab. Filter by install or project, or
+search inside every message as you type: every conversation is read once into a SQLite
+full-text index in `~/Library/Application Support/BetterClaude/Index`, then only what Claude
+appends, and the index keeps conversations Claude Code has since deleted. Read any conversation without opening
 Claude — Markdown, code, tables and tool use included — and it updates live while Claude
 writes to it. A menu bar panel finds any conversation from anywhere.
+
+### Claude remembers your past work
+
+Better Claude ships an MCP server, `bc-recall`, inside the app. Switch it on from an
+install's page and that Claude gets four read-only tools: `search_history`,
+`read_conversation`, `recent_work` and `file_history`. It can then find and quote what was
+decided in an earlier conversation, pick up where you left off, or tell which conversation
+changed a file — across Claude Desktop, Cowork, Claude Code and the Code tab.
+
+Each Claude reads only its own account's history. Letting one account's Claude read another
+account's is a door you open in Better Claude, one direction at a time. Claude Code is
+changed through `claude mcp`; a Desktop install gets one entry in its
+`claude_desktop_config.json`, which is backed up first. Turning the switch off takes it out.
+
+### Running, and knowing when Claude needs you
+
+Every running Claude Code session, in any terminal or a Desktop app's Code tab, read from
+the status file Claude Code keeps for each one: working, done, or waiting on a permission or
+an answer. A notification arrives the moment one needs you, or a long turn finishes, and
+clicking it brings the right app forward. An optional switch adds three hooks to Claude
+Code's settings so notifications can say what Claude asked; switching it off removes
+exactly those hooks.
+
+### Ask
+
+A question about your past work, answered by the model built into macOS from passages the
+index finds, with the conversations it cites listed below. Needs macOS 26 or later with
+Apple Intelligence; nothing is sent anywhere.
 
 ### Continue anywhere, and undo it
 
@@ -40,7 +70,7 @@ documents byte for byte. You see where it's going and what will happen before an
 written, and afterwards you can open it there directly — or resume it in Terminal.
 
 **Fork from here** starts a new Claude Code conversation from any message; the original is
-not changed. Every copy and fork is listed in **History** with **Undo**.
+not changed, and a fork of a Code tab session is listed in that app's Code tab. Every copy and fork is listed in **History** with **Undo**.
 
 | From | To | Status |
 |---|---|---|
@@ -202,6 +232,9 @@ cowork inspect chat.coworkbundle                # manifest + scan report, no ext
 cowork import chat.coworkbundle --to code:/path/to/project --dry-run
 cowork import chat.coworkbundle --to cowork:Claude-Work
 
+cowork index                                    # bring the history index up to date
+cowork search retry cap webhook                 # search every message, from the index
+cowork live                                     # Claude Code sessions running now
 cowork library                                  # every artifact Claude ever produced
 cowork library --kind code --limit 50           # narrowed to one kind
 

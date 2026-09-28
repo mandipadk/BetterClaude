@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Better Claude: every Claude conversation on your Mac, in one place</title>
-<meta name="description" content="A free Mac app that puts every Claude on your Mac in one window. Read any conversation, continue it in another Claude or in Claude Code, and keep it before Claude Code deletes it.">
+<meta name="description" content="A free Mac app that puts every Claude on your Mac in one window and gives each of them a memory of your past work. Search every message, see which agents need you, and keep conversations before Claude Code deletes them.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#161718" media="(prefers-color-scheme: dark)">
 <link rel="canonical" href="https://betterclaude.mandip.dev/">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Better Claude">
-<meta property="og:description" content="Every Claude conversation on your Mac, in one place. Continue it anywhere, and keep it before Claude Code deletes it.">
+<meta property="og:description" content="Every Claude conversation on your Mac, in one place, and a memory of your past work for every Claude.">
 <meta property="og:url" content="https://betterclaude.mandip.dev/">
 <meta property="og:image" content="https://betterclaude.mandip.dev/og.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -34,6 +34,7 @@
     </a>
     <nav class="bar-nav" aria-label="Primary">
       <a href="#features">Features</a>
+      <a href="#recall">Memory</a>
       <a href="#kept">Kept</a>
       <a href="#trust">Your data</a>
       <a href="https://github.com/mandipadk/BetterClaude">GitHub</a>
@@ -47,8 +48,8 @@
     <h1>All your Claude,<br>in one place.</h1>
     <p class="lede">
       Better Claude puts every Claude on your Mac in one window: Claude, its copies,
-      Claude Science and Claude Code. Read any conversation, continue it somewhere else,
-      and keep it before Claude Code deletes it.
+      Claude Science and Claude Code. Search every message you've ever sent, let each
+      Claude look up your past work, and know the moment an agent needs you.
     </p>
     <p class="actions">
       <a class="button primary" href="https://github.com/mandipadk/BetterClaude/releases/latest/download/BetterClaude.dmg">Download for Mac</a>
@@ -73,14 +74,64 @@
         <h3>Every conversation, one timeline</h3>
         <p>
           Cowork sessions from Claude and every copy of it, Claude Code sessions, and the
-          Code tab, newest first. Filter by install or project, search titles as you type,
-          or search inside every message. Read any conversation without opening Claude,
-          and watch it update while Claude is still writing.
+          Code tab, newest first. Search looks inside every message as you type, from an
+          index kept on your Mac, and still finds conversations Claude Code has deleted.
+          Read any conversation without opening Claude, and watch it update while Claude
+          is still writing.
         </p>
       </div>
     </article>
 
+    <article class="feature split" id="recall">
+      <div class="copy">
+        <h3>Claude remembers your past work</h3>
+        <p>
+          Switch it on for any Claude, and it can search and quote your past conversations
+          when you say “like we did last time”: what was decided, which conversation changed
+          a file, where you left off. Each account's Claude reads only its own history
+          unless you open the door to another, one way at a time.
+        </p>
+      </div>
+      <picture>
+        <source srcset="shots/recall-dark.webp" media="(prefers-color-scheme: dark)">
+        <img src="shots/recall-light.webp" width="1600" height="1030" loading="lazy"
+             alt="An install's page with the switch that lets that Claude search your history, and which accounts it may read.">
+      </picture>
+    </article>
+
+    <article class="feature split flip" id="running">
+      <div class="copy">
+        <h3>Know when an agent needs you</h3>
+        <p>
+          Every Claude Code session on the Mac, in any terminal or in Claude's Code tab,
+          and whether it's working, done, or waiting on a permission or an answer. An alert
+          arrives the moment one needs you, and clicking it brings the right app forward.
+        </p>
+      </div>
+      <picture>
+        <source srcset="shots/running-dark.webp" media="(prefers-color-scheme: dark)">
+        <img src="shots/running-light.webp" width="1600" height="1030" loading="lazy"
+             alt="Running, listing Claude Code sessions that need you, that are working, and that are done.">
+      </picture>
+    </article>
+
     <article class="feature split">
+      <div class="copy">
+        <h3>Ask your history</h3>
+        <p>
+          Ask a question about your past work and get a short answer with the
+          conversations it came from, written by the model built into macOS. The question,
+          the search and the answer all stay on your Mac.
+        </p>
+      </div>
+      <picture>
+        <source srcset="shots/ask-dark.webp" media="(prefers-color-scheme: dark)">
+        <img src="shots/ask-light.webp" width="1600" height="1030" loading="lazy"
+             alt="Ask, answering a question about webhook retries and citing the conversation it came from.">
+      </picture>
+    </article>
+
+    <article class="feature split flip">
       <div class="copy">
         <h3>Continue anywhere, and take it back</h3>
         <p>
@@ -97,7 +148,7 @@
       </picture>
     </article>
 
-    <article class="feature split flip" id="kept">
+    <article class="feature split" id="kept">
       <div class="copy">
         <h3>Kept, before Claude Code deletes it</h3>
         <p>
@@ -114,7 +165,7 @@
       </picture>
     </article>
 
-    <article class="feature split">
+    <article class="feature split flip">
       <div class="copy">
         <h3>What each Claude is set up with</h3>
         <p>
@@ -169,7 +220,7 @@
     <dl class="facts">
       <div>
         <dt>Nothing leaves your Mac</dt>
-        <dd>Better Claude reads what Claude already keeps on disk. The only thing it asks the internet is whether there's a newer version.</dd>
+        <dd>Better Claude reads what Claude already keeps on disk, and its index, its search and Ask all run on your Mac. The only thing it asks the internet is whether there's a newer version.</dd>
       </div>
       <div>
         <dt>It never overwrites</dt>
@@ -184,6 +235,10 @@
         <dd>Sign-ins, audit logs and permission grants never go with a conversation, and a conversation that looks like it holds a key isn't copied.</dd>
       </div>
       <div>
+        <dt>Claude reads only what you allow</dt>
+        <dd>No Claude can search your history until you switch it on for that Claude, and each reads only its own account's conversations unless you open the door to another. Turning it off takes it out of Claude's settings again.</dd>
+      </div>
+      <div>
         <dt>Updates are signed</dt>
         <dd>Each update is checked against Better Claude's signature before it replaces anything.</dd>
       </div>
@@ -195,6 +250,7 @@
     <ul>
       <li>It's a Mac app, for macOS 14 or later, and it isn't sandboxed: it has to read other apps' folders, which also keeps it off the Mac App Store.</li>
       <li>The app isn't notarized. The first time you open a download, macOS stops it: open System Settings, then Privacy &amp; Security, and choose Open Anyway. Updates from inside the app don't ask again.</li>
+      <li>Ask uses the model built into macOS, so it needs macOS 26 or later with Apple Intelligence turned on. Everything else works on macOS 14.</li>
       <li>Claude's files aren't a documented format. Better Claude is careful to keep what it doesn't understand, but a Claude update can change them.</li>
     </ul>
   </section>
