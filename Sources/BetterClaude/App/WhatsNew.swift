@@ -12,6 +12,14 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.4.0": [
+            Item(symbol: "gauge.with.dots.needle.50percent", title: "Usage",
+                 detail: "Every account's five-hour and weekly limits in one place, when each resets, and where the week is heading at your current pace."),
+            Item(symbol: "chart.bar.xaxis", title: "What used it",
+                 detail: "The projects and conversations that used the most of this week, from the tokens every reply used."),
+            Item(symbol: "arrow.right.circle", title: "Continue where there's room",
+                 detail: "Continue in… shows how much of its limit each account has left, and lists the one with the most room first."),
+        ],
         "0.3.0": [
             Item(symbol: "text.magnifyingglass", title: "Search every message as you type",
                  detail: "Every conversation is indexed on your Mac, so search looks inside every message instantly, even ones Claude Code has since deleted."),

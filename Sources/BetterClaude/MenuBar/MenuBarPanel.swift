@@ -21,6 +21,10 @@ struct MenuBarPanel: View {
                 running
                 Rectangle().fill(Theme.hairline).frame(height: 1)
             }
+            if query.isEmpty, !services.usage.quotas.isEmpty {
+                limits
+                Rectangle().fill(Theme.hairline).frame(height: 1)
+            }
             results
                 .frame(maxHeight: 360)
             Rectangle().fill(Theme.hairline).frame(height: 1)
@@ -70,6 +74,40 @@ struct MenuBarPanel: View {
         }
         .padding(.horizontal, 14)
         .frame(height: 38)
+    }
+
+    /// How much of each account's week is used, the tightest first.
+    private var limits: some View {
+        Button { showInWindow { services.destination = .usage } } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(services.usage.quotas.prefix(3)) { quota in
+                    let weekly = quota.window(.weekly)?.percent ?? 0
+                    HStack(spacing: 8) {
+                        Text(quota.account.displayName)
+                            .font(Theme.Font.callout)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer(minLength: 8)
+                        Capsule().fill(Theme.subtleFill)
+                            .frame(width: 60, height: 5)
+                            .overlay(alignment: .leading) {
+                                Capsule().fill(weekly >= 80 ? Theme.attention : Theme.accent)
+                                    .frame(width: max(3, 60 * min(1, weekly / 100)), height: 5)
+                            }
+                        Text("\(Int(weekly.rounded()))% of the week")
+                            .font(Theme.Font.callout)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                            .frame(width: 96, alignment: .trailing)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .contentShape(.rect)
+        }
+        .buttonStyle(PanelRowStyle())
+        .accessibilityLabel("Usage")
     }
 
     /// Claude Code sessions waiting for you, then the ones working.
