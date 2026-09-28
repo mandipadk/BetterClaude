@@ -159,6 +159,7 @@ public struct FixtureHome {
         for conversation in conversations {
             try writeCowork(conversation, orgDir: orgDir, email: email, name: name)
         }
+        try writeUsageHistory(to: userData, org: org, weeklyNow: account == Self.workAccount ? 76 : 46)
         if account == Self.workAccount {
             let spaceID = "5d0c7a1e-3b2f-4c8d-9e6a-1f2b3c4d5e6f"
             try writeJSON(["spaces": [["id": spaceID, "name": "Q4 planning",
@@ -412,6 +413,15 @@ public struct FixtureHome {
             .write(to: paths.home.appendingPathComponent("Code/journal-app/CLAUDE.md"))
         try writeJSON([
             "projects": recorded,
+            "cachedUsageUtilization": [
+                "accountUuid": Self.personalAccount,
+                "fetchedAtMs": Int(now.addingTimeInterval(-600).timeIntervalSince1970 * 1000),
+                "utilization": [
+                    "five_hour": ["utilization": 34, "resets_at": Transcriber.stamp(now.addingTimeInterval(2 * 3_600 + 1_200))],
+                    "seven_day": ["utilization": 46, "resets_at": Transcriber.stamp(weekStart.addingTimeInterval(7 * 86_400))],
+                    "seven_day_opus": NSNull(),
+                ] as [String: Any],
+            ] as [String: Any],
             "oauthAccount": ["accountUuid": Self.personalAccount, "emailAddress": "alex@rivera.studio",
                              "organizationUuid": Self.personalOrg,
                              "organizationName": "alex@rivera.studio's Organization",
@@ -426,6 +436,34 @@ public struct FixtureHome {
         let url = dir.appendingPathComponent("\(id).jsonl")
         try transcript.data().write(to: url)
         try touch(url, at: transcript.end)
+    }
+
+    /// The week began on the hour five days ago; the week before ended high, so its reset
+    /// shows as a drop.
+    public var weekStart: Date {
+        let hour = Calendar(identifier: .gregorian).dateInterval(of: .hour, for: now)?.start ?? now
+        return hour.addingTimeInterval(-5 * 86_400)
+    }
+
+    /// `plan-usage-history.json`, as Claude Desktop samples it: a reading every half hour
+    /// over nine days, the week's figure climbing steadily and the five-hour one rising and
+    /// falling with the day.
+    func writeUsageHistory(to userData: URL, org: String, weeklyNow: Double) throws {
+        var samples: [[String: Any]] = []
+        var time = now.addingTimeInterval(-9 * 86_400)
+        while time <= now.addingTimeInterval(-60) {
+            let inWeek = time >= weekStart
+            let span = inWeek ? now.timeIntervalSince(weekStart) : weekStart.timeIntervalSince(now.addingTimeInterval(-9 * 86_400))
+            let progress = inWeek ? time.timeIntervalSince(weekStart) / span
+                                  : 0.55 + 0.3 * time.timeIntervalSince(now.addingTimeInterval(-9 * 86_400)) / span
+            let weekly = inWeek ? weeklyNow * progress : 60 + 25 * progress
+            let hourOfDay = Calendar(identifier: .gregorian).component(.hour, from: time)
+            let fiveHour = (9...22).contains(hourOfDay) ? Double((hourOfDay * 7) % 38 + 6) : 0
+            samples.append(["t": Int(time.timeIntervalSince1970 * 1000), "org": org,
+                            "u": ["fh": Int(fiveHour), "sd": Int(weekly)]])
+            time.addTimeInterval(1_800)
+        }
+        try writeJSON(["samples": samples], to: userData.appendingPathComponent("plan-usage-history.json"))
     }
 
     // MARK: - Helpers

@@ -50,6 +50,10 @@ USAGE
   cowork search <words>... [--limit N]
       Search every message of every conversation, from the index.
 
+  cowork usage
+      Show each account's five-hour and weekly limits, when they reset, where the week is
+      heading, and which projects used the most this week.
+
   cowork live
       List the Claude Code sessions running now, and whether each is working, idle, or
       waiting for you.
@@ -117,6 +121,47 @@ func cmdSearch(_ args: Args) throws {
         print("\(hit.title)  (\(hit.matchingMessages) messages)")
     }
     print("\(hits.count) conversations in \(Int(elapsed)) ms.")
+}
+
+func cmdUsage() throws {
+    let (quotas, spend) = try runBlocking { () -> Result<([AccountQuota], [String: [(name: String, cost: Double, conversations: Int)]]), Error> in
+        do {
+            let snapshot = await Catalog().snapshot()
+            let quotas = QuotaReader.accounts(in: snapshot)
+            let index = try? HistoryIndex(readingFrom: HistoryIndex.defaultURL())
+            var spend: [String: [(name: String, cost: Double, conversations: Int)]] = [:]
+            for quota in quotas {
+                guard let index else { break }
+                let since = quota.weekStart ?? Date().addingTimeInterval(-7 * 86_400)
+                let items = try await QuotaAttribution.items(index: index, accountIDs: [quota.account.id], since: since)
+                spend[quota.account.id] = QuotaAttribution.byProject(items)
+            }
+            return .success((quotas, spend))
+        } catch { return .failure(error) }
+    }.get()
+    let when = DateFormatter()
+    when.dateFormat = "EEE HH:mm"
+    for quota in quotas {
+        print(quota.account.displayName)
+        for window in quota.windows {
+            var line = "  \(window.kind.title): \(Int(window.percent.rounded()))%"
+            if let reset = window.resetsAt {
+                line += ", resets \(window.resetIsEstimate ? "about " : "")\(when.string(from: reset))"
+            }
+            print(line)
+        }
+        switch quota.forecast {
+        case .reachesLimit(let date)?: print("  At this pace the weekly limit runs out \(when.string(from: date)).")
+        case .leftAtReset(let left)?: print("  At this pace \(Int(left.rounded()))% is left when it resets.")
+        case nil: break
+        }
+        let projects = spend[quota.account.id] ?? []
+        let total = projects.reduce(0) { $0 + $1.cost }
+        for project in projects.prefix(5) where total > 0 {
+            print("  \(Int((project.cost / total * 100).rounded()))%  \(project.name) (\(project.conversations) conversation\(project.conversations == 1 ? "" : "s"))")
+        }
+        print("  \(quota.history.count) readings, the latest \(Int(Date().timeIntervalSince(quota.asOf) / 60)) min ago\n")
+    }
 }
 
 func cmdLive() {
@@ -535,6 +580,7 @@ do {
     case "library": try cmdLibrary(args)
     case "index": try cmdIndex(args)
     case "live": cmdLive()
+    case "usage": try cmdUsage()
     case "search": try cmdSearch(args)
     case "encode":
         guard let path = args.positional.first else { fail("name a path") }
