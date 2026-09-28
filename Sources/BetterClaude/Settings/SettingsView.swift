@@ -21,7 +21,9 @@ struct SettingsView: View {
                                 isOn: $showInMenuBar)
                 ExplainedToggle(title: "Open at login",
                                 detail: loginError ?? "So conversations are kept even on days you don't open Better Claude.",
-                                isOn: Binding(get: { openAtLogin }, set: setOpenAtLogin))
+                                // A closure, not the method itself: Swift 6.3 crashes building the
+                                // thunk for a main-actor method passed as a setter.
+                                isOn: Binding(get: { openAtLogin }, set: { setOpenAtLogin($0) }))
             }
             Section {
                 HStack {
