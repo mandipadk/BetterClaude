@@ -62,9 +62,10 @@ publish: dist
 		--title "Better Claude $(VERSION)" --notes-file "$(NOTES)"
 
 # The site is static: checked for anything loaded off-origin, then served by Cloudflare.
+# Wrangler's own two build scripts are approved up front, so pnpm doesn't stop to ask.
 deploy-site:
 	python3 Scripts/check-selfcontained.py site/public
-	cd site && pnpm dlx wrangler deploy
+	cd site && pnpm dlx --allow-build=esbuild --allow-build=workerd wrangler deploy
 
 clean:
 	swift package clean
