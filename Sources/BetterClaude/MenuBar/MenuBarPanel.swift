@@ -76,7 +76,7 @@ struct MenuBarPanel: View {
                 .padding(.bottom, 4)
             if list.isEmpty, !query.isEmpty {
                 Button {
-                    showInWindow { services.query = query; services.search.search(query, in: services.snapshot) }
+                    showInWindow { services.query = query; services.search.search(query, immediately: true) }
                 } label: {
                     Label("Search inside messages in Better Claude", systemImage: "text.magnifyingglass")
                         .font(Theme.Font.body)

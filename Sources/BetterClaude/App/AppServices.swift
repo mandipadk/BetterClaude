@@ -43,7 +43,8 @@ final class AppServices {
     var previewsMenuBarPanel = false
 
     let reader = ReaderModel()
-    let search = SearchModel()
+    let index: IndexModel
+    let search: SearchModel
     let library = LibraryModel()
     let kept = KeptModel()
     let storage = StorageModel()
@@ -61,6 +62,9 @@ final class AppServices {
 
     init(paths: HostPaths = .current) {
         catalog = Catalog(paths: paths)
+        index = IndexModel(paths: paths)
+        search = SearchModel(history: index)
+        index.onUpdate = { [weak self] in self?.search.refresh() }
         let center = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didLaunchApplicationNotification,
                      NSWorkspace.didTerminateApplicationNotification] {
@@ -86,7 +90,7 @@ final class AppServices {
             self.isLoading = false
             self.hasLoaded = true
             self.updateRunning()
-            self.search.invalidate()
+            self.index.update(from: fresh)
             self.watch(fresh)
             self.reopenIfChanged(fresh)
             if UserDefaults.standard.object(forKey: "keepAutomatically") as? Bool ?? true {

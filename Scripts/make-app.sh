@@ -27,10 +27,10 @@ ARCH_FLAGS=()
 [ "$CONFIG" = "release" ] && ARCH_FLAGS=(--arch arm64 --arch x86_64)
 
 echo "Building $VERSION ($BUILD, $CONFIG)…"
-swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" --product BetterClaude
-swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" --product cowork
+swift build -c "$CONFIG" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --product BetterClaude
+swift build -c "$CONFIG" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --product cowork
 
-BIN="$(swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" --show-bin-path)"
+BIN="$(swift build -c "$CONFIG" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --show-bin-path)"
 # A debug build is a separate app with its own identity, so it never replaces the installed
 # one or shares its preferences. Only debug builds honour BC_FIXTURE_ROOT and BC_UI_ROUTE.
 if [ "$CONFIG" = "debug" ]; then

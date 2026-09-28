@@ -66,6 +66,7 @@ struct MainWindow: View {
             .accessibilityHidden(true)
         }
         .onChange(of: services.query) { _, query in
+            services.search.search(query)
             if !query.isEmpty, services.destination != .conversations {
                 services.destination = .conversations
             }
@@ -198,6 +199,20 @@ struct Sidebar: View {
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
+            } else if let progress = services.index.progress {
+                HStack(spacing: 8) {
+                    ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
+                        .controlSize(.small)
+                        .frame(width: 60)
+                    Text("Reading \(progress.done) of \(progress.total) conversations…")
+                        .font(Theme.Font.callout)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             } else if services.isLoading && !services.hasLoaded {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)

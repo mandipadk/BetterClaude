@@ -44,6 +44,12 @@ USAGE
   cowork encode <path>
       Print the projects/ directory name a path encodes to. Diagnostic.
 
+  cowork index [--rebuild]
+      Bring the history index up to date with every conversation on this Mac.
+
+  cowork search <words>... [--limit N]
+      Search every message of every conversation, from the index.
+
   cowork library [--kind code|document|data|image|upload] [--limit N]
       Harvest every artifact Claude has produced and list them.
 """
@@ -71,6 +77,42 @@ struct Args {
             index += 1
         }
     }
+}
+
+func cmdIndex(_ args: Args) throws {
+    let url = HistoryIndex.defaultURL()
+    if args.flags.contains("rebuild") {
+        for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: url.path + suffix) }
+    }
+    let started = Date()
+    let (read, summary) = try runBlocking { () -> Result<(Int, HistoryIndex.Summary), Error> in
+        do {
+            let index = try HistoryIndex(url: url)
+            let snapshot = await Catalog().snapshot()
+            let read = try await index.update(from: snapshot)
+            return .success((read, try await index.summary()))
+        } catch { return .failure(error) }
+    }.get()
+    print("Read \(read) transcripts in \(String(format: "%.1f", Date().timeIntervalSince(started))) s.")
+    print("\(summary.conversations) conversations, \(summary.messages) messages, "
+          + "\(ByteCountFormatter.string(fromByteCount: summary.bytesIndexed, countStyle: .file)) of transcripts.")
+}
+
+func cmdSearch(_ args: Args) throws {
+    let query = args.positional.joined(separator: " ")
+    guard !query.isEmpty else { fail("search needs some words") }
+    let limit = Int(args.values["limit"] ?? "") ?? 10
+    let started = Date()
+    let hits = try runBlocking { () -> Result<[HistorySearch.Hit], Error> in
+        do {
+            return .success(try await HistoryIndex(url: HistoryIndex.defaultURL()).search(query, options: .init(limit: limit)))
+        } catch { return .failure(error) }
+    }.get()
+    let elapsed = Date().timeIntervalSince(started) * 1000
+    for hit in hits {
+        print("\(hit.title)  (\(hit.matchingMessages) messages)")
+    }
+    print("\(hits.count) conversations in \(Int(elapsed)) ms.")
 }
 
 func cmdInstalls() {
@@ -474,6 +516,8 @@ do {
     case "receipts": try cmdReceipts()
     case "undo": try cmdUndo(args)
     case "library": try cmdLibrary(args)
+    case "index": try cmdIndex(args)
+    case "search": try cmdSearch(args)
     case "encode":
         guard let path = args.positional.first else { fail("name a path") }
         print(PathEncoder.encode(resolving: path))

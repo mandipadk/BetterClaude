@@ -25,12 +25,8 @@ struct TimelineColumn: View {
         @Bindable var services = services
         let conversations = services.visibleConversations
         VStack(alignment: .leading, spacing: 0) {
-            header(count: conversations.count)
-            if !services.query.isEmpty {
-                searchMessagesRow
-            }
-            if services.search.lastQuery == services.query.trimmingCharacters(in: .whitespaces),
-               !services.query.isEmpty, !services.search.hits.isEmpty || services.search.isIndexing {
+            header(count: showsMessageHits ? services.search.hits.count : conversations.count)
+            if showsMessageHits {
                 MessageHitsList()
             } else if conversations.isEmpty {
                 emptyTimeline
@@ -108,32 +104,15 @@ struct TimelineColumn: View {
 
     private func countText(_ count: Int) -> String {
         if !services.hasLoaded { return "Looking…" }
+        if showsMessageHits { return count == 1 ? "1 conversation matches" : "\(count) conversations match" }
         if !services.query.isEmpty { return count == 1 ? "1 title matches" : "\(count) titles match" }
         return count == 1 ? "1 conversation" : "\(count) conversations"
     }
 
-    private var searchMessagesRow: some View {
-        Button {
-            services.search.search(services.query, in: services.snapshot)
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "text.magnifyingglass")
-                    .foregroundStyle(Theme.accent)
-                Text("Search inside messages for “\(services.query)”")
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                KeyCaps(keys: ["⌘", "↩"])
-            }
-            .font(Theme.Font.body)
-            .padding(.horizontal, 12)
-            .frame(height: 32)
-            .background(Theme.subtleFill, in: .rect(cornerRadius: Theme.Radius.control))
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .keyboardShortcut(.return, modifiers: .command)
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
+    /// Once the index has caught up, a search looks inside every message; until then it
+    /// narrows the timeline by title.
+    private var showsMessageHits: Bool {
+        !services.query.trimmingCharacters(in: .whitespaces).isEmpty && services.index.isReady
     }
 
     @ViewBuilder
@@ -245,16 +224,10 @@ struct MessageHitsList: View {
 
     var body: some View {
         let search = services.search
-        if search.isIndexing {
-            VStack(spacing: 10) {
-                ProgressView(value: Double(search.indexed), total: Double(max(search.total, 1)))
-                    .frame(width: 180)
-                Text("Reading \(search.indexed) of \(search.total) conversations…")
-                    .font(Theme.Font.callout)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        if search.hits.isEmpty && (search.isSearching || search.lastQuery != services.query.trimmingCharacters(in: .whitespaces)) {
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if search.hits.isEmpty {
             EmptyState(systemImage: "text.magnifyingglass", title: "Nothing found",
                        message: "No message in any conversation contains “\(search.lastQuery)”.")
@@ -262,16 +235,16 @@ struct MessageHitsList: View {
             List {
                 ForEach(search.hits) { hit in
                     Button {
-                        if let conversation = services.snapshot.conversations.first(where: { $0.id == hit.location.rowID }) {
+                        if let conversation = services.snapshot.conversations.first(where: { $0.id == hit.conversationID }) {
                             services.query = ""
                             services.show(conversation)
                         }
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(alignment: .firstTextBaseline) {
-                                Text(hit.conversationTitle).font(Theme.Font.bodyMedium).lineLimit(1)
+                                Text(hit.title).font(Theme.Font.bodyMedium).lineLimit(1)
                                 Spacer(minLength: 4)
-                                Text(hit.totalMatches == 1 ? "1 match" : "\(hit.totalMatches) matches")
+                                Text(matchText(hit))
                                     .font(Theme.Font.caption)
                                     .foregroundStyle(.secondary)
                                     .monospacedDigit()
@@ -294,9 +267,17 @@ struct MessageHitsList: View {
         }
     }
 
-    private func highlighted(_ excerpt: SearchHit.Excerpt) -> AttributedString {
+    private func matchText(_ hit: HistorySearch.Hit) -> String {
+        switch hit.matchingMessages {
+        case 0: return "In the title"
+        case 1: return "1 message"
+        default: return "\(hit.matchingMessages) messages"
+        }
+    }
+
+    private func highlighted(_ excerpt: HistorySearch.Excerpt) -> AttributedString {
         var text = AttributedString(excerpt.text)
-        for range in excerpt.ranges {
+        for range in excerpt.matches {
             guard let lower = AttributedString.Index(range.lowerBound, within: text),
                   let upper = AttributedString.Index(range.upperBound, within: text) else { continue }
             text[lower..<upper].foregroundColor = .primary

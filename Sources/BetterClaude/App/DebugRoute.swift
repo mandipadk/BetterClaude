@@ -103,7 +103,7 @@ enum DebugRoute {
                 services.query = argument
             case "messages":
                 services.query = argument
-                services.search.search(argument, in: services.snapshot)
+                services.search.search(argument, immediately: true)
             default:
                 break
             }

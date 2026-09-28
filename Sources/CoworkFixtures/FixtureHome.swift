@@ -496,8 +496,17 @@ struct Transcriber {
             }
 
             let replyId = nextUUID()
+            // Plausible token counts, derived from the text so they are the same every build.
+            let context = 18_000 + lines.joined().utf8.count / 4
             emit(["type": "assistant", "uuid": replyId, "parentUuid": parent!,
                   "message": ["role": "assistant", "model": conversation.model,
+                              "id": "msg_" + replyId.replacingOccurrences(of: "-", with: "").prefix(24),
+                              "usage": ["input_tokens": 6 + turn.user.utf8.count / 4,
+                                        "output_tokens": 40 + turn.assistant.utf8.count / 3,
+                                        "cache_read_input_tokens": context,
+                                        "cache_creation_input_tokens": 1_200 + turn.user.utf8.count,
+                                        "cache_creation": ["ephemeral_5m_input_tokens": 0,
+                                                           "ephemeral_1h_input_tokens": 1_200 + turn.user.utf8.count]],
                               "content": [["type": "text", "text": turn.assistant]]]])
             parent = replyId
             clock.addTimeInterval(65)
