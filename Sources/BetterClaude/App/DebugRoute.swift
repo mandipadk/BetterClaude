@@ -56,6 +56,13 @@ enum DebugRoute {
                 }
             case "running":
                 services.destination = .running
+            case "ask":
+                services.destination = .ask
+                if !argument.isEmpty {
+                    services.ask.question = argument
+                    while !services.index.isReady { try? await Task.sleep(for: .milliseconds(50)) }
+                    services.ask.ask(index: services.index.index)
+                }
             case "library":
                 services.destination = .library
                 if let filter = LibraryFilter(rawValue: argument) { services.library.filter = filter }

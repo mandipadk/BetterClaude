@@ -329,6 +329,14 @@ struct ForkMark: View {
 
 // MARK: - Formatting
 
+extension String {
+    /// "Yesterday" becomes "yesterday" mid-sentence; weekdays, "12 Sep" and "14:22" stay as
+    /// they are.
+    var lowercasedIfWordLocal: String {
+        self == "Yesterday" || self == "Today" ? lowercased() : self
+    }
+}
+
 extension Int64 {
     var fileSize: String { ByteCountFormatter.string(fromByteCount: self, countStyle: .file) }
 }

@@ -260,9 +260,3 @@ private struct KeptReaderSheet: View {
     }
 }
 
-private extension String {
-    var lowercasedIfWordLocal: String {
-        guard let first = first, first.isLetter, !contains(where: \.isNumber) else { return self }
-        return lowercased()
-    }
-}

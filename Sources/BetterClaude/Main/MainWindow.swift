@@ -125,6 +125,8 @@ struct MainWindow: View {
             ConversationsView()
         case .running:
             RunningPage()
+        case .ask:
+            AskPage()
         case .library:
             LibraryPage()
         case .history:
@@ -161,6 +163,8 @@ struct Sidebar: View {
                 Label("Running", systemImage: "waveform.path.ecg")
                     .badge(services.pulse.needingYou.count)
                     .tag(SidebarDestination.running)
+                Label("Ask", systemImage: "sparkle.magnifyingglass")
+                    .tag(SidebarDestination.ask)
                 Label("Library", systemImage: "square.stack")
                     .tag(SidebarDestination.library)
             }

@@ -7,6 +7,7 @@ import SwiftUI
 enum SidebarDestination: Hashable {
     case conversations
     case running
+    case ask
     case library
     case install(String)
     case history
@@ -48,6 +49,7 @@ final class AppServices {
     let pulse: PulseModel
     let spotlight = SpotlightIndexer()
     let recall: RecallModel
+    let ask = AskModel()
     let search: SearchModel
     let library = LibraryModel()
     let kept = KeptModel()

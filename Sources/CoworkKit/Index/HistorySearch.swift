@@ -18,6 +18,9 @@ public enum HistorySearch {
         public var since: Date?
         public var limit = 100
         public var excerptsPerHit = 3
+        /// When false, a conversation matching some of the words counts, ranked by how many.
+        /// For questions in plain language, where not every word will have been said.
+        public var requireAllWords = true
 
         public init(installIDs: Set<String>? = nil, accountIDs: Set<String>? = nil, projectPath: String? = nil,
                     includeAbsent: Bool = false, since: Date? = nil, limit: Int = 100, excerptsPerHit: Int = 3) {
@@ -56,6 +59,8 @@ public enum HistorySearch {
         public let isPresent: Bool
         public let excerpts: [Excerpt]
         public let matchingMessages: Int
+        /// The share of the query's words found in the conversation, from 0 to 1.
+        public let coverage: Double
         public let score: Double
     }
 
@@ -167,10 +172,11 @@ public enum HistorySearch {
             guard let conversation = scope[id] else { continue }
             let entry = found[id] ?? Found()
             let covered = entry.words.union(titleWords[id] ?? [])
-            guard covered.count == Set(words).count else { continue }
+            let coverage = Double(covered.count) / Double(max(1, Set(words).count))
+            if options.requireAllWords { guard coverage == 1 else { continue } }
             let age = max(0, now.timeIntervalSince(conversation.lastActivity ?? .distantPast)) / 86_400
             let recency = 1 / (1 + age / 30)
-            let score = Double(titleWords[id]?.count ?? 0) * 8
+            let score = coverage * 12 + Double(titleWords[id]?.count ?? 0) * 8
                 + log1p(entry.relevance) * 2 + log1p(Double(entry.messages)) + recency * 2
             let excerpts = entry.excerpts.sorted { $0.rank > $1.rank }
                 .prefix(options.excerptsPerHit).map(\.excerpt).sorted { $0.ordinal < $1.ordinal }
@@ -178,7 +184,7 @@ public enum HistorySearch {
                             installID: conversation.installID, place: conversation.place, title: conversation.title,
                             projectPath: conversation.projectPath, lastActivity: conversation.lastActivity,
                             isPresent: conversation.isPresent, excerpts: Array(excerpts),
-                            matchingMessages: entry.messages, score: score))
+                            matchingMessages: entry.messages, coverage: coverage, score: score))
         }
         return Array(hits.sorted { $0.score == $1.score ? $0.conversationID < $1.conversationID : $0.score > $1.score }
             .prefix(options.limit))
