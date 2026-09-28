@@ -31,7 +31,8 @@ VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/
 DIST="$ROOT/dist"
 STAGE="$DIST/.dmg-stage"
 RW_DMG="$DIST/.BetterClaude-rw.dmg"
-OUT="$DIST/BetterClaude-$VERSION.dmg"
+# DMG_OUT names the image; the release uses a stable BetterClaude.dmg the website links to.
+OUT="${DMG_OUT:-$DIST/BetterClaude-$VERSION.dmg}"
 
 # Detach anything left mounted by an interrupted earlier run, otherwise hdiutil attach
 # renames the volume to "Better Claude 1" and the Finder script targets the wrong disk.

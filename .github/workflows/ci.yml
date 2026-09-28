@@ -1,0 +1,37 @@
+name: CI
+
+# Builds and tests every push and pull request. Releases are made on a Mac with
+# `make publish` (see Scripts/RELEASING.md): they are signed with a key that only lives in
+# the release machine's keychain.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS 26, and macOS 27 (GitHub names that image after its Xcode).
+        runner: [macos-26, xcode-27]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: sw_vers && swift --version
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test
+      - name: App bundle
+        run: make app
+      - name: The website loads nothing from anywhere else
+        run: python3 Scripts/check-selfcontained.py site/public

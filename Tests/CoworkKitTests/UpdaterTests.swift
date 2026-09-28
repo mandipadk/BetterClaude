@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 
@@ -31,12 +32,52 @@ struct UpdaterTests {
         #expect(!Updater.isNewer("1.1.0-beta", than: "1.1.0"))
     }
 
-    @Test("A non-HTTPS appcast is refused before any request is made")
-    func refusesInsecureAppcast() async {
-        let url = URL(string: "http://example.com/appcast.json")!
+    @Test("A non-HTTPS feed is refused before any request is made")
+    func refusesInsecureFeed() async {
+        let url = URL(string: "http://example.com/releases/latest")!
         await #expect(throws: UpdateError.self) {
-            _ = try await Updater.check(currentVersion: "1.0.0", appcast: url)
+            _ = try await Updater.check(currentVersion: "1.0.0", feed: url)
         }
+    }
+
+    private func releaseJSON(assets: [String], tag: String = "v0.3.0", prerelease: Bool = false) -> Data {
+        let list = assets.map { #"{"name":"\#($0)","browser_download_url":"https://github.com/x/\#($0)"}"# }
+            .joined(separator: ",")
+        return Data(#"{"tag_name":"\#(tag)","body":"Notes.","html_url":"https://github.com/x","prerelease":\#(prerelease),"assets":[\#(list)]}"#.utf8)
+    }
+
+    @Test("A release offers its signed archive")
+    func parsesSignedRelease() throws {
+        let update = try Updater.parseRelease(releaseJSON(assets: ["BetterClaude-0.3.0.zip", "BetterClaude-0.3.0.zip.sig",
+                                                                   "BetterClaude.dmg"]), currentVersion: "0.2.0")
+        #expect(update.version == "0.3.0")
+        #expect(update.archiveURL.lastPathComponent == "BetterClaude-0.3.0.zip")
+        #expect(update.signatureURL.lastPathComponent == "BetterClaude-0.3.0.zip.sig")
+    }
+
+    @Test("A release without a signature, or a prerelease, is never offered")
+    func refusesUnsignedRelease() {
+        #expect(throws: UpdateError.self) {
+            _ = try Updater.parseRelease(releaseJSON(assets: ["BetterClaude-0.3.0.zip"]), currentVersion: "0.2.0")
+        }
+        #expect(throws: UpdateError.self) {
+            _ = try Updater.parseRelease(releaseJSON(assets: ["BetterClaude-0.3.0.zip", "BetterClaude-0.3.0.zip.sig"],
+                                                     prerelease: true), currentVersion: "0.2.0")
+        }
+    }
+
+    @Test("Only the release key's signature is accepted")
+    func signatureVerification() throws {
+        let key = Curve25519.Signing.PrivateKey()
+        let other = Curve25519.Signing.PrivateKey()
+        let archive = Data("the app".utf8)
+        let publicKey = key.publicKey.rawRepresentation.base64EncodedString()
+        let good = try key.signature(for: archive).base64EncodedString()
+        let forged = try other.signature(for: archive).base64EncodedString()
+        #expect(ReleaseSignature.verify(archive, signature: good + "\n", publicKey: publicKey))
+        #expect(!ReleaseSignature.verify(archive, signature: forged, publicKey: publicKey))
+        #expect(!ReleaseSignature.verify(Data("tampered".utf8), signature: good, publicKey: publicKey))
+        #expect(!ReleaseSignature.verify(archive, signature: "not base64", publicKey: publicKey))
     }
 
     @Test("An appcast decodes from the shape the release workflow publishes")

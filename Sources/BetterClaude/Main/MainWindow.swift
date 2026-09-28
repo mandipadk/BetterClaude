@@ -147,6 +147,7 @@ struct MainWindow: View {
 
 struct Sidebar: View {
     @Environment(AppServices.self) private var services
+    @Environment(UpdateModel.self) private var updates
 
     var body: some View {
         @Bindable var services = services
@@ -183,7 +184,21 @@ struct Sidebar: View {
         }
         .listStyle(.sidebar)
         .bottomBar {
-            if services.isLoading && !services.hasLoaded {
+            if let version = updates.waiting {
+                Button { updates.showWaiting() } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.down.circle.fill").foregroundStyle(Theme.accent)
+                        Text("Better Claude \(version) is ready")
+                            .font(Theme.Font.callout)
+                        Spacer()
+                        Text("Update…").font(Theme.Font.callout).foregroundStyle(Theme.accent)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+            } else if services.isLoading && !services.hasLoaded {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Looking for Claude on this Mac…")

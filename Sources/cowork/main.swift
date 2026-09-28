@@ -12,6 +12,9 @@ USAGE
       List every Claude on this Mac, including Parallex copies, Claude Science and
       Claude Code, with how many conversations each holds.
 
+  cowork check-update [--from <version>]
+      Find the latest release, download it and verify its signature. Installs nothing.
+
   cowork storage
       Show where Claude's disk space goes on this Mac, and what can safely be freed.
 
@@ -82,6 +85,29 @@ func cmdInstalls() {
         print(line)
         print("  \(HostPaths.current.abbreviating(install.dataRoot.path))")
         if let app = install.appURL { print("  \(app.path)") }
+    }
+}
+
+func cmdCheckUpdate(_ args: Args) {
+    let current = args.values["from"] ?? AppVersion.current
+    let result = runBlocking { () -> Result<String, Error> in
+        do {
+            guard let update = try await Updater.check(currentVersion: current) else {
+                return .success("Up to date: no release is newer than \(current).")
+            }
+            let staging = FileManager.default.temporaryDirectory
+                .appendingPathComponent("cowork-check-\(UUID().uuidString)", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: staging) }
+            let app = try await Updater.download(update, into: staging,
+                                                 expectingBundleIdentifier: "com.betterclaude.app")
+            return .success("\(update.version) is available, and its download verified: \(app.lastPathComponent), signed by the release key.")
+        } catch {
+            return .failure(error)
+        }
+    }
+    switch result {
+    case .success(let message): print(message)
+    case .failure(let error): fail("\(error)")
     }
 }
 
@@ -439,6 +465,7 @@ do {
     switch command {
     case "installs": cmdInstalls()
     case "storage": cmdStorage()
+    case "check-update": cmdCheckUpdate(args)
     case "stores": try cmdStores()
     case "list": try cmdList(args)
     case "export": try cmdExport(args)

@@ -1,6 +1,10 @@
+import AppKit
 import CoworkKit
+import Observation
 import SwiftUI
 
+/// Keeps Better Claude up to date: checks GitHub Releases once a day (and on request), and
+/// installs a signed update in place.
 @MainActor
 @Observable
 final class UpdateModel {
@@ -16,37 +20,98 @@ final class UpdateModel {
 
     var state: State = .idle
     var isPresented = false
+    /// A newer release found by an automatic check, shown quietly in the sidebar.
+    private(set) var waiting: String?
     private var update: AvailableUpdate?
+    @ObservationIgnored private var timer: Timer?
+
+    enum Keys {
+        static let automatic = "checkForUpdatesAutomatically"
+        static let lastChecked = "lastUpdateCheck"
+        static let skipped = "skippedUpdateVersion"
+    }
 
     var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? AppVersion.current
+    }
+
+    /// Whether this copy can replace itself: a real bundle in a folder it can write to.
+    var canInstallInPlace: Bool {
+        let bundle = Bundle.main.bundleURL
+        return bundle.pathExtension == "app" && !bundle.path.contains("/.build/")
+            && FileManager.default.isWritableFile(atPath: bundle.deletingLastPathComponent().path)
+    }
+
+    /// Check a moment after launch if the last check is a day old, then hourly while open.
+    func start() {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 60 * 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.checkIfDue() }
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(8))
+            checkIfDue()
+        }
+    }
+
+    private func checkIfDue() {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: Keys.automatic) as? Bool ?? true else { return }
+        if let last = defaults.object(forKey: Keys.lastChecked) as? Date, Date().timeIntervalSince(last) < 86_400 {
+            return
+        }
+        Task { await check(userInitiated: false) }
     }
 
     func check(userInitiated: Bool) async {
-        state = .checking
-        isPresented = userInitiated
+        if userInitiated {
+            state = .checking
+            isPresented = true
+        }
         do {
-            if let found = try await Updater.check(currentVersion: currentVersion) {
+            let found = try await Updater.check(currentVersion: currentVersion)
+            UserDefaults.standard.set(Date(), forKey: Keys.lastChecked)
+            if let found {
                 update = found
-                state = .available(version: found.version, notes: found.notes)
-                isPresented = true
-            } else {
+                let skipped = UserDefaults.standard.string(forKey: Keys.skipped)
+                if userInitiated || found.version != skipped {
+                    state = .available(version: found.version, notes: found.notes)
+                    waiting = found.version
+                }
+            } else if userInitiated {
                 update = nil
+                waiting = nil
                 state = .upToDate
             }
         } catch {
-            state = .failed("\(error)")
-            if userInitiated { isPresented = true }
+            if userInitiated { state = .failed("\(error)") }
         }
+    }
+
+    func showWaiting() {
+        guard let update else { return }
+        state = .available(version: update.version, notes: update.notes)
+        isPresented = true
+    }
+
+    func skip() {
+        if let update { UserDefaults.standard.set(update.version, forKey: Keys.skipped) }
+        waiting = nil
+        isPresented = false
     }
 
     func install() async {
         guard let update else { return }
+        guard canInstallInPlace else {
+            NSWorkspace.shared.open(update.pageURL)
+            return
+        }
         state = .downloading(0)
         do {
             let staging = FileManager.default.temporaryDirectory
                 .appendingPathComponent("BetterClaudeUpdate-\(UUID().uuidString)", isDirectory: true)
-            let newApp = try await Updater.download(update, into: staging) { fraction in
+            let newApp = try await Updater.download(update, into: staging,
+                                                    expectingBundleIdentifier: Bundle.main.bundleIdentifier) { fraction in
                 Task { @MainActor in self.state = .downloading(fraction) }
             }
             _ = try Updater.install(newApp: newApp, replacing: Bundle.main.bundleURL)
@@ -62,10 +127,7 @@ final class UpdateModel {
 
 /// The update conversation, one centered message per state, like Parallex's.
 ///
-/// It says what the app is about to do to itself, including the part that is uncomfortable:
-/// the download is checksum-verified but not signature-verified, so the release account is
-/// the trust boundary. Hiding that behind a progress bar would be the easier design and the
-/// dishonest one.
+/// It says what the app is about to do to itself before it does it.
 struct UpdateSheet: View {
     @State var model: UpdateModel
     let onClose: () -> Void
@@ -144,7 +206,7 @@ struct UpdateSheet: View {
                     }
                     .frame(maxHeight: 120)
                 }
-                Text("The download is checked against a SHA-256 published with the release, which catches a damaged or altered file. It isn't signature-checked, so only install updates if you trust where they come from.")
+                Text("The download is checked against Better Claude's signature before anything is replaced. Your conversations and settings aren't touched.")
                     .font(Theme.Font.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -175,6 +237,7 @@ struct UpdateSheet: View {
         HStack(spacing: Theme.Space.m) {
             switch model.state {
             case .available:
+                Button("Skip This Version") { model.skip() }.quietAction()
                 Button("Not Now") { onClose() }.quietAction().keyboardShortcut(.cancelAction)
                 Button("Install and Restart") { Task { await model.install() } }
                     .prominentAction().keyboardShortcut(.defaultAction)

@@ -1,7 +1,8 @@
 import CryptoKit
 import Foundation
 
-/// What a published release says about itself.
+/// The checksum manifest published beside each release for Better Claude 0.1.x, whose updater
+/// reads `releases/latest/download/appcast.json`. Newer versions verify a signature instead.
 ///
 /// `Codable` is right here for the same reason it is right for `Manifest` and wrong for
 /// session data: this is our own format, versioned by us, with no unknown keys to preserve.
@@ -16,74 +17,85 @@ public struct Appcast: Codable, Sendable {
     public let notes: String?
 }
 
+/// A published release the updater can install.
 public struct AvailableUpdate: Sendable {
-    public let appcast: Appcast
+    public let version: String
+    public let notes: String?
+    public let pageURL: URL
+    /// The app, zipped: `BetterClaude-<version>.zip`.
+    public let archiveURL: URL
+    /// Its Ed25519 signature, base64: `BetterClaude-<version>.zip.sig`.
+    public let signatureURL: URL
     public let currentVersion: String
-
-    public var version: String { appcast.version }
-    public var notes: String? { appcast.notes }
 }
 
 public enum UpdateError: Error, CustomStringConvertible {
     case notReachable(String)
     case malformedAppcast(String)
-    case checksumMismatch
+    case notSigned
+    case badSignature
     case unpackFailed(String)
     case notAnApplication
+    case wrongApplication
     case insecureURL(URL)
     case systemTooOld(required: String)
 
     public var description: String {
         switch self {
-        case .notReachable(let why): return "Could not reach the update server: \(why)"
+        case .notReachable(let why): return "Couldn't reach the update server: \(why)"
         case .malformedAppcast(let why): return "The update information was unreadable: \(why)"
-        case .checksumMismatch:
-            return "The download did not match its published checksum and was discarded."
-        case .unpackFailed(let why): return "The download could not be unpacked: \(why)"
-        case .notAnApplication: return "The download did not contain an application."
-        case .insecureURL(let url): return "Refusing to download over an insecure URL: \(url)"
+        case .notSigned: return "The latest release has no signed app, so it can't be installed from here."
+        case .badSignature: return "The download isn't signed by Better Claude, so it wasn't installed."
+        case .unpackFailed(let why): return "The download couldn't be unpacked: \(why)"
+        case .notAnApplication: return "The download didn't contain the app."
+        case .wrongApplication: return "The download didn't match the release it came from, so it wasn't installed."
+        case .insecureURL(let url): return "Refusing to download over an insecure address: \(url)"
         case .systemTooOld(let required): return "That update needs macOS \(required) or later."
         }
     }
 }
 
-/// Checks whether a newer release exists, and installs it on request.
+/// Verifies release archives against the public key compiled into the app. The private key
+/// never leaves the release machine's keychain (see `Scripts/release-key.swift`).
+public enum ReleaseSignature {
+    public static let publicKey = "W3KaTeYI+tHD+bbAO7H45qmPR0vGO9qPcn3gzfQmMGc="
+
+    public static func verify(_ data: Data, signature: String, publicKey: String = publicKey) -> Bool {
+        guard let signatureData = Data(base64Encoded: signature.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let keyData = Data(base64Encoded: publicKey),
+              let key = try? Curve25519.Signing.PublicKey(rawRepresentation: keyData)
+        else { return false }
+        return key.isValidSignature(signatureData, for: data)
+    }
+}
+
+/// Checks for a newer release, and installs it on request.
 ///
-/// ## What this does and does not protect against
-///
-/// The download is fetched over HTTPS and its SHA-256 is checked against the value in the
-/// appcast before anything is unpacked. That defends against a corrupted or truncated
-/// download, and against a CDN or network position that can alter bytes in flight.
-///
-/// It does **not** defend against a compromised release pipeline: the checksum and the
-/// archive are published by the same account, so anyone who can publish a release can
-/// publish a matching checksum. Real protection needs a signature the app verifies against a
-/// public key compiled into it — Sparkle's EdDSA scheme — or a Developer ID identity plus
-/// notarisation so Gatekeeper does the verifying. This app is ad-hoc signed and has neither.
-///
-/// The consequence is stated to the user before any install, rather than being left implicit
-/// in a progress bar. An updater that silently replaces a binary is a supply-chain component
-/// whether or not it is described as one.
+/// An update is installed only when its archive carries a valid signature from the Better
+/// Claude release key — checked against the public key compiled into this app — and unpacks
+/// to Better Claude at the version the release claims. HTTPS alone would only prove the
+/// bytes came from GitHub; the signature proves they came from whoever holds the key, so a
+/// compromised release account can't push an update on its own.
 public enum Updater {
 
-    public static let appcastURL = URL(
-        string: "https://github.com/mandipadk/BetterClaude/releases/latest/download/appcast.json")!
+    public static let repository = "mandipadk/BetterClaude"
+    public static let feedURL = URL(string: "https://api.github.com/repos/\(repository)/releases/latest")!
+
+    public static func archiveName(for version: String) -> String { "BetterClaude-\(version).zip" }
 
     // MARK: - Checking
 
-    public static func check(currentVersion: String,
-                             appcast url: URL = appcastURL,
+    public static func check(currentVersion: String, feed url: URL = feedURL,
                              session: URLSession = .shared) async throws -> AvailableUpdate? {
         guard url.scheme == "https" else { throw UpdateError.insecureURL(url) }
-
         let data: Data
         do {
-            var request = URLRequest(url: url)
-            request.cachePolicy = .reloadIgnoringLocalCacheData
-            request.timeoutInterval = 15
+            var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+            request.setValue("BetterClaude/\(currentVersion)", forHTTPHeaderField: "User-Agent")
             let (body, response) = try await session.data(for: request)
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                throw UpdateError.notReachable("HTTP \(http.statusCode)")
+                throw UpdateError.notReachable(http.statusCode == 404 ? "no release is published yet" : "HTTP \(http.statusCode)")
             }
             data = body
         } catch let error as UpdateError {
@@ -91,23 +103,42 @@ public enum Updater {
         } catch {
             throw UpdateError.notReachable(error.localizedDescription)
         }
+        let release = try parseRelease(data, currentVersion: currentVersion)
+        return isNewer(release.version, than: currentVersion) ? release : nil
+    }
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let appcast: Appcast
+    /// Reads GitHub's latest-release answer. A release without a signed archive is refused
+    /// rather than offered: there would be nothing safe to install.
+    public static func parseRelease(_ data: Data, currentVersion: String) throws -> AvailableUpdate {
+        struct Asset: Decodable {
+            let name: String
+            let browser_download_url: URL
+        }
+        struct Release: Decodable {
+            let tag_name: String
+            let body: String?
+            let html_url: URL
+            let draft: Bool?
+            let prerelease: Bool?
+            let assets: [Asset]
+        }
+        let release: Release
         do {
-            appcast = try decoder.decode(Appcast.self, from: data)
+            release = try JSONDecoder().decode(Release.self, from: data)
         } catch {
             throw UpdateError.malformedAppcast("\(error)")
         }
-        guard appcast.zipURL.scheme == "https" else { throw UpdateError.insecureURL(appcast.zipURL) }
-
-        if let required = appcast.minimumSystemVersion,
-           !systemMeets(required) {
-            throw UpdateError.systemTooOld(required: required)
-        }
-        guard isNewer(appcast.version, than: currentVersion) else { return nil }
-        return AvailableUpdate(appcast: appcast, currentVersion: currentVersion)
+        let version = release.tag_name.hasPrefix("v") ? String(release.tag_name.dropFirst()) : release.tag_name
+        let name = archiveName(for: version)
+        guard release.draft != true, release.prerelease != true,
+              let archive = release.assets.first(where: { $0.name == name }),
+              let signature = release.assets.first(where: { $0.name == name + ".sig" })
+        else { throw UpdateError.notSigned }
+        guard archive.browser_download_url.scheme == "https", signature.browser_download_url.scheme == "https"
+        else { throw UpdateError.insecureURL(archive.browser_download_url) }
+        return AvailableUpdate(version: version, notes: release.body, pageURL: release.html_url,
+                               archiveURL: archive.browser_download_url,
+                               signatureURL: signature.browser_download_url, currentVersion: currentVersion)
     }
 
     /// Numeric, component-wise comparison. `"1.10.0"` is newer than `"1.9.0"`, which a string
@@ -141,40 +172,35 @@ public enum Updater {
 
     // MARK: - Downloading
 
-    /// Downloads and verifies the archive, returning the unpacked application bundle.
-    ///
-    /// Nothing is unpacked until the checksum matches, so a tampered or truncated archive
-    /// never reaches the filesystem as executable content.
-    public static func download(_ update: AvailableUpdate,
-                                into directory: URL,
+    /// Downloads the archive and its signature, verifies, unpacks, and checks the app inside.
+    /// Returns the unpacked application. Nothing is unpacked until the signature holds.
+    public static func download(_ update: AvailableUpdate, into directory: URL,
+                                expectingBundleIdentifier bundleIdentifier: String?,
                                 session: URLSession = .shared,
                                 progress: (@Sendable (Double) -> Void)? = nil) async throws -> URL {
-        let url = update.appcast.zipURL
-        guard url.scheme == "https" else { throw UpdateError.insecureURL(url) }
-
-        let archive: Data
-        do {
-            let (body, response) = try await session.data(from: url)
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                throw UpdateError.notReachable("HTTP \(http.statusCode)")
+        func fetch(_ url: URL) async throws -> Data {
+            guard url.scheme == "https" else { throw UpdateError.insecureURL(url) }
+            do {
+                let (body, response) = try await session.data(from: url)
+                if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                    throw UpdateError.notReachable("HTTP \(http.statusCode)")
+                }
+                return body
+            } catch let error as UpdateError {
+                throw error
+            } catch {
+                throw UpdateError.notReachable(error.localizedDescription)
             }
-            archive = body
-        } catch let error as UpdateError {
-            throw error
-        } catch {
-            throw UpdateError.notReachable(error.localizedDescription)
         }
+        let signature = String(decoding: try await fetch(update.signatureURL), as: UTF8.self)
+        progress?(0.1)
+        let archive = try await fetch(update.archiveURL)
         progress?(0.8)
-
-        let digest = SHA256.hash(data: archive).reduce(into: "") { $0 += String(format: "%02x", $1) }
-        guard digest.caseInsensitiveCompare(update.appcast.zipSHA256) == .orderedSame else {
-            throw UpdateError.checksumMismatch
-        }
+        guard ReleaseSignature.verify(archive, signature: signature) else { throw UpdateError.badSignature }
 
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let archiveURL = directory.appendingPathComponent("update.zip")
         try archive.write(to: archiveURL)
-
         let unpacked = directory.appendingPathComponent("unpacked", isDirectory: true)
         try FileManager.default.createDirectory(at: unpacked, withIntermediateDirectories: true)
 
@@ -191,11 +217,12 @@ public enum Updater {
         }
         progress?(1.0)
 
-        let contents = (try? FileManager.default.contentsOfDirectory(at: unpacked,
-                                                                     includingPropertiesForKeys: nil)) ?? []
-        guard let app = contents.first(where: { $0.pathExtension == "app" }) else {
-            throw UpdateError.notAnApplication
-        }
+        let contents = (try? FileManager.default.contentsOfDirectory(at: unpacked, includingPropertiesForKeys: nil)) ?? []
+        guard let app = contents.first(where: { $0.pathExtension == "app" }) else { throw UpdateError.notAnApplication }
+        let info = NSDictionary(contentsOf: app.appendingPathComponent("Contents/Info.plist"))
+        guard info?["CFBundleShortVersionString"] as? String == update.version,
+              bundleIdentifier == nil || info?["CFBundleIdentifier"] as? String == bundleIdentifier
+        else { throw UpdateError.wrongApplication }
         return app
     }
 

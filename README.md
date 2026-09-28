@@ -142,14 +142,13 @@ folder that no longer exists on this Mac.
 
 ## Install
 
-Requires macOS 14 or later. Download the latest `.dmg` from
-[Releases](https://github.com/mandipadk/BetterClaude/releases/latest) and drag the app to
+Requires macOS 14 or later. [Download Better Claude](https://github.com/mandipadk/BetterClaude/releases/latest/download/BetterClaude.dmg)
+(or see [betterclaude.mandip.dev](https://betterclaude.mandip.dev)) and drag the app to
 Applications.
 
-The build is ad-hoc signed and **not notarised**, so a browser download arrives
-quarantined and Gatekeeper blocks the first launch. Right-click the app and choose
-**Open**, then confirm — once per installed version. See [Updates](#updates) for what that
-means for the update checksum.
+The build is ad-hoc signed and **not notarized**, so a browser download arrives
+quarantined and macOS blocks the first launch: open System Settings, then Privacy &
+Security, and choose **Open Anyway**. Updates installed from inside the app don't ask again.
 
 ### Building from source
 
@@ -157,8 +156,7 @@ Needs Xcode's Swift toolchain in addition to macOS 14.
 
 ```bash
 git clone https://github.com/mandipadk/BetterClaude.git && cd BetterClaude
-./Scripts/make-app.sh
-open dist/BetterClaude.app
+make app-install     # or: make app, then open dist/BetterClaude.app
 ```
 
 A locally built bundle never acquires the quarantine attribute, so it launches with no
@@ -178,17 +176,11 @@ Store and cannot be: writing into another app's data directory is not permitted 
 
 ### Updates
 
-**Better Claude → Check for Updates…** compares against a published release, downloads it,
-and swaps the bundle in place.
-
-The download is fetched over HTTPS and its SHA-256 is checked against the value published
-with the release before anything is unpacked. That catches a corrupted or altered file in
-transit. It does **not** defend against a compromised release account: the archive and its
-checksum are published by the same account, so whoever can publish one can publish the
-other. Real protection needs a signature verified against a key compiled into the app
-(Sparkle's EdDSA scheme) or a Developer ID identity plus notarisation. This app is ad-hoc
-signed and has neither, so the app states the limit before every install rather than
-hiding it behind a progress bar.
+Better Claude checks for a new version once a day (and whenever you choose **Better Claude →
+Check for Updates…**), then downloads it, verifies it against the release signature
+compiled into the app, and replaces itself in place. It installs nothing that isn't signed
+with Better Claude's release key. Releasing is described in
+[Scripts/RELEASING.md](Scripts/RELEASING.md).
 
 ## Using it
 
@@ -267,7 +259,7 @@ Sources/BetterClaude/  SwiftUI app
 Scripts/make-app.sh    assembles and ad-hoc signs the .app, generating the icon
 Scripts/make-icon.swift  draws the app icon at every size from one geometry
 Scripts/capture.sh     photographs every screen from the sample Mac, in light and dark
-site/                  the public website (static, no scripts, no third-party assets)
+site/                  the website, on Cloudflare (static, loads nothing from elsewhere)
 ```
 
 The app and the CLI share the engine completely. Any check added to one applies to both.

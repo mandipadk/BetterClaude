@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Better Claude: every Claude conversation on your Mac, in one place</title>
+<meta name="description" content="A free Mac app that puts every Claude on your Mac in one window. Read any conversation, continue it in another Claude or in Claude Code, and keep it before Claude Code deletes it.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#161718" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="https://betterclaude.mandip.dev/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Better Claude">
+<meta property="og:description" content="Every Claude conversation on your Mac, in one place. Continue it anywhere, and keep it before Claude Code deletes it.">
+<meta property="og:url" content="https://betterclaude.mandip.dev/">
+<meta property="og:image" content="https://betterclaude.mandip.dev/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="bar">
+  <div class="wrap bar-inner">
+    <a class="brand" href="#top" aria-label="Better Claude, top of page">
+      <svg class="mark" viewBox="0 -50 460 530" width="18" height="18" aria-hidden="true" focusable="false">
+        <path d="M58 0 230 185V430M402 0 230 185" fill="none" stroke="currentColor" stroke-width="68" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="58" cy="0" r="47" fill="currentColor"/><circle cx="402" cy="0" r="47" fill="currentColor"/><circle cx="230" cy="430" r="47" fill="currentColor"/>
+      </svg>
+      <span>Better Claude</span>
+    </a>
+    <nav class="bar-nav" aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#kept">Kept</a>
+      <a href="#trust">Your data</a>
+      <a href="https://github.com/mandipadk/BetterClaude">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="hero wrap" id="top">
+    <h1>All your Claude,<br>in one place.</h1>
+    <p class="lede">
+      Better Claude puts every Claude on your Mac in one window: Claude, its copies,
+      Claude Science and Claude Code. Read any conversation, continue it somewhere else,
+      and keep it before Claude Code deletes it.
+    </p>
+    <p class="actions">
+      <a class="button primary" href="https://github.com/mandipadk/BetterClaude/releases/latest/download/BetterClaude.dmg">Download for Mac</a>
+      <a class="button" href="https://github.com/mandipadk/BetterClaude">View on GitHub</a>
+    </p>
+    <p class="fine">Free and open source. macOS 14 or later.</p>
+  </section>
+
+  <figure class="stage wrap">
+    <picture>
+      <source srcset="shots/reader-dark.webp" media="(prefers-color-scheme: dark)">
+      <img src="shots/reader-light.webp" width="1600" height="1030"
+           alt="Better Claude showing conversations from Claude, Claude Work and Claude Code in one timeline, with a Claude Code conversation open beside it.">
+    </picture>
+  </figure>
+
+  <section class="features wrap" id="features" aria-labelledby="features-h">
+    <h2 id="features-h" class="section-title">Everything Claude keeps on your Mac, finally in one window</h2>
+
+    <article class="feature">
+      <div class="copy">
+        <h3>Every conversation, one timeline</h3>
+        <p>
+          Cowork sessions from Claude and every copy of it, Claude Code sessions, and the
+          Code tab, newest first. Filter by install or project, search titles as you type,
+          or search inside every message. Read any conversation without opening Claude,
+          and watch it update while Claude is still writing.
+        </p>
+      </div>
+    </article>
+
+    <article class="feature split">
+      <div class="copy">
+        <h3>Continue anywhere, and take it back</h3>
+        <p>
+          Carry a conversation into another Claude or into a Claude Code project with the
+          chat intact, down to its images and documents. You see where it's going and what
+          will happen before anything is written. Fork a Claude Code conversation from any
+          message. Every copy and fork can be undone from History.
+        </p>
+      </div>
+      <picture>
+        <source srcset="shots/continue-dark.webp" media="(prefers-color-scheme: dark)">
+        <img src="shots/continue-light.webp" width="1600" height="1030" loading="lazy"
+             alt="The review step of Continue in, showing a conversation moving from Claude to Claude Work.">
+      </picture>
+    </article>
+
+    <article class="feature split flip" id="kept">
+      <div class="copy">
+        <h3>Kept, before Claude Code deletes it</h3>
+        <p>
+          Claude Code deletes a conversation 30 days after you last used it. Better Claude
+          keeps a copy as each one changes, as clones that take no space until the original
+          is gone. Read it later, continue it elsewhere, or put it back where
+          <code>claude --resume</code> finds it.
+        </p>
+      </div>
+      <picture>
+        <source srcset="shots/kept-dark.webp" media="(prefers-color-scheme: dark)">
+        <img src="shots/kept-light.webp" width="1600" height="1030" loading="lazy"
+             alt="The Kept page, listing conversations Claude Code deletes soon and one only Better Claude still has.">
+      </picture>
+    </article>
+
+    <article class="feature split">
+      <div class="copy">
+        <h3>What each Claude is set up with</h3>
+        <p>
+          Every install has its own page: who it's signed into, its conversations, and the
+          skills, MCP servers, plugins and hooks it can use. Compare any two side by side.
+          It even notices an API key sitting in your settings in plain text.
+        </p>
+      </div>
+      <picture>
+        <source srcset="shots/compare-claude-vs-work-dark.webp" media="(prefers-color-scheme: dark)">
+        <img src="shots/compare-claude-vs-work-light.webp" width="1600" height="1030" loading="lazy"
+             alt="Two Claude installs compared side by side, skill by skill and server by server.">
+      </picture>
+    </article>
+
+    <div class="trio">
+      <figure>
+        <picture>
+          <source srcset="shots/library-dark.webp" media="(prefers-color-scheme: dark)">
+          <img src="shots/library-light.webp" width="1600" height="1030" loading="lazy" alt="The Library, with a document Claude wrote.">
+        </picture>
+        <figcaption><strong>Library.</strong> Files, images and code Claude made, each linked to its conversation.</figcaption>
+      </figure>
+      <figure>
+        <picture>
+          <source srcset="shots/storage-dark.webp" media="(prefers-color-scheme: dark)">
+          <img src="shots/storage-light.webp" width="1600" height="1030" loading="lazy" alt="Storage, showing what each install keeps on disk.">
+        </picture>
+        <figcaption><strong>Storage.</strong> Where Claude's space goes, and what's safe to move to the Trash.</figcaption>
+      </figure>
+      <figure>
+        <picture>
+          <source srcset="shots/memory-dark.webp" media="(prefers-color-scheme: dark)">
+          <img src="shots/memory-light.webp" width="1600" height="1030" loading="lazy" alt="Memory, showing what Claude remembers about a project.">
+        </picture>
+        <figcaption><strong>Memory.</strong> What Claude remembers about every project, and memory whose folder is gone.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="parallex wrap" aria-labelledby="parallex-h">
+    <h2 id="parallex-h">Better with Parallex</h2>
+    <p>
+      <a href="https://parallex.mandip.dev">Parallex</a> runs separate copies of Claude, one
+      per account, each with its own Dock icon and its own data. Better Claude sees every
+      copy and moves work between them, so several accounts work like one.
+    </p>
+  </section>
+
+  <section class="trust wrap" id="trust" aria-labelledby="trust-h">
+    <h2 id="trust-h" class="section-title">Your conversations stay yours</h2>
+    <dl class="facts">
+      <div>
+        <dt>Nothing leaves your Mac</dt>
+        <dd>Better Claude reads what Claude already keeps on disk. The only thing it asks the internet is whether there's a newer version.</dd>
+      </div>
+      <div>
+        <dt>It never overwrites</dt>
+        <dd>Copies and forks create new files beside the old ones, and each keeps a receipt, so Undo removes exactly what was added and leaves anything you've since edited alone.</dd>
+      </div>
+      <div>
+        <dt>Nothing is deleted outright</dt>
+        <dd>Freeing space moves things to the Trash, and conversations and credentials are never offered.</dd>
+      </div>
+      <div>
+        <dt>Credentials don't travel</dt>
+        <dd>Sign-ins, audit logs and permission grants never go with a conversation, and a conversation that looks like it holds a key isn't copied.</dd>
+      </div>
+      <div>
+        <dt>Updates are signed</dt>
+        <dd>Each update is checked against Better Claude's signature before it replaces anything.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <section class="notes wrap" aria-labelledby="notes-h">
+    <h2 id="notes-h">Good to know</h2>
+    <ul>
+      <li>It's a Mac app, for macOS 14 or later, and it isn't sandboxed: it has to read other apps' folders, which also keeps it off the Mac App Store.</li>
+      <li>The app isn't notarized. The first time you open a download, macOS stops it: open System Settings, then Privacy &amp; Security, and choose Open Anyway. Updates from inside the app don't ask again.</li>
+      <li>Claude's files aren't a documented format. Better Claude is careful to keep what it doesn't understand, but a Claude update can change them.</li>
+    </ul>
+  </section>
+
+</main>
+
+<footer class="foot wrap">
+  <p>Better Claude is free and open source, made by <a href="https://github.com/mandipadk">Mandip Adhikari</a>. Not made by Anthropic.</p>
+  <p>This page loads nothing from anywhere else.</p>
+</footer>
+
+</body>
+</html>

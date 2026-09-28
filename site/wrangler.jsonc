@@ -1,0 +1,12 @@
+// The website: static files on Cloudflare, served at betterclaude.mandip.dev.
+// Publish with `make deploy-site`.
+{
+  "name": "betterclaude-site",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "404-page"
+  },
+  "observability": { "enabled": false },
+  "routes": [{ "pattern": "betterclaude.mandip.dev", "custom_domain": true }]
+}

@@ -16,11 +16,21 @@ CONFIG="${1:-release}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-echo "Building ($CONFIG)…"
-swift build -c "$CONFIG" --product BetterClaude
-swift build -c "$CONFIG" --product cowork
+# The version lives in one place (AppVersion.current); the build number counts commits, so
+# every build of a later commit is a later build.
+VERSION="$(sed -n 's/.*static let current = "\(.*\)"/\1/p' Sources/CoworkKit/Update/AppVersion.swift)"
+BUILD="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
+[ -n "$VERSION" ] || { echo "error: no version in Sources/CoworkKit/Update/AppVersion.swift" >&2; exit 1; }
 
-BIN="$(swift build -c "$CONFIG" --show-bin-path)"
+# Release builds are universal, so the same app runs on Apple silicon and Intel Macs.
+ARCH_FLAGS=()
+[ "$CONFIG" = "release" ] && ARCH_FLAGS=(--arch arm64 --arch x86_64)
+
+echo "Building $VERSION ($BUILD, $CONFIG)…"
+swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" --product BetterClaude
+swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" --product cowork
+
+BIN="$(swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" --show-bin-path)"
 # A debug build is a separate app with its own identity, so it never replaces the installed
 # one or shares its preferences. Only debug builds honour BC_FIXTURE_ROOT and BC_UI_ROUTE.
 if [ "$CONFIG" = "debug" ]; then
@@ -37,7 +47,7 @@ ICONSET="$(dirname "$APP")/BetterClaude.iconset"
 
 # Icon: generated rather than checked in, so the mark stays tied to the palette in
 # Theme.swift and every size is redrawn from the same geometry.
-ICON_BIN=/tmp/bc-icon
+ICON_BIN="${TMPDIR:-/tmp/}bc-icon"
 swiftc -O "$ROOT/Scripts/make-icon.swift" -o "$ICON_BIN"
 rm -rf "$ICONSET"
 "$ICON_BIN" "$ICONSET"
@@ -58,8 +68,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIconFile</key><string>BetterClaude</string>
     <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.1.0</string>
-    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleShortVersionString</key><string>$VERSION</string>
+    <key>CFBundleVersion</key><string>$BUILD</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <!-- The classic full-height sidebar and one frosted window surface, rather than
@@ -79,9 +89,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-codesign --force --sign - --timestamp=none "$APP" >/dev/null 2>&1
+codesign --force --sign - --timestamp=none "$APP/Contents/MacOS/cowork"
+codesign --force --sign - --timestamp=none "$APP"
+codesign --verify --strict "$APP"
 
-echo "Built $APP"
+echo "Built $APP $VERSION ($BUILD)"
 echo
 echo "  open $APP"
 echo "  ln -sf \"$APP/Contents/MacOS/cowork\" ~/.local/bin/cowork   # optional CLI"
