@@ -395,6 +395,44 @@ extension JSONValue {
         return out
     }
 
+    /// Indented serialization in the source's key order, for files people also edit by hand
+    /// (`settings.json`, `claude_desktop_config.json`).
+    public func serializedPretty() -> Data {
+        var out = Data()
+        writePretty(into: &out, depth: 0)
+        out.append(UInt8(ascii: "\n"))
+        return out
+    }
+
+    private func writePretty(into out: inout Data, depth: Int) {
+        func indent(_ level: Int) { out.append(contentsOf: [UInt8](repeating: UInt8(ascii: " "), count: level * 2)) }
+        switch self {
+        case .array(let items) where !items.isEmpty:
+            out.append(contentsOf: [UInt8]("[\n".utf8))
+            for (i, item) in items.enumerated() {
+                indent(depth + 1)
+                item.writePretty(into: &out, depth: depth + 1)
+                out.append(contentsOf: [UInt8]((i < items.count - 1 ? ",\n" : "\n").utf8))
+            }
+            indent(depth)
+            out.append(UInt8(ascii: "]"))
+        case .object(let o) where o.count > 0:
+            out.append(contentsOf: [UInt8]("{\n".utf8))
+            let pairs = o.orderedPairs
+            for (i, pair) in pairs.enumerated() {
+                indent(depth + 1)
+                Self.writeString(pair.key, into: &out)
+                out.append(contentsOf: [UInt8](": ".utf8))
+                pair.value.writePretty(into: &out, depth: depth + 1)
+                out.append(contentsOf: [UInt8]((i < pairs.count - 1 ? ",\n" : "\n").utf8))
+            }
+            indent(depth)
+            out.append(UInt8(ascii: "}"))
+        default:
+            write(into: &out, sortKeys: false)
+        }
+    }
+
     /// Key-sorted serialization, used only for content fingerprinting in round-trip tests.
     public func serializedCanonical() -> Data {
         var out = Data()

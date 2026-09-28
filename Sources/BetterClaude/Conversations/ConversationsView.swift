@@ -44,7 +44,8 @@ struct TimelineColumn: View {
                             .accessibilityAddTraits(.isHeader)
                         ForEach(group.conversations) { conversation in
                             ConversationRow(conversation: conversation,
-                                            install: services.install(for: conversation))
+                                            install: services.install(for: conversation),
+                                            live: services.pulse.session(forConversation: conversation.cliSessionId)?.state)
                                 .tag(conversation.id)
                                 .listRowSeparator(.hidden)
                         }
@@ -170,6 +171,8 @@ struct TimelineGroup: Identifiable {
 struct ConversationRow: View {
     let conversation: ConversationRef
     let install: Install?
+    /// Set while Claude Code is running this conversation.
+    var live: LiveSession.State?
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -187,10 +190,17 @@ struct ConversationRow: View {
                         .font(Theme.Font.bodyMedium)
                         .lineLimit(1)
                     Spacer(minLength: 4)
-                    Text(conversation.lastActivity.listStamp)
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+                    switch live {
+                    case .needsYou:
+                        Text("Needs you").font(Theme.Font.caption.weight(.semibold)).foregroundStyle(Theme.accent)
+                    case .working:
+                        Text("Working").font(Theme.Font.caption).foregroundStyle(Theme.accent)
+                    default:
+                        Text(conversation.lastActivity.listStamp)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
                 }
                 HStack(spacing: 4) {
                     if conversation.isStarred {

@@ -356,6 +356,25 @@ public struct FixtureHome {
                 cwd: cwd, id: conversation.cliId)
         }
 
+        // Sessions running now: one waiting on a permission, one working, one done. Their
+        // pids are made up; a debug build reading the sample treats them as running.
+        let sessions = config.appendingPathComponent("sessions", isDirectory: true)
+        try fm.createDirectory(at: sessions, withIntermediateDirectories: true)
+        let live: [(Int, String, String, TimeInterval)] = Script.claudeCode.prefix(3).enumerated().map { offset, conversation in
+            (90_001 + offset, conversation.cliId, ["waiting", "busy", "idle"][offset], [240, 780, 1_500][offset])
+        }
+        for (index, entry) in live.enumerated() {
+            let conversation = Script.claudeCode[index]
+            let millis = { (date: Date) in Int(date.timeIntervalSince1970 * 1000) }
+            try writeJSON([
+                "pid": entry.0, "sessionId": entry.1,
+                "cwd": paths.home.appendingPathComponent(conversation.project ?? "Code").path,
+                "kind": "interactive", "entrypoint": index == 1 ? "claude-desktop" : "cli",
+                "status": entry.2, "startedAt": millis(now.addingTimeInterval(-3_600)),
+                "statusUpdatedAt": millis(now.addingTimeInterval(-entry.3)),
+            ], to: sessions.appendingPathComponent("\(entry.0).json"))
+        }
+
         // Memory, including one for a project folder that has since been deleted.
         for (project, files) in Script.memory {
             let cwd = paths.home.appendingPathComponent(project).path

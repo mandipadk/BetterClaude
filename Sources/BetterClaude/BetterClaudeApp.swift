@@ -1,3 +1,4 @@
+import CoreSpotlight
 import CoworkKit
 import SwiftUI
 
@@ -21,6 +22,20 @@ struct BetterClaudeApp: App {
                 .sheet(isPresented: $showsWhatsNew) {
                     WhatsNewSheet(version: updates.currentVersion) { showsWhatsNew = false }
                 }
+                .onOpenURL { url in
+                    if !services.hasLoaded { services.refresh() }
+                    Task {
+                        while !services.hasLoaded { try? await Task.sleep(for: .milliseconds(50)) }
+                        services.open(url)
+                    }
+                }
+                .onContinueUserActivity(CSSearchableItemActionType) { activity in
+                    guard let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return }
+                    Task {
+                        while !services.hasLoaded { try? await Task.sleep(for: .milliseconds(50)) }
+                        services.openSpotlightItem(id)
+                    }
+                }
                 .task {
                     DebugRoute.apply(to: services)
                     updates.start()
@@ -39,8 +54,10 @@ struct BetterClaudeApp: App {
             CommandGroup(after: .sidebar) {
                 Button("Conversations") { services.destination = .conversations }
                     .keyboardShortcut("1", modifiers: .command)
-                Button("Library") { services.destination = .library }
+                Button("Running") { services.destination = .running }
                     .keyboardShortcut("2", modifiers: .command)
+                Button("Library") { services.destination = .library }
+                    .keyboardShortcut("3", modifiers: .command)
             }
         }
 
@@ -54,6 +71,7 @@ struct BetterClaudeApp: App {
 
         Settings {
             SettingsView()
+                .environment(services)
         }
     }
 }

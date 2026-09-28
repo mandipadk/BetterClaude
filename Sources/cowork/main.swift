@@ -50,6 +50,10 @@ USAGE
   cowork search <words>... [--limit N]
       Search every message of every conversation, from the index.
 
+  cowork live
+      List the Claude Code sessions running now, and whether each is working, idle, or
+      waiting for you.
+
   cowork library [--kind code|document|data|image|upload] [--limit N]
       Harvest every artifact Claude has produced and list them.
 """
@@ -113,6 +117,19 @@ func cmdSearch(_ args: Args) throws {
         print("\(hit.title)  (\(hit.matchingMessages) messages)")
     }
     print("\(hits.count) conversations in \(Int(elapsed)) ms.")
+}
+
+func cmdLive() {
+    let sessions = LiveSessions.running()
+    let word: [LiveSession.State: String] = [.working: "Working", .needsYou: "Needs you", .idle: "Idle"]
+    for session in sessions {
+        let place = session.isInDesktop ? "Claude" : "Terminal"
+        let minutes = Int(Date().timeIntervalSince(session.since) / 60)
+        print("\((word[session.state] ?? "").padding(toLength: 10, withPad: " ", startingAt: 0))"
+              + "\(session.projectName.padding(toLength: 28, withPad: " ", startingAt: 0))"
+              + "\(place.padding(toLength: 10, withPad: " ", startingAt: 0))for \(minutes) min")
+    }
+    print("\(sessions.count) running.")
 }
 
 func cmdInstalls() {
@@ -517,6 +534,7 @@ do {
     case "undo": try cmdUndo(args)
     case "library": try cmdLibrary(args)
     case "index": try cmdIndex(args)
+    case "live": cmdLive()
     case "search": try cmdSearch(args)
     case "encode":
         guard let path = args.positional.first else { fail("name a path") }

@@ -12,6 +12,16 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.3.0": [
+            Item(symbol: "text.magnifyingglass", title: "Search every message as you type",
+                 detail: "Every conversation is indexed on your Mac, so search looks inside every message instantly, even ones Claude Code has since deleted."),
+            Item(symbol: "waveform.path.ecg", title: "Running",
+                 detail: "Every Claude Code session on the Mac, in any terminal or Claude's Code tab, and whether it's working, done, or waiting for you."),
+            Item(symbol: "bell.badge", title: "Know when Claude needs you",
+                 detail: "An alert the moment an agent asks for a permission or an answer, and when a long turn finishes. Click it to jump to the right app."),
+            Item(symbol: "magnifyingglass", title: "Conversations in Spotlight",
+                 detail: "Find any conversation by title or by what you first asked, from Spotlight, and open it here."),
+        ],
         "0.2.0": [
             Item(symbol: "rectangle.stack", title: "Every Claude, in one window",
                  detail: "Conversations from Claude, its Parallex copies, Claude Code and the Code tab, in one timeline with a reader beside it."),

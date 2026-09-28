@@ -7,6 +7,8 @@ struct MenuBarPanel: View {
     @Environment(AppServices.self) private var services
     @Environment(\.openWindow) private var openWindow
     @State private var query = ""
+    /// Conversations whose messages match, from the index.
+    @State private var found: [ConversationRef]?
     @FocusState private var searchFocused: Bool
 
     var body: some View {
@@ -15,6 +17,10 @@ struct MenuBarPanel: View {
             Rectangle().fill(Theme.hairline).frame(height: 1)
             search
             Rectangle().fill(Theme.hairline).frame(height: 1)
+            if query.isEmpty, !services.pulse.needingYou.isEmpty || !services.pulse.working.isEmpty {
+                running
+                Rectangle().fill(Theme.hairline).frame(height: 1)
+            }
             results
                 .frame(maxHeight: 360)
             Rectangle().fill(Theme.hairline).frame(height: 1)
@@ -25,6 +31,18 @@ struct MenuBarPanel: View {
         .task {
             if !services.hasLoaded { services.refresh() }
             searchFocused = true
+        }
+        .task(id: query) {
+            let needle = query.trimmingCharacters(in: .whitespaces)
+            guard !needle.isEmpty, services.index.isReady, let index = services.index.index else {
+                found = nil
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled,
+                  let hits = try? await index.search(needle, options: .init(limit: 8, excerptsPerHit: 0)) else { return }
+            let byID = Dictionary(services.snapshot.conversations.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            found = hits.compactMap { byID[$0.conversationID] }
         }
     }
 
@@ -54,7 +72,24 @@ struct MenuBarPanel: View {
         .frame(height: 38)
     }
 
+    /// Claude Code sessions waiting for you, then the ones working.
+    private var running: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Running now")
+                .font(Theme.Font.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 14)
+                .padding(.top, 10)
+            ForEach((services.pulse.needingYou + services.pulse.working).prefix(4)) { session in
+                LiveSessionRow(session: session, compact: true)
+                    .padding(.horizontal, 14)
+            }
+        }
+        .padding(.bottom, 4)
+    }
+
     private var matches: [ConversationRef] {
+        if let found { return found }
         let needle = query.trimmingCharacters(in: .whitespaces)
         let all = services.snapshot.conversations.filter { !$0.isArchived }
         guard !needle.isEmpty else { return Array(all.prefix(8)) }
@@ -68,7 +103,7 @@ struct MenuBarPanel: View {
     private var results: some View {
         let list = matches
         VStack(alignment: .leading, spacing: 0) {
-            Text(query.isEmpty ? "Recent" : list.isEmpty ? "No titles match" : "Matches")
+            Text(query.isEmpty ? "Recent" : list.isEmpty ? "Nothing matches" : "Matches")
                 .font(Theme.Font.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 14)

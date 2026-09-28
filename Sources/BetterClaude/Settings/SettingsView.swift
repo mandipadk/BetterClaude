@@ -4,6 +4,8 @@ import ServiceManagement
 import SwiftUI
 
 struct SettingsView: View {
+    @Environment(AppServices.self) private var services
+    @AppStorage(SpotlightIndexer.enabledKey) private var showInSpotlight = true
     @AppStorage("keepAutomatically") private var keepAutomatically = true
     @AppStorage("showInMenuBar") private var showInMenuBar = true
     @AppStorage("onboardingCompleted") private var onboardingCompleted = true
@@ -19,8 +21,11 @@ struct SettingsView: View {
                 ExplainedToggle(title: "Show in the menu bar",
                                 detail: "Find any conversation from anywhere, without opening the window.",
                                 isOn: $showInMenuBar)
+                ExplainedToggle(title: "Show conversations in Spotlight",
+                                detail: "Their titles, where they happened and what you first asked. Never whole conversations.",
+                                isOn: Binding(get: { showInSpotlight }, set: { services.setShowsInSpotlight($0) }))
                 ExplainedToggle(title: "Open at login",
-                                detail: loginError ?? "So conversations are kept even on days you don't open Better Claude.",
+                                detail: loginError ?? "So conversations are kept, and you hear when Claude needs you, even on days you don't open Better Claude.",
                                 // A closure, not the method itself: Swift 6.3 crashes building the
                                 // thunk for a main-actor method passed as a setter.
                                 isOn: Binding(get: { openAtLogin }, set: { setOpenAtLogin($0) }))

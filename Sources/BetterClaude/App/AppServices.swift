@@ -6,6 +6,7 @@ import SwiftUI
 /// Where the main window is.
 enum SidebarDestination: Hashable {
     case conversations
+    case running
     case library
     case install(String)
     case history
@@ -44,6 +45,8 @@ final class AppServices {
 
     let reader = ReaderModel()
     let index: IndexModel
+    let pulse: PulseModel
+    let spotlight = SpotlightIndexer()
     let search: SearchModel
     let library = LibraryModel()
     let kept = KeptModel()
@@ -64,7 +67,21 @@ final class AppServices {
         catalog = Catalog(paths: paths)
         index = IndexModel(paths: paths)
         search = SearchModel(history: index)
-        index.onUpdate = { [weak self] in self?.search.refresh() }
+        pulse = PulseModel(paths: paths)
+        index.onUpdate = { [weak self] in
+            guard let self else { return }
+            search.refresh()
+            spotlight.update(snapshot: snapshot, index: index.index)
+        }
+        pulse.notifier.onOpen = { [weak self] sessionID in
+            guard let self else { return }
+            if let session = pulse.sessions.first(where: { $0.sessionID == sessionID }), pulse.host(of: session) != nil {
+                pulse.show(session)
+            } else if let conversation = conversation(forSession: sessionID) {
+                NSApp.activate()
+                show(conversation)
+            }
+        }
         let center = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didLaunchApplicationNotification,
                      NSWorkspace.didTerminateApplicationNotification] {
@@ -91,6 +108,7 @@ final class AppServices {
             self.hasLoaded = true
             self.updateRunning()
             self.index.update(from: fresh)
+            self.pulse.start()
             self.watch(fresh)
             self.reopenIfChanged(fresh)
             if UserDefaults.standard.object(forKey: "keepAutomatically") as? Bool ?? true {
@@ -172,6 +190,40 @@ final class AppServices {
                 || (conversation.projectName?.localizedCaseInsensitiveContains(needle) ?? false)
                 || (install(for: conversation)?.name.localizedCaseInsensitiveContains(needle) ?? false)
         }
+    }
+
+    /// Opens a `betterclaude://` link: `betterclaude://conversation/<session id>` opens
+    /// that conversation, and `betterclaude://running` shows what's running.
+    func open(_ url: URL) {
+        guard url.scheme?.hasPrefix("betterclaude") == true else { return }
+        switch url.host {
+        case "conversation":
+            let id = url.lastPathComponent
+            if let conversation = snapshot.conversations.first(where: { $0.cliSessionId == id || $0.id == id }) {
+                show(conversation)
+            }
+        case "running":
+            destination = .running
+        default:
+            destination = .conversations
+        }
+    }
+
+    func setShowsInSpotlight(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: SpotlightIndexer.enabledKey)
+        if on { spotlight.update(snapshot: snapshot, index: index.index) } else { spotlight.clear() }
+    }
+
+    /// Opens a conversation chosen in Spotlight.
+    func openSpotlightItem(_ identifier: String) {
+        if let conversation = snapshot.conversations.first(where: { $0.id == identifier }) {
+            show(conversation)
+        }
+    }
+
+    /// The conversation a Claude Code session is writing, by its session id.
+    func conversation(forSession sessionID: String) -> ConversationRef? {
+        snapshot.conversations.first { $0.cliSessionId == sessionID && !$0.isTranscriptMissing }
     }
 
     var selectedConversation: ConversationRef? {

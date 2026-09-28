@@ -54,6 +54,8 @@ enum DebugRoute {
                     services.destination = .install(left.id)
                     services.comparing = InstallComparison(left: left, right: right)
                 }
+            case "running":
+                services.destination = .running
             case "library":
                 services.destination = .library
                 if let filter = LibraryFilter(rawValue: argument) { services.library.filter = filter }

@@ -36,9 +36,11 @@ BIN="$(swift build -c "$CONFIG" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --show-bin-p
 if [ "$CONFIG" = "debug" ]; then
   APP="$ROOT/dist/debug/BetterClaude.app"
   BUNDLE_ID="com.betterclaude.app.debug"
+  URL_SCHEME="betterclaude-debug"
 else
   APP="$ROOT/dist/BetterClaude.app"
   BUNDLE_ID="com.betterclaude.app"
+  URL_SCHEME="betterclaude"
 fi
 
 rm -rf "$APP"
@@ -76,6 +78,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
          macOS 26's floating inset sidebar. -->
     <key>UIDesignRequiresCompatibility</key><true/>
     <key>NSHumanReadableCopyright</key><string>Every Claude conversation on your Mac, in one place.</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key><string>$BUNDLE_ID</string>
+            <key>CFBundleURLSchemes</key><array><string>$URL_SCHEME</string></array>
+        </dict>
+    </array>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>

@@ -123,6 +123,8 @@ struct MainWindow: View {
         switch services.destination {
         case .conversations, nil:
             ConversationsView()
+        case .running:
+            RunningPage()
         case .library:
             LibraryPage()
         case .history:
@@ -156,6 +158,9 @@ struct Sidebar: View {
             Section {
                 Label("Conversations", systemImage: "bubble.left.and.bubble.right")
                     .tag(SidebarDestination.conversations)
+                Label("Running", systemImage: "waveform.path.ecg")
+                    .badge(services.pulse.needingYou.count)
+                    .tag(SidebarDestination.running)
                 Label("Library", systemImage: "square.stack")
                     .tag(SidebarDestination.library)
             }
