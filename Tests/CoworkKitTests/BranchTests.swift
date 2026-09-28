@@ -1,3 +1,4 @@
+import CoworkFixtures
 import Foundation
 import Testing
 
@@ -475,5 +476,37 @@ struct BranchPointFilterTests {
             userRecord("compare a < b before the swap", uuid: "b"),
         ])
         #expect(ConversationBranch.points(in: transcript).count == 2)
+    }
+
+    @Test("Forking a Code tab session lists the fork in the same Code tab, and Undo takes both back")
+    func forksIntoTheCodeTab() async throws {
+        try await HistoryIndexTests.withSample { sample, snapshot, _ in
+            let source = try #require(snapshot.conversations.first { $0.title == "Add dark mode to the settings screen" })
+            guard case .codeTab(let record, let session?) = source.origin else {
+                Issue.record("expected a Code tab session with its transcript")
+                return
+            }
+            let transcript = try Transcript(contentsOf: session.transcriptURL)
+            let point = try #require(ConversationBranch.points(in: transcript).first)
+            let (plan, branch) = try ConversationBranch.plan(transcript: transcript, cutAt: point, newTitle: "Dark mode, again")
+            let receipt = try ConversationBranch.write(branch, plan: plan, codeTabRecord: record.metadataURL)
+            #expect(receipt.created.count == 2)
+
+            let after = await Catalog(paths: sample.paths).snapshot()
+            let fork = try #require(after.conversations.first { $0.title == "Dark mode, again" })
+            #expect(fork.installID == source.installID)
+            guard case .codeTab(let forkRecord, let forkSession?) = fork.origin else {
+                Issue.record("the fork should be a Code tab session with a transcript")
+                return
+            }
+            #expect(forkRecord.cliSessionId == plan.newSessionId)
+            #expect(forkRecord.cwd == record.cwd)
+            #expect(forkSession.transcriptURL == plan.destinationURL)
+            #expect(fork.accountID == source.accountID)
+
+            _ = try Undo.revert(receipt)
+            #expect(!FileManager.default.fileExists(atPath: forkRecord.metadataURL.path))
+            #expect(!FileManager.default.fileExists(atPath: plan.destinationURL.path))
+        }
     }
 }

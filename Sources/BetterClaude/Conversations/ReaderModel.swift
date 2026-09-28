@@ -111,10 +111,13 @@ final class ReaderModel {
             throw BranchError.pointNotFound(messageID)
         }
         let name = title.trimmingCharacters(in: .whitespaces)
-        return try await Task.detached(priority: .userInitiated) {
+        // A Code tab session forks into the same app's Code tab.
+        var record: URL?
+        if case .codeTab(let source, _) = conversation?.origin { record = source.metadataURL }
+        return try await Task.detached(priority: .userInitiated) { [record] in
             let (plan, branch) = try ConversationBranch.plan(transcript: transcript, cutAt: point,
                                                              newTitle: name.isEmpty ? nil : name)
-            _ = try ConversationBranch.write(branch, plan: plan)
+            _ = try ConversationBranch.write(branch, plan: plan, codeTabRecord: record)
             return plan.destinationURL
         }.value
     }

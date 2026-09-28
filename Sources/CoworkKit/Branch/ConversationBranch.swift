@@ -362,7 +362,12 @@ public enum ConversationBranch {
 
     /// Writes a planned branch beside its source and records it, so it can be undone like
     /// any other change this app makes.
-    public static func write(_ branch: Transcript, plan: BranchPlan) throws -> ImportReceipt {
+    ///
+    /// When the source is a Desktop app's Code tab session, pass its record as
+    /// `codeTabRecord`: the fork then gets a record of its own beside it, so it's listed in
+    /// that app's Code tab rather than only in the command line's resume list.
+    public static func write(_ branch: Transcript, plan: BranchPlan,
+                             codeTabRecord: URL? = nil) throws -> ImportReceipt {
         let destination = plan.destinationURL
         guard !FileManager.default.fileExists(atPath: destination.path) else {
             throw TransferError.destinationExists(destination)
@@ -373,9 +378,41 @@ public enum ConversationBranch {
         try Undo.save(receipt)
         try branch.write(to: destination)
         try receipt.recordCreatedFile(at: destination)
+        if let codeTabRecord {
+            let record = try writeCodeTabRecord(copying: codeTabRecord, plan: plan)
+            try receipt.recordCreatedFile(at: record)
+        }
         receipt.completed = true
         try Undo.save(receipt)
         return receipt
+    }
+
+    /// Writes a Code tab record for the fork beside `source`'s, returning where.
+    ///
+    /// It starts as a copy of the source's record, so the fork keeps its folder, model,
+    /// permission mode and tools, then takes the fork's own id, title and times. What
+    /// described the source's last turn is dropped rather than carried onto a conversation
+    /// that ends earlier.
+    static func writeCodeTabRecord(copying source: URL, plan: BranchPlan) throws -> URL {
+        var record = try JSONValue.parse(try Data(contentsOf: source))
+        guard case .object = record else { throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: source.path]) }
+        let localId = "local_" + UUID().uuidString.lowercased()
+        let now = JSONValue.int(Int64(Date().timeIntervalSince1970 * 1000))
+        record["sessionId"] = .string(localId)
+        record["cliSessionId"] = .string(plan.newSessionId)
+        record["title"] = .string(plan.title)
+        record["titleSource"] = .string("user")
+        for key in ["createdAt", "lastActivityAt", "lastFocusedAt"] { record[key] = now }
+        if record["isArchived"] != nil { record["isArchived"] = .bool(false) }
+        if record["isStarred"] != nil { record["isStarred"] = .bool(false) }
+        for key in ["postTurnSummary", "postTurnSummaryFor", "lastAssistantUuid", "latestUserFrameAt",
+                    "completedTurns", "transcriptUnavailable"] {
+            record[key] = nil
+        }
+        let url = source.deletingLastPathComponent().appendingPathComponent("\(localId).json")
+        guard !FileManager.default.fileExists(atPath: url.path) else { throw TransferError.destinationExists(url) }
+        try AtomicWrite.write(record.serialized(), to: url)
+        return url
     }
 
     // MARK: - Helpers

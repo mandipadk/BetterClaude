@@ -15,6 +15,15 @@ struct ForkSheet: View {
     @State private var title = ""
     @State private var working = false
 
+    /// Where the fork will be listed: the same app's Code tab for a Code tab session.
+    private var whereItGoes: String {
+        if let conversation = services.reader.conversation, case .codeTab = conversation.origin {
+            let app = services.install(for: conversation)?.name ?? "Claude"
+            return "The original isn't changed. The fork is listed beside it in \(app)'s Code tab, and you can undo it from History. If \(app) is open, it may need reopening to show it."
+        }
+        return "The original isn't changed. Claude Code lists the fork beside it, and you can undo it from History."
+    }
+
     var body: some View {
         let reader = services.reader
         let kept = reader.messagesKept(upTo: request.messageID)
@@ -43,7 +52,7 @@ struct ForkSheet: View {
                     .textFieldStyle(.roundedBorder)
                     .labelsHidden()
             }
-            Text("The original isn't changed. Claude Code lists the fork beside it, and you can undo it from History.")
+            Text(whereItGoes)
                 .font(Theme.Font.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
