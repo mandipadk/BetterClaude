@@ -19,3 +19,6 @@ dist/
 fixtures/real/
 scratch/
 _site/
+
+# Wrangler keeps account details in its local cache. Never commit it.
+.wrangler/

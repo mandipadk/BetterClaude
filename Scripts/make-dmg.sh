@@ -208,5 +208,5 @@ echo "  version : $VERSION"
 echo "  size    : $(du -h "$OUT" | awk '{print $1}')"
 echo "  sha256  : $SHA"
 echo
-echo "Not notarised — a browser download will be quarantined and Gatekeeper will block"
-echo "the first launch. Users must right-click the app and choose Open once."
+echo "Not notarized: a browser download is quarantined and macOS blocks the first launch."
+echo "Users open System Settings, Privacy & Security, and choose Open Anyway, once."
