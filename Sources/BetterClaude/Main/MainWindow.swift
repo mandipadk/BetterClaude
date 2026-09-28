@@ -127,6 +127,8 @@ struct MainWindow: View {
             RunningPage()
         case .ask:
             AskPage()
+        case .usage:
+            UsagePage()
         case .library:
             LibraryPage()
         case .history:
@@ -165,6 +167,8 @@ struct Sidebar: View {
                     .tag(SidebarDestination.running)
                 Label("Ask", systemImage: "sparkle.magnifyingglass")
                     .tag(SidebarDestination.ask)
+                Label("Usage", systemImage: "gauge.with.dots.needle.50percent")
+                    .tag(SidebarDestination.usage)
                 Label("Library", systemImage: "square.stack")
                     .tag(SidebarDestination.library)
             }

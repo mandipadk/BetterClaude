@@ -56,6 +56,8 @@ enum DebugRoute {
                 }
             case "running":
                 services.destination = .running
+            case "usage":
+                services.destination = .usage
             case "ask":
                 services.destination = .ask
                 if !argument.isEmpty {

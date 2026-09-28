@@ -58,8 +58,10 @@ struct BetterClaudeApp: App {
                     .keyboardShortcut("2", modifiers: .command)
                 Button("Ask") { services.destination = .ask }
                     .keyboardShortcut("3", modifiers: .command)
-                Button("Library") { services.destination = .library }
+                Button("Usage") { services.destination = .usage }
                     .keyboardShortcut("4", modifiers: .command)
+                Button("Library") { services.destination = .library }
+                    .keyboardShortcut("5", modifiers: .command)
             }
         }
 

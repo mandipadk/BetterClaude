@@ -15,8 +15,10 @@ let pid: Int? = CommandLine.arguments.firstIndex(of: "--pid").flatMap {
     $0 + 1 < CommandLine.arguments.count ? Int(CommandLine.arguments[$0 + 1]) : nil
 }
 
-guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
-                                               kCGNullWindowID) as? [[String: Any]] else {
+// Matched by process, a window can be counted even while it isn't on screen (the display
+// asleep, another Space): `screencapture -l` reads its own backing store either way.
+let options: CGWindowListOption = pid == nil ? [.optionOnScreenOnly, .excludeDesktopElements] : [.optionAll]
+guard let windows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
     FileHandle.standardError.write(Data("could not list windows\n".utf8))
     exit(1)
 }
@@ -28,7 +30,7 @@ let matches = windows.compactMap { info -> (Int, Double, Double, Double, Double,
           let bounds = info[kCGWindowBounds as String] as? [String: Any],
           let width = bounds["Width"] as? Double, let height = bounds["Height"] as? Double,
           let x = bounds["X"] as? Double, let y = bounds["Y"] as? Double,
-          width > 200, height > 200
+          width > 200, height > 200, (info[kCGWindowLayer as String] as? Int ?? 0) == 0
     else { return nil }
     return (number, width * height, x, y, width, height)
 }

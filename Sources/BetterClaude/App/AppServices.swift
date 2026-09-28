@@ -8,6 +8,7 @@ enum SidebarDestination: Hashable {
     case conversations
     case running
     case ask
+    case usage
     case library
     case install(String)
     case history
@@ -50,6 +51,7 @@ final class AppServices {
     let spotlight = SpotlightIndexer()
     let recall: RecallModel
     let ask = AskModel()
+    let usage = UsageModel()
     let search: SearchModel
     let library = LibraryModel()
     let kept = KeptModel()
@@ -76,6 +78,7 @@ final class AppServices {
             guard let self else { return }
             search.refresh()
             spotlight.update(snapshot: snapshot, index: index.index)
+            usage.refresh(snapshot: snapshot, index: index.index)
         }
         pulse.notifier.onOpen = { [weak self] sessionID in
             guard let self else { return }
@@ -114,6 +117,7 @@ final class AppServices {
             self.index.update(from: fresh)
             self.pulse.start()
             self.recall.refresh(fresh)
+            self.usage.start(self)
             self.watch(fresh)
             self.reopenIfChanged(fresh)
             if UserDefaults.standard.object(forKey: "keepAutomatically") as? Bool ?? true {

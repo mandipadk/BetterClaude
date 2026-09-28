@@ -144,7 +144,7 @@ private struct ChooseStep: View {
                         Text("In Claude").font(Theme.Font.section)
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
                             ForEach(accounts, id: \.destination) { item in
-                                InstallTile(install: item.install, detail: item.detail,
+                                InstallTile(install: item.install, detail: item.detail, room: item.room,
                                             isSelected: model.destination == item.destination,
                                             isOpen: services.isRunning(item.install)) {
                                     model.destination = item.destination
@@ -206,6 +206,8 @@ private struct ChooseStep: View {
         let destination: ContinueDestination
         let install: Install
         let detail: String
+        /// How much of the account's tighter limit is left, when Claude has said.
+        let room: Double?
     }
 
     /// Every Desktop account a conversation can land in, except the one it came from.
@@ -221,9 +223,19 @@ private struct ChooseStep: View {
                     ? (account.emailAddress.map { "\($0), \(account.orgLabel)" } ?? account.orgLabel)
                     : (account.emailAddress ?? account.orgLabel)
                 return AccountChoice(destination: .account(installID: install.id, account),
-                                     install: install, detail: detail)
+                                     install: install, detail: detail,
+                                     room: services.usage.headroom(for: account.accountId))
             }
         }
+        // The account with the most room left first, so a conversation goes where it can go on.
+        .enumerated().sorted { a, b in
+            switch (a.element.room, b.element.room) {
+            case let (x?, y?) where x != y: return x > y
+            case (_?, nil): return true
+            case (nil, _?): return false
+            default: return a.offset < b.offset
+            }
+        }.map(\.element)
     }
 
     private var projectChoices: [String] {
@@ -247,6 +259,7 @@ private struct ChooseStep: View {
 private struct InstallTile: View {
     let install: Install
     let detail: String
+    let room: Double?
     let isSelected: Bool
     let isOpen: Bool
     let action: () -> Void
@@ -261,6 +274,12 @@ private struct InstallTile: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                if let room {
+                    Text("\(Int(room.rounded()))% of its limit left")
+                        .font(Theme.Font.caption.weight(.medium))
+                        .foregroundStyle(room < 20 ? Theme.attention : Theme.accent)
+                        .monospacedDigit()
+                }
             }
             .padding(.vertical, 12)
             .padding(.horizontal, 8)
@@ -284,7 +303,7 @@ private struct InstallTile: View {
         }
         .buttonStyle(.plain)
         .animation(Theme.Motion.snappy, value: isSelected)
-        .accessibilityLabel("\(install.name), \(detail)")
+        .accessibilityLabel("\(install.name), \(detail)" + (room.map { ", \(Int($0.rounded())) percent of its limit left" } ?? ""))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
