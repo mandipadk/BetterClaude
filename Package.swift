@@ -9,10 +9,13 @@ let package = Package(
         .executable(name: "cowork", targets: ["cowork"]),
         .executable(name: "BetterClaude", targets: ["BetterClaude"]),
         .executable(name: "bc-fixture", targets: ["bc-fixture"]),
+        .executable(name: "bc-recall", targets: ["bc-recall"]),
     ],
     targets: [
         .target(name: "CoworkKit"),
         .executableTarget(name: "cowork", dependencies: ["CoworkKit"]),
+        // The MCP server Claude talks to; shipped inside the app bundle.
+        .executableTarget(name: "bc-recall", dependencies: ["CoworkKit"]),
         .executableTarget(
             name: "BetterClaude",
             dependencies: ["CoworkKit"],

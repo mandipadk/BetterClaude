@@ -36,7 +36,7 @@ for route in "${ROUTES[@]}"; do
       BC_ACCENT="${BC_ACCENT:-}" "$APP" >/dev/null 2>&1 &
     pid=$!
     sleep "${SETTLE:-3}"
-    id="$("$WORK/windowid" "Better Claude" 2>/dev/null)"
+    id="$("$WORK/windowid" "Better Claude" --pid "$pid" 2>/dev/null)"
     if [ -n "$id" ]; then
       screencapture -x -o -l "$id" "$OUT/$name.png" && echo "  $name"
     else

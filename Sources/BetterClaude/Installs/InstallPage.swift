@@ -13,6 +13,7 @@ struct InstallPage: View {
                 header.padding(.bottom, Theme.Space.xl)
                 notices
                 conversations
+                if install.kind != .science { RecallSection(install: install) }
                 SetupSection(install: install)
                 details
             }

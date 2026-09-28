@@ -10,6 +10,8 @@ public enum HistorySearch {
     public struct Options: Sendable {
         /// Only these installs, or every install when `nil`.
         public var installIDs: Set<String>?
+        /// Only conversations of these accounts, or every account when `nil`.
+        public var accountIDs: Set<String>?
         public var projectPath: String?
         /// Include conversations whose transcript has since been deleted.
         public var includeAbsent = false
@@ -17,9 +19,10 @@ public enum HistorySearch {
         public var limit = 100
         public var excerptsPerHit = 3
 
-        public init(installIDs: Set<String>? = nil, projectPath: String? = nil, includeAbsent: Bool = false,
-                    since: Date? = nil, limit: Int = 100, excerptsPerHit: Int = 3) {
+        public init(installIDs: Set<String>? = nil, accountIDs: Set<String>? = nil, projectPath: String? = nil,
+                    includeAbsent: Bool = false, since: Date? = nil, limit: Int = 100, excerptsPerHit: Int = 3) {
             self.installIDs = installIDs
+            self.accountIDs = accountIDs
             self.projectPath = projectPath
             self.includeAbsent = includeAbsent
             self.since = since
@@ -45,6 +48,8 @@ public enum HistorySearch {
         public let conversationID: String
         public let sessionID: String?
         public let installID: String
+        /// What the person calls where it happened: "Claude Code", "Cowork in Claude Work".
+        public let place: String
         public let title: String
         public let projectPath: String?
         public let lastActivity: Date?
@@ -73,6 +78,7 @@ public enum HistorySearch {
         struct Conversation {
             let sessionID: String?
             let installID: String
+            let place: String
             let title: String
             let projectPath: String?
             let lastActivity: Date?
@@ -86,6 +92,11 @@ public enum HistorySearch {
             filters.append("install_id IN (\(installs.map { _ in "?" }.joined(separator: ",")))")
             values += installs.sorted().map(SQLiteValue.text)
         }
+        if let accounts = options.accountIDs {
+            guard !accounts.isEmpty else { return [] }
+            filters.append("account_id IN (\(accounts.map { _ in "?" }.joined(separator: ",")))")
+            values += accounts.sorted().map(SQLiteValue.text)
+        }
         if let project = options.projectPath {
             filters.append("project_path = ?")
             values.append(.text(project))
@@ -97,10 +108,11 @@ public enum HistorySearch {
         let whereClause = filters.isEmpty ? "" : "WHERE " + filters.joined(separator: " AND ")
         var scope: [String: Conversation] = [:]
         for row in try database.rows("""
-            SELECT id, session_id, install_id, title, project_path, last_activity, present
+            SELECT id, session_id, install_id, title, project_path, last_activity, present, kind, install_name
             FROM conversations \(whereClause)
             """, values) {
             scope[row.text(0) ?? ""] = Conversation(sessionID: row.text(1), installID: row.text(2) ?? "",
+                                                    place: place(kind: row.text(7), install: row.text(8)),
                                                     title: row.text(3) ?? "", projectPath: row.text(4),
                                                     lastActivity: row.date(5), isPresent: row.int(6) == 1)
         }
@@ -163,13 +175,22 @@ public enum HistorySearch {
             let excerpts = entry.excerpts.sorted { $0.rank > $1.rank }
                 .prefix(options.excerptsPerHit).map(\.excerpt).sorted { $0.ordinal < $1.ordinal }
             hits.append(Hit(conversationID: id, sessionID: conversation.sessionID,
-                            installID: conversation.installID, title: conversation.title,
+                            installID: conversation.installID, place: conversation.place, title: conversation.title,
                             projectPath: conversation.projectPath, lastActivity: conversation.lastActivity,
                             isPresent: conversation.isPresent, excerpts: Array(excerpts),
                             matchingMessages: entry.messages, score: score))
         }
         return Array(hits.sorted { $0.score == $1.score ? $0.conversationID < $1.conversationID : $0.score > $1.score }
             .prefix(options.limit))
+    }
+
+    /// Where a conversation happened, the way a person would say it.
+    public static func place(kind: String?, install: String?) -> String {
+        switch kind {
+        case "cowork": return "Cowork in \(install ?? "Claude")"
+        case "codeTab": return "the Code tab in \(install ?? "Claude")"
+        default: return "Claude Code"
+        }
     }
 
     /// Strips the snippet's match markers, returning the plain text, where the matches are in

@@ -47,6 +47,7 @@ final class AppServices {
     let index: IndexModel
     let pulse: PulseModel
     let spotlight = SpotlightIndexer()
+    let recall: RecallModel
     let search: SearchModel
     let library = LibraryModel()
     let kept = KeptModel()
@@ -68,6 +69,7 @@ final class AppServices {
         index = IndexModel(paths: paths)
         search = SearchModel(history: index)
         pulse = PulseModel(paths: paths)
+        recall = RecallModel(paths: paths)
         index.onUpdate = { [weak self] in
             guard let self else { return }
             search.refresh()
@@ -109,6 +111,7 @@ final class AppServices {
             self.updateRunning()
             self.index.update(from: fresh)
             self.pulse.start()
+            self.recall.refresh(fresh)
             self.watch(fresh)
             self.reopenIfChanged(fresh)
             if UserDefaults.standard.object(forKey: "keepAutomatically") as? Bool ?? true {

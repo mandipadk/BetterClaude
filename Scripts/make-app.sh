@@ -29,6 +29,7 @@ ARCH_FLAGS=()
 echo "Building $VERSION ($BUILD, $CONFIG)…"
 swift build -c "$CONFIG" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --product BetterClaude
 swift build -c "$CONFIG" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --product cowork
+swift build -c "$CONFIG" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --product bc-recall
 
 BIN="$(swift build -c "$CONFIG" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --show-bin-path)"
 # A debug build is a separate app with its own identity, so it never replaces the installed
@@ -58,6 +59,8 @@ iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/BetterClaude.icns"
 cp "$BIN/BetterClaude" "$APP/Contents/MacOS/BetterClaude"
 # Ship the CLI inside the bundle so the two can never drift apart in version.
 cp "$BIN/cowork" "$APP/Contents/MacOS/cowork"
+# The MCP server Claude talks to, registered from inside the bundle.
+cp "$BIN/bc-recall" "$APP/Contents/MacOS/bc-recall"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -99,6 +102,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 
 codesign --force --sign - --timestamp=none "$APP/Contents/MacOS/cowork"
+codesign --force --sign - --timestamp=none "$APP/Contents/MacOS/bc-recall"
 codesign --force --sign - --timestamp=none "$APP"
 codesign --verify --strict "$APP"
 

@@ -68,4 +68,13 @@ public enum CodeTabSessions {
             at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? [])
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
+
+    /// The account a Code tab session was made in: its record sits in
+    /// `claude-code-sessions/<account>/<org>/`.
+    public static func accountID(of record: CodeTabSession, root: URL) -> String? {
+        let parts = record.metadataURL.standardizedFileURL.pathComponents
+        let base = root.standardizedFileURL.pathComponents
+        guard parts.count >= base.count + 3, Array(parts.prefix(base.count)) == base else { return nil }
+        return parts[base.count]
+    }
 }

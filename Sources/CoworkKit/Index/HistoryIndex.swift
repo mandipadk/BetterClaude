@@ -10,7 +10,7 @@ import Foundation
 public actor HistoryIndex {
 
     /// Bumped whenever the schema or what gets extracted changes; an older file is rebuilt.
-    public static let schemaVersion = 1
+    public static let schemaVersion = 3
 
     public static func defaultURL(paths: HostPaths = .current) -> URL {
         paths.betterClaudeSupport
@@ -39,6 +39,25 @@ public actor HistoryIndex {
         self.database = database
     }
 
+    public enum OpenError: Error, CustomStringConvertible {
+        case missing, outdated
+        public var description: String {
+            switch self {
+            case .missing: return "Better Claude hasn't built its index yet. Open Better Claude once."
+            case .outdated: return "Better Claude's index is from another version. Open Better Claude to bring it up to date."
+            }
+        }
+    }
+
+    /// Opens an index another process keeps current, without ever writing to it.
+    public init(readingFrom url: URL) throws {
+        guard FileManager.default.fileExists(atPath: url.path) else { throw OpenError.missing }
+        let database = try SQLiteDatabase(readOnly: url)
+        guard database.userVersion == Self.schemaVersion else { throw OpenError.outdated }
+        self.url = url
+        self.database = database
+    }
+
     private static func recreate(at url: URL) throws -> SQLiteDatabase {
         for suffix in ["", "-wal", "-shm"] {
             try? FileManager.default.removeItem(atPath: url.path + suffix)
@@ -54,6 +73,8 @@ public actor HistoryIndex {
             id TEXT PRIMARY KEY,
             session_id TEXT,
             install_id TEXT NOT NULL,
+            install_name TEXT,
+            account_id TEXT,
             kind TEXT NOT NULL,
             title TEXT NOT NULL,
             project_path TEXT,
@@ -159,7 +180,7 @@ public actor HistoryIndex {
                 try database.run("UPDATE conversations SET present = 0 WHERE id = ?", [.text(id)])
             }
             for conversation in snapshot.conversations {
-                try upsertMetadata(conversation)
+                try upsertMetadata(conversation, installName: snapshot.install(conversation.installID)?.name)
                 guard let url = conversation.transcriptURL else { continue }
                 let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
                 let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
@@ -224,17 +245,19 @@ public actor HistoryIndex {
         }
     }
 
-    private func upsertMetadata(_ conversation: ConversationRef) throws {
+    private func upsertMetadata(_ conversation: ConversationRef, installName: String?) throws {
         try database.run("""
-            INSERT INTO conversations (id, session_id, install_id, kind, title, project_path, model,
-                                       last_activity, present)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+            INSERT INTO conversations (id, session_id, install_id, install_name, account_id, kind, title,
+                                       project_path, model, last_activity, present)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
             ON CONFLICT(id) DO UPDATE SET session_id = excluded.session_id,
-                install_id = excluded.install_id, kind = excluded.kind, title = excluded.title,
+                install_id = excluded.install_id, install_name = COALESCE(excluded.install_name, install_name),
+                account_id = COALESCE(excluded.account_id, account_id),
+                kind = excluded.kind, title = excluded.title,
                 project_path = excluded.project_path, model = COALESCE(excluded.model, model),
                 last_activity = excluded.last_activity, present = 1
             """, [.text(conversation.id), .text(conversation.cliSessionId), .text(conversation.installID),
-                  .text(conversation.kindName), .text(conversation.title), .optional(conversation.projectPath),
+                  .optional(installName), .optional(conversation.accountID), .text(conversation.kindName), .text(conversation.title), .optional(conversation.projectPath),
                   .optional(conversation.model), .date(conversation.lastActivity)])
     }
 

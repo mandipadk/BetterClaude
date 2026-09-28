@@ -8,6 +8,12 @@ import Foundation
 // own backing store, which is correct even when the window is occluded or partly offscreen.
 
 let appName = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "BetterClaude"
+// `--pid N` matches only windows that process owns. Screenshots pass it always: matching by
+// name alone would photograph any other copy of the app that happens to be open, with
+// whatever real conversations it's showing.
+let pid: Int? = CommandLine.arguments.firstIndex(of: "--pid").flatMap {
+    $0 + 1 < CommandLine.arguments.count ? Int(CommandLine.arguments[$0 + 1]) : nil
+}
 
 guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
                                                kCGNullWindowID) as? [[String: Any]] else {
@@ -17,6 +23,7 @@ guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDes
 
 let matches = windows.compactMap { info -> (Int, Double, Double, Double, Double, Double)? in
     guard let owner = info[kCGWindowOwnerName as String] as? String, owner == appName,
+          pid == nil || (info[kCGWindowOwnerPID as String] as? Int) == pid,
           let number = info[kCGWindowNumber as String] as? Int,
           let bounds = info[kCGWindowBounds as String] as? [String: Any],
           let width = bounds["Width"] as? Double, let height = bounds["Height"] as? Double,

@@ -20,9 +20,12 @@ public struct ConversationRef: Sendable, Hashable, Identifiable {
     public let bytes: Int64
     public let isStarred: Bool
     public let isArchived: Bool
+    /// The Claude account the conversation belongs to, when that's known.
+    public let accountID: String?
 
     public init(origin: Origin, installID: String, title: String, lastActivity: Date,
-                projectPath: String?, model: String?, bytes: Int64, isStarred: Bool, isArchived: Bool) {
+                projectPath: String?, model: String?, bytes: Int64, isStarred: Bool, isArchived: Bool,
+                accountID: String? = nil) {
         self.origin = origin
         self.installID = installID
         self.title = title
@@ -32,6 +35,7 @@ public struct ConversationRef: Sendable, Hashable, Identifiable {
         self.bytes = bytes
         self.isStarred = isStarred
         self.isArchived = isArchived
+        self.accountID = accountID
     }
 
     public var id: String {
@@ -90,6 +94,8 @@ public struct CatalogSnapshot: Sendable {
     public var accounts: [String: [AccountRef]]
     public var conversations: [ConversationRef]
     public var paths: HostPaths
+    /// The account Claude Code itself is signed into, if any.
+    public var claudeCodeAccount: ClaudeAccount?
 
     public init(installs: [Install] = [], accounts: [String: [AccountRef]] = [:],
                 conversations: [ConversationRef] = [], paths: HostPaths = .current) {
@@ -101,8 +107,57 @@ public struct CatalogSnapshot: Sendable {
 
     public func install(_ id: String) -> Install? { installs.first { $0.id == id } }
 
+    /// Every account on the Mac that has conversations, with the best name for each.
+    public var knownAccounts: [ClaudeAccount] {
+        var byID: [String: ClaudeAccount] = [:]
+        for refs in accounts.values {
+            for ref in refs where byID[ref.accountId]?.email == nil {
+                byID[ref.accountId] = ClaudeAccount(id: ref.accountId, email: ref.emailAddress)
+            }
+        }
+        if let cli = claudeCodeAccount, byID[cli.id]?.email == nil { byID[cli.id] = cli }
+        let used = Set(conversations.compactMap(\.accountID))
+        return byID.values.filter { used.contains($0.id) }.sorted { ($0.email ?? $0.id) < ($1.email ?? $1.id) }
+    }
+
+    /// The account an install is signed into: the Code tab's or Cowork's for a Desktop
+    /// install, Claude Code's own for Claude Code.
+    public func account(of install: Install) -> ClaudeAccount? {
+        if install.kind == .claudeCode { return claudeCodeAccount }
+        let refs = accounts[install.id] ?? []
+        if let signedIn = refs.first(where: \.isSignedIn) ?? refs.max(by: { $0.sessionCount < $1.sessionCount }) {
+            return ClaudeAccount(id: signedIn.accountId, email: signedIn.emailAddress)
+        }
+        let codeTab = conversations.first { $0.installID == install.id && $0.accountID != nil }
+        return codeTab?.accountID.map { id in knownAccounts.first { $0.id == id } ?? ClaudeAccount(id: id, email: nil) }
+    }
+
     public func conversations(in installID: String) -> [ConversationRef] {
         conversations.filter { $0.installID == installID }
+    }
+}
+
+/// A Claude account, as far as this Mac knows it.
+public struct ClaudeAccount: Sendable, Hashable, Identifiable {
+    public let id: String
+    public let email: String?
+
+    public init(id: String, email: String?) {
+        self.id = id
+        self.email = email
+    }
+
+    public var displayName: String { email ?? "Account \(id.prefix(8))" }
+
+    /// The account Claude Code is signed into, from its state file.
+    public static func claudeCode(paths: HostPaths = .current) -> ClaudeAccount? {
+        let config = paths.claudeCodeConfigDir
+        let state = config.standardizedFileURL == paths.home.appendingPathComponent(".claude").standardizedFileURL
+            ? paths.home.appendingPathComponent(".claude.json")
+            : config.appendingPathComponent(".claude.json")
+        guard let data = try? Data(contentsOf: state), let value = try? JSONValue.parse(data),
+              let account = value["oauthAccount"], let id = account["accountUuid"]?.stringValue else { return nil }
+        return ClaudeAccount(id: id, email: account["emailAddress"]?.stringValue)
     }
 }
 
@@ -153,7 +208,8 @@ public actor Catalog {
                         title: session.title.isEmpty ? "Untitled conversation" : session.title,
                         lastActivity: session.lastActivityAt, projectPath: nil,
                         model: session.model.isEmpty ? nil : session.model,
-                        bytes: session.byteSize, isStarred: false, isArchived: session.isArchived))
+                        bytes: session.byteSize, isStarred: false, isArchived: session.isArchived,
+                        accountID: account.accountId))
                 }
             }
         }
@@ -178,25 +234,30 @@ public actor Catalog {
                         ?? record.createdAt ?? Date(timeIntervalSince1970: 0),
                     projectPath: record.cwd.isEmpty ? transcript?.resolvedCwd : record.cwd,
                     model: record.model, bytes: transcript?.byteSize ?? 0,
-                    isStarred: record.isStarred, isArchived: record.isArchived))
+                    isStarred: record.isStarred, isArchived: record.isArchived,
+                    accountID: CodeTabSessions.accountID(of: record, root: root)))
             }
         }
 
+        let cliAccount = ClaudeAccount.claudeCode(paths: paths)
         if let cli = installs.first(where: { $0.kind == .claudeCode }) {
             for session in claudeCode.values {
                 conversations.append(ConversationRef(
                     origin: .claudeCode(session), installID: cli.id,
                     title: session.title, lastActivity: session.lastTimestamp,
                     projectPath: session.resolvedCwd.isEmpty ? nil : session.resolvedCwd,
-                    model: nil, bytes: session.byteSize, isStarred: false, isArchived: false))
+                    model: nil, bytes: session.byteSize, isStarred: false, isArchived: false,
+                    accountID: cliAccount?.id))
             }
         }
 
         conversations.sort {
             $0.lastActivity == $1.lastActivity ? $0.id < $1.id : $0.lastActivity > $1.lastActivity
         }
-        return CatalogSnapshot(installs: installs, accounts: accounts,
-                               conversations: conversations, paths: paths)
+        var snapshot = CatalogSnapshot(installs: installs, accounts: accounts,
+                                       conversations: conversations, paths: paths)
+        snapshot.claudeCodeAccount = cliAccount
+        return snapshot
     }
 
     /// One project's transcripts, reusing every summary whose file has not changed.

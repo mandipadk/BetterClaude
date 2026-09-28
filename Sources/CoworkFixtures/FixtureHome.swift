@@ -49,7 +49,9 @@ public struct FixtureHome {
             conversations: Script.personalCowork,
             codeTab: Script.personalCodeTab,
             mcp: ["filesystem": "npx -y @modelcontextprotocol/server-filesystem ~/Documents",
-                  "calendar": "/usr/local/bin/calendar-mcp"])
+                  "calendar": "/usr/local/bin/calendar-mcp",
+                  // Better Claude's own history server, as its switch adds it.
+                  "better-claude": "/Applications/BetterClaude.app/Contents/MacOS/bc-recall --account \(Self.personalAccount)"])
         try makeParallexWork()
         try makeScience()
         try makeClaudeCode()
