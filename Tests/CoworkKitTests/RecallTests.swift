@@ -132,6 +132,8 @@ struct RecallTests {
             #expect(brief.contains("~/Code/billing-service/src/webhooks/deliver.ts"))
             #expect(brief.contains("**Asked:** Can we cap the total wait at ten minutes?"))
             #expect(try await Handoff.material(for: "nope", index: index) == nil)
+            #expect(Handoff.sectionsOnly("# Handoff: X\n**Who:** a model\n\n---\n## Goal\n- Ship it\n---\n## Next step\n- Test") ==
+                    "## Goal\n- Ship it\n## Next step\n- Test")
         }
     }
 }

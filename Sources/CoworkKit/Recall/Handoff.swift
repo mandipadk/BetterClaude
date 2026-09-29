@@ -91,12 +91,23 @@ public enum Handoff {
     sections, each only if the notes support it: "Goal", "Decisions", "Done", "Open questions", \
     "Next step". Keep file paths and names exactly as written, but don't list the changed \
     files: they're attached separately. Be concrete and brief: bullet points, no preamble, no \
-    closing remarks.
+    closing remarks. Start directly with the first section heading, written as "## Goal".
     """
 
     public static func prompt(_ m: HandoffMaterial, home: HostPaths = .current, budget: Int = 12_000) -> String {
         // Without the closing advice, which a model would otherwise report as a decision.
         "Notes on the conversation \"\(m.title)\":\n\n" + clip(draft(m, home: home, advice: false), budget)
+    }
+
+    /// A model's brief from its first section on: the model sometimes opens with a title or
+    /// a line about itself, and the brief has a title of its own.
+    public static func sectionsOnly(_ text: String) -> String {
+        let lines = text.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
+        guard let first = lines.firstIndex(where: { $0.hasPrefix("## ") || $0.hasPrefix("### ") }) else {
+            return lines.drop { $0.hasPrefix("# ") }.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return lines[first...].filter { $0.trimmingCharacters(in: .whitespaces) != "---" }
+            .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func clip(_ text: String, _ length: Int) -> String {

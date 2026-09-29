@@ -51,10 +51,7 @@ final class HandoffModel: Identifiable {
                     try Task.checkCancellation()
                     text = snapshot.content
                 }
-                // The model sometimes titles its answer; the brief has a title already.
-                let lines = text.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
-                text = lines.drop { $0.hasPrefix("# ") || $0.trimmingCharacters(in: .whitespaces).isEmpty }
-                    .joined(separator: "\n")
+                text = Handoff.sectionsOnly(text)
                 guard !text.isEmpty else { return }
                 // The model writes the thinking; the facts it might drop stay attached below.
                 var out = "# Handoff: \(material.title)\n\n" + text.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n"

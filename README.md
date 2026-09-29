@@ -79,6 +79,22 @@ A question about your past work, answered by the model built into macOS from pas
 index finds, with the conversations it cites listed below. Needs macOS 26 or later with
 Apple Intelligence; nothing is sent anywhere.
 
+### Carry it anywhere
+
+**Write a Handoff** turns any conversation into a one-page brief: what it was about, where it
+got to (from Claude's own compaction summaries and recaps), the files changed, and the last
+exchange, tightened by the model built into macOS where it's available. Copy it, save it,
+or start Claude Code in the project with it.
+
+**claude.ai and Codex.** File → Import claude.ai Export… takes the zip claude.ai emails you
+and adds those conversations to the timeline, search, Ask and Claude's history tools, under
+the account each belongs to. Codex sessions on the Mac appear on their own, read-only; only
+their session files and titles are read, never their credentials.
+
+**Backups.** Everything Better Claude keeps — kept conversations, saved file versions and
+plans, imports, receipts — goes into one Apple Encrypted Archive locked with a password
+that's never stored, in iCloud Drive or anywhere. Restoring only adds what's missing.
+
 ### Continue anywhere, and undo it
 
 **Continue in…** carries a conversation to another install or into a Claude Code project,
