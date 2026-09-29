@@ -58,6 +58,15 @@ enum DebugRoute {
                 services.destination = .running
             case "usage":
                 services.destination = .usage
+            case "files":
+                services.destination = .files
+                services.files.attach(services)
+                while !services.index.isReady { try? await Task.sleep(for: .milliseconds(50)) }
+                services.files.reload()
+                while services.files.files.isEmpty { try? await Task.sleep(for: .milliseconds(50)) }
+                if !argument.isEmpty, let match = services.files.files.first(where: { $0.path.hasSuffix(argument) }) {
+                    services.files.selectedPath = match.path
+                }
             case "ask":
                 services.destination = .ask
                 if !argument.isEmpty {

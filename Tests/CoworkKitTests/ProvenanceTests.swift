@@ -122,4 +122,22 @@ struct ProvenanceTests {
             #expect(forFile.map(\.subject) == ["Retry webhook deliveries"])
         }
     }
+
+    @Test("A diff keeps the changed lines and a little context, and marks what it skips")
+    func diffs() {
+        let old = (1...20).map { "line \($0)" }.joined(separator: "\n")
+        var lines = (1...20).map { "line \($0)" }
+        lines[4] = "line five, changed"
+        lines.insert("brand new", at: 15)
+        let diff = LineDiff(old: old, new: lines.joined(separator: "\n"), context: 1)
+        #expect(diff.added == 2)
+        #expect(diff.removed == 1)
+        #expect(diff.lines.contains { $0.kind == .removed && $0.text == "line 5" })
+        #expect(diff.lines.contains { $0.kind == .added && $0.text == "line five, changed" })
+        #expect(diff.lines.contains { $0.kind == .gap })
+        #expect(!diff.lines.contains { $0.text == "line 10" })
+        #expect(LineDiff(old: "same", new: "same").isEmpty)
+        let created = LineDiff(old: "", new: "a\nb\n")
+        #expect(created.added == 2 && created.removed == 0 && created.lines.count == 2)
+    }
 }

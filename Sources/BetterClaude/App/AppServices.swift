@@ -9,6 +9,7 @@ enum SidebarDestination: Hashable {
     case running
     case ask
     case usage
+    case files
     case library
     case install(String)
     case history
@@ -52,6 +53,7 @@ final class AppServices {
     let recall: RecallModel
     let ask = AskModel()
     let usage = UsageModel()
+    let files = FilesModel()
     let search: SearchModel
     let library = LibraryModel()
     let kept = KeptModel()
@@ -122,6 +124,11 @@ final class AppServices {
             self.reopenIfChanged(fresh)
             if UserDefaults.standard.object(forKey: "keepAutomatically") as? Bool ?? true {
                 self.kept.keep(fresh.conversations)
+                // The same cleanup deletes the versions Claude Code saved of files, and plans.
+                let paths = fresh.paths
+                Task.detached(priority: .utility) {
+                    KeptFileHistory.keep(configDirs: LiveSessions.configDirs(paths: paths), paths: paths)
+                }
             }
             if let id = self.selectedConversationID, fresh.conversations.contains(where: { $0.id == id }) {
                 // Still there; keep reading it.
