@@ -14,6 +14,8 @@ public struct Install: Sendable, Hashable, Identifiable {
         case parallex(slug: String)
         case science
         case claudeCode
+        /// Conversations from outside Claude's own apps, kept read-only.
+        case external(ExternalConversation.Source)
     }
 
     public struct Badge: Sendable, Hashable {
@@ -85,7 +87,7 @@ public enum InstallDiscovery {
     static let notInstalls: Set<String> = ["Parallex", "BetterClaude"]
 
     public static func all() -> [Install] {
-        desktopInstalls() + parallexInstalls() + [science(), claudeCode()].compactMap { $0 }
+        desktopInstalls() + parallexInstalls() + [science(), claudeCode(), claudeWeb(), codex()].compactMap { $0 }
     }
 
     // MARK: Desktop
@@ -164,6 +166,23 @@ public enum InstallDiscovery {
         guard Discovery.isDirectory(config) else { return nil }
         return Install(id: "claude-code:\(config.path)", kind: .claudeCode, name: "Claude Code",
                        dataRoot: config, appURL: nil, iconURL: nil, badge: nil, store: nil)
+    }
+
+    // MARK: Outside sources
+
+    /// claude.ai, once an export has been imported.
+    static func claudeWeb() -> Install? {
+        let root = ClaudeWebImport.root()
+        guard FileManager.default.fileExists(atPath: root.appendingPathComponent("index.json").path) else { return nil }
+        return Install(id: "claude-web", kind: .external(.claudeWeb), name: "claude.ai", dataRoot: root,
+                       appURL: nil, iconURL: nil, badge: nil, store: nil)
+    }
+
+    static func codex() -> Install? {
+        let home = CodexSessions.home()
+        guard Discovery.isDirectory(home.appendingPathComponent("sessions")) else { return nil }
+        return Install(id: "codex:\(home.path)", kind: .external(.codex), name: "Codex", dataRoot: home,
+                       appURL: nil, iconURL: nil, badge: nil, store: nil)
     }
 
     // MARK: Helpers

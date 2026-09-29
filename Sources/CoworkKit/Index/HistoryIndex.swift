@@ -10,7 +10,7 @@ import Foundation
 public actor HistoryIndex {
 
     /// Bumped whenever the schema or what gets extracted changes; an older file is rebuilt.
-    public static let schemaVersion = 4
+    public static let schemaVersion = 5
 
     /// One file per schema, so an older copy of the app still running during an update
     /// keeps its own index instead of rebuilding this one back and forth.
@@ -205,7 +205,7 @@ public actor HistoryIndex {
             }
             for conversation in snapshot.conversations {
                 try upsertMetadata(conversation, installName: snapshot.install(conversation.installID)?.name)
-                guard let url = conversation.transcriptURL else { continue }
+                guard let url = conversation.transcriptURL ?? conversation.external?.fileURL else { continue }
                 let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
                 let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
                 let mtime = (attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
@@ -214,7 +214,7 @@ public actor HistoryIndex {
                    previous.size == size, previous.mtime == mtime { continue }
                 var offset: Int64 = 0
                 var ordinal: Int64 = 0
-                if let previous, previous.sourcePath == url.path,
+                if conversation.external == nil, let previous, previous.sourcePath == url.path,
                    size > previous.indexedBytes, previous.indexedBytes > 0,
                    TranscriptScanner.canResume(url, at: previous.indexedBytes) {
                     offset = previous.indexedBytes
@@ -237,7 +237,9 @@ public actor HistoryIndex {
                 guard let job = iterator.next() else { return }
                 inFlight += 1
                 group.addTask(priority: .utility) {
-                    (job, try? TranscriptScanner.scan(job.url, from: job.offset))
+                    // Outside sources have formats of their own and are read whole.
+                    if let external = job.conversation.external { return (job, try? external.scan()) }
+                    return (job, try? TranscriptScanner.scan(job.url, from: job.offset))
                 }
             }
             for _ in 0..<limit { addNext() }
@@ -421,6 +423,7 @@ extension ConversationRef {
         case .cowork: return "cowork"
         case .claudeCode: return "claudeCode"
         case .codeTab: return "codeTab"
+        case .external(let conversation): return conversation.source.rawValue
         }
     }
 }

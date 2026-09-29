@@ -46,6 +46,10 @@ struct BetterClaudeApp: App {
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(after: .newItem) {
+                Button("Import claude.ai Export…") { services.importClaudeWebExport() }
+                    .keyboardShortcut("i", modifiers: [.command, .shift])
+            }
             CommandGroup(after: .appInfo) {
                 Button("Check for Updates…") {
                     Task { await updates.check(userInitiated: true) }

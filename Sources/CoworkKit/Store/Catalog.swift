@@ -8,6 +8,8 @@ public struct ConversationRef: Sendable, Hashable, Identifiable {
         case claudeCode(CCSessionRef)
         /// A Code tab record and, when it still exists, the transcript it points at.
         case codeTab(CodeTabSession, CCSessionRef?)
+        /// A claude.ai or Codex conversation.
+        case external(ExternalConversation)
     }
 
     public let origin: Origin
@@ -43,6 +45,7 @@ public struct ConversationRef: Sendable, Hashable, Identifiable {
         case .cowork(let session): return "cowork:" + session.metadataURL.path
         case .claudeCode(let session): return "cc:" + session.transcriptURL.path
         case .codeTab(let record, _): return "codetab:" + record.metadataURL.path
+        case .external(let conversation): return "\(conversation.source.rawValue):" + conversation.id
         }
     }
 
@@ -51,12 +54,18 @@ public struct ConversationRef: Sendable, Hashable, Identifiable {
         case .cowork(let session): return session.transcriptURL
         case .claudeCode(let session): return session.transcriptURL
         case .codeTab(_, let session): return session?.transcriptURL
+        case .external: return nil
         }
     }
 
     /// The conversation's metadata survived but its messages did not — Claude Code's cleanup
     /// removed the transcript, or it was never written.
-    public var isTranscriptMissing: Bool { transcriptURL == nil }
+    public var isTranscriptMissing: Bool { transcriptURL == nil && external == nil }
+
+    public var external: ExternalConversation? {
+        if case .external(let conversation) = origin { return conversation }
+        return nil
+    }
 
     /// The folder's own name, which is what a person calls a project.
     public var projectName: String? {
@@ -69,6 +78,7 @@ public struct ConversationRef: Sendable, Hashable, Identifiable {
         case .cowork(let session): return session.cliSessionId
         case .claudeCode(let session): return session.sessionId
         case .codeTab(let record, _): return record.cliSessionId
+        case .external(let conversation): return conversation.id
         }
     }
 
@@ -81,7 +91,7 @@ public struct ConversationRef: Sendable, Hashable, Identifiable {
         switch origin {
         case .claudeCode(let session): return session
         case .codeTab(_, let session): return session
-        case .cowork: return nil
+        case .cowork, .external: return nil
         }
     }
 }
@@ -248,6 +258,24 @@ public actor Catalog {
                     projectPath: session.resolvedCwd.isEmpty ? nil : session.resolvedCwd,
                     model: nil, bytes: session.byteSize, isStarred: false, isArchived: false,
                     accountID: cliAccount?.id))
+            }
+        }
+
+        // Conversations from outside Claude's apps, read-only.
+        if let web = installs.first(where: { $0.kind == .external(.claudeWeb) }) {
+            for (conversation, account) in ClaudeWebImport.conversations(paths: paths) {
+                conversations.append(ConversationRef(
+                    origin: .external(conversation), installID: web.id, title: conversation.title,
+                    lastActivity: conversation.updatedAt, projectPath: nil, model: nil, bytes: 0,
+                    isStarred: false, isArchived: false, accountID: account))
+            }
+        }
+        if let codex = installs.first(where: { $0.kind == .external(.codex) }) {
+            for conversation in CodexSessions.conversations(paths: paths) {
+                conversations.append(ConversationRef(
+                    origin: .external(conversation), installID: codex.id, title: conversation.title,
+                    lastActivity: conversation.updatedAt, projectPath: conversation.cwd, model: conversation.model,
+                    bytes: 0, isStarred: false, isArchived: false, accountID: "codex"))
             }
         }
 

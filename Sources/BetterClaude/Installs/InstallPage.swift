@@ -13,7 +13,7 @@ struct InstallPage: View {
                 header.padding(.bottom, Theme.Space.xl)
                 notices
                 conversations
-                if install.kind != .science { RecallSection(install: install) }
+                if RecallConnection.target(for: install) != nil { RecallSection(install: install) }
                 SetupSection(install: install)
                 details
             }
@@ -56,6 +56,11 @@ struct InstallPage: View {
                     }
                     Divider()
                 }
+                if install.kind == .external(.claudeWeb) {
+                    Button("Import a Newer Export…") { services.importClaudeWebExport() }
+                    Button("Remove Imported Conversations") { services.removeClaudeWebImport() }
+                    Divider()
+                }
                 Button("Show Data Folder") {
                     NSWorkspace.shared.activateFileViewerSelecting([install.dataRoot])
                 }
@@ -74,6 +79,8 @@ struct InstallPage: View {
         switch install.kind {
         case .claudeCode: return "The command line, and the Code tab's conversations"
         case .science: return "Research projects and their files"
+        case .external(.claudeWeb): return "Conversations imported from your claude.ai export, read-only"
+        case .external(.codex): return "Codex sessions on this Mac, read-only"
         case .parallex: return isRunning ? "Open now, a copy made by Parallex" : "A copy of Claude made by Parallex"
         case .desktop: return isRunning ? "Open now" : "Claude for Mac"
         }

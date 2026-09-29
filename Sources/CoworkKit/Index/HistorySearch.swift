@@ -195,6 +195,8 @@ public enum HistorySearch {
         switch kind {
         case "cowork": return "Cowork in \(install ?? "Claude")"
         case "codeTab": return "the Code tab in \(install ?? "Claude")"
+        case "claudeWeb": return "claude.ai"
+        case "codex": return "Codex"
         default: return "Claude Code"
         }
     }

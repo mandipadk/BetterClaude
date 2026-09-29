@@ -98,13 +98,26 @@ struct ReaderHeader: View {
                     .lineLimit(3)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Button("Continue in…") {
-                    services.beginContinue(conversation)
+                if conversation.external != nil {
+                    // Outside conversations can't become Claude Code transcripts; a brief
+                    // carries them on instead.
+                    Button("Write a Handoff…") { services.beginHandoff(conversation) }
+                        .buttonStyle(.primary)
+                        .help("A one-page brief of this conversation, to continue it in a fresh one")
+                } else {
+                    Button("Continue in…") {
+                        services.beginContinue(conversation)
+                    }
+                    .buttonStyle(.primary)
+                    .disabled(conversation.isTranscriptMissing)
+                    .help("Carry this conversation to another Claude or to Claude Code")
                 }
-                .buttonStyle(.primary)
-                .disabled(conversation.isTranscriptMissing)
-                .help("Carry this conversation to another Claude or to Claude Code")
                 MoreMenu {
+                    if conversation.external == nil {
+                        Button("Write a Handoff…") { services.beginHandoff(conversation) }
+                            .disabled(conversation.isTranscriptMissing)
+                        Divider()
+                    }
                     if let session = conversation.claudeCodeSession, !session.resolvedCwd.isEmpty,
                        !session.transcriptURL.path.hasPrefix(Vault.root.path) {
                         Button("Resume in Terminal") {

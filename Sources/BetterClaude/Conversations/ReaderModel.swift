@@ -40,6 +40,21 @@ final class ReaderModel {
         }
         forkPoints = [:]
         findQuery = keepFind
+        if let external = conversation.external {
+            if !force || readable == nil { state = .loading }
+            loadTask = Task {
+                let result = await Task.detached(priority: .userInitiated) { Result { try external.scan() } }.value
+                guard !Task.isCancelled, self.conversation?.id == conversation.id else { return }
+                switch result {
+                case .success(let scan):
+                    self.readable = ReadableConversation(scan: scan, model: external.model)
+                    self.state = .ready
+                case .failure:
+                    self.state = .failed("This conversation couldn't be read.")
+                }
+            }
+            return
+        }
         guard let url = conversation.transcriptURL else {
             state = .missing
             return

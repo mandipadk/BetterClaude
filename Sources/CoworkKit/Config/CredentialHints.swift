@@ -24,7 +24,7 @@ public enum CredentialHints {
             return settingsHints(at: settings)
         case .desktop, .parallex:
             return mcpHints(at: install.dataRoot.appendingPathComponent("claude_desktop_config.json"))
-        case .science:
+        case .science, .external:
             return []
         }
     }

@@ -46,6 +46,17 @@ public struct ReadableConversation: Sendable {
         }
     }
 
+    /// A conversation from outside Claude's apps, from its scanned messages.
+    public init(scan: TranscriptScan, model: String?) {
+        entries = scan.messages.enumerated().map { index, message in
+            .message(MessageText(id: message.uuid ?? "m\(index)", role: message.role, text: message.text,
+                                 timestamp: message.timestamp, index: index))
+        }
+        self.model = model
+        firstTimestamp = scan.firstTimestamp
+        lastTimestamp = scan.lastTimestamp
+    }
+
     public init(transcript: Transcript) {
         var entries: [Entry] = []
         var pendingTools: [String] = []

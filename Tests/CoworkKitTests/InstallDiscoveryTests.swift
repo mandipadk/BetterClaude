@@ -11,7 +11,7 @@ struct InstallDiscoveryTests {
     func findsEveryInstall() throws {
         try FixtureHomeTests.withSample { sample in
             let installs = InstallDiscovery.all()
-            #expect(installs.map(\.name) == ["Claude", "Claude Work", "Claude Science", "Claude Code"])
+            #expect(installs.map(\.name) == ["Claude", "Claude Work", "Claude Science", "Claude Code", "Codex"])
 
             let work = try #require(installs.first { $0.name == "Claude Work" })
             #expect(work.kind == .parallex(slug: "claude-work"))

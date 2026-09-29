@@ -33,7 +33,7 @@ public enum RecallConnection {
         switch install.kind {
         case .claudeCode: return .claudeCode(configDir: paths.claudeCodeConfigDir)
         case .desktop, .parallex: return .desktop(dataRoot: install.dataRoot)
-        case .science: return nil
+        case .science, .external: return nil
         }
     }
 

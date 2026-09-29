@@ -66,7 +66,7 @@ struct HistoryIndexTests {
     func indexesTheSample() async throws {
         try await Self.withSample { _, snapshot, index in
             let read = try await index.update(from: snapshot)
-            #expect(read == snapshot.conversations.filter { $0.transcriptURL != nil }.count)
+            #expect(read == snapshot.conversations.filter { $0.transcriptURL != nil || $0.external != nil }.count)
             let summary = try await index.summary()
             #expect(summary.conversations == snapshot.conversations.count)
             #expect(summary.messages > 20)

@@ -320,7 +320,7 @@ public enum ConfigInventory {
         case .claudeCode:
             let dir = install.dataRoot
             return globalItems(dir: dir, scope: .claudeCodeGlobal(dir))
-        case .science:
+        case .science, .external:
             return []
         }
     }

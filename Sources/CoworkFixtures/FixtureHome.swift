@@ -56,6 +56,44 @@ public struct FixtureHome {
         try makeScience()
         try makeClaudeCode()
         try makeKept()
+        try makeCodex()
+    }
+
+    /// A Codex home with one session, the way the Codex CLI leaves it: a header, injected
+    /// context that isn't the person's, a prompt, a tool call and a reply. `auth.json` is
+    /// there to show it's never read.
+    func makeCodex() throws {
+        let home = paths.home.appendingPathComponent(".codex", isDirectory: true)
+        let day = home.appendingPathComponent("sessions/2026/09/20", isDirectory: true)
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+        try Data(#"{"OPENAI_API_KEY":"sk-sample-not-real"}"#.utf8).write(to: home.appendingPathComponent("auth.json"))
+        let id = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"
+        let start = now.addingTimeInterval(-4 * 86_400)
+        let cwd = paths.home.appendingPathComponent("Code/billing-service").path
+        func stamp(_ offset: TimeInterval) -> String { Transcriber.stamp(start.addingTimeInterval(offset)) }
+        let records: [[String: Any]] = [
+            ["timestamp": stamp(0), "type": "session_meta",
+             "payload": ["id": id, "timestamp": stamp(0), "cwd": cwd, "originator": "codex_cli_rs",
+                         "cli_version": "0.51.0", "git": ["branch": "main"]]],
+            ["timestamp": stamp(1), "type": "turn_context", "payload": ["cwd": cwd, "model": "gpt-5-codex"]],
+            ["timestamp": stamp(2), "type": "response_item",
+             "payload": ["type": "message", "role": "user",
+                         "content": [["type": "input_text", "text": "<environment_context>\n  <cwd>\(cwd)</cwd>\n</environment_context>"]]]],
+            ["timestamp": stamp(3), "type": "response_item",
+             "payload": ["type": "message", "role": "user",
+                         "content": [["type": "input_text", "text": "Why do refunds post twice when the webhook retries?"]]]],
+            ["timestamp": stamp(20), "type": "response_item",
+             "payload": ["type": "function_call", "name": "shell", "arguments": #"{"command":["rg","refund"]}"#, "call_id": "c1"]],
+            ["timestamp": stamp(60), "type": "response_item",
+             "payload": ["type": "message", "role": "assistant",
+                         "content": [["type": "output_text", "text": "The refund handler isn't idempotent: a retried delivery creates a second refund. Keying refunds by event id fixes it."]]]],
+        ]
+        let lines = try records.map { String(decoding: try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]), as: UTF8.self) }
+        let file = day.appendingPathComponent("rollout-2026-09-20T10-00-00-\(id).jsonl")
+        try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: file)
+        try touch(file, at: start.addingTimeInterval(60))
+        try Data((#"{"id":"\#(id)","thread_name":"Refunds post twice on webhook retry","updated_at":"\#(stamp(60))"}"# + "\n").utf8)
+            .write(to: home.appendingPathComponent("session_index.jsonl"))
     }
 
     /// One conversation Claude Code has already deleted, still held by Better Claude.

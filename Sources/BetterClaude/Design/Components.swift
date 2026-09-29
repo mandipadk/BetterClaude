@@ -261,12 +261,20 @@ struct InstallIcon: View {
                     .resizable()
                     .interpolation(.high)
             } else {
-                GlyphTile(systemImage: install.kind == .claudeCode ? "terminal.fill" : "questionmark",
-                          size: size)
+                GlyphTile(systemImage: glyph, size: size)
             }
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)
+    }
+
+    private var glyph: String {
+        switch install.kind {
+        case .claudeCode: return "terminal.fill"
+        case .external(.claudeWeb): return "globe"
+        case .external(.codex): return "chevron.left.forwardslash.chevron.right"
+        default: return "questionmark"
+        }
     }
 }
 

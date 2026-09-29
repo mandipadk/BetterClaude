@@ -89,12 +89,20 @@ struct MainWindow: View {
         .sheet(item: $services.comparing) { pair in
             CompareSheet(pair: pair).environment(services)
         }
+        .sheet(item: $services.handingOff) { model in
+            HandoffSheet(model: model) { services.handingOff = nil }
+                .environment(services)
+        }
         .sheet(item: $services.forking) { request in
             ForkSheet(request: request).environment(services)
         }
         .sheet(item: $services.continuing) { model in
             ContinueSheet(model: model) { services.endContinue() }
                 .environment(services)
+        }
+        .alert(services.notice ?? "", isPresented: Binding(get: { services.notice != nil },
+                                                          set: { if !$0 { services.notice = nil } })) {
+            Button("OK") { services.notice = nil }
         }
         .alert("Something went wrong",
                isPresented: Binding(get: { services.errorMessage != nil },

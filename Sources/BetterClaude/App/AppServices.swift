@@ -168,7 +168,7 @@ final class AppServices {
             let ids = Set(installs.compactMap { install -> String? in
                 switch install.kind {
                 case .science: return science ? install.id : nil
-                case .claudeCode: return nil
+                case .claudeCode, .external: return nil
                 case .desktop, .parallex:
                     return open.contains(install.dataRoot.standardizedFileURL.path) ? install.id : nil
                 }
@@ -229,6 +229,48 @@ final class AppServices {
         UserDefaults.standard.set(on, forKey: SpotlightIndexer.enabledKey)
         if on { spotlight.update(snapshot: snapshot, index: index.index) } else { spotlight.clear() }
     }
+
+    // MARK: Importing
+
+    /// Asks for a claude.ai export and imports its conversations.
+    func importClaudeWebExport() {
+        let panel = NSOpenPanel()
+        panel.message = "Choose the export claude.ai emailed you: the .zip, the folder it unpacks to, or its conversations.json."
+        panel.prompt = "Import"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowedContentTypes = [.zip, .json, .folder]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let paths = snapshot.paths
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { try ClaudeWebImport.importExport(at: url, paths: paths) }
+            }.value
+            switch result {
+            case .success(let report):
+                let total = report.added + report.updated
+                notice = total == 0
+                    ? "Nothing new: every conversation in that export was already here."
+                    : "Imported \(total) conversation\(total == 1 ? "" : "s") from claude.ai. They're in the timeline, and in search."
+                refresh()
+            case .failure(let error):
+                errorMessage = String(describing: error)
+            }
+        }
+    }
+
+    func removeClaudeWebImport() {
+        do {
+            try ClaudeWebImport.removeAll(paths: snapshot.paths)
+            if case .install = destination { destination = .conversations }
+            refresh()
+        } catch {
+            errorMessage = "Couldn't remove them: \(error.localizedDescription)"
+        }
+    }
+
+    /// A one-line confirmation, shown as an alert.
+    var notice: String?
 
     /// Shows a file's history on the Files page, even one Claude has only read.
     func showFile(_ path: String) {
@@ -293,13 +335,44 @@ final class AppServices {
     var continuing: ContinueModel?
 
     func beginContinue(_ conversation: ConversationRef) {
-        guard !conversation.isTranscriptMissing else { return }
+        guard !conversation.isTranscriptMissing, conversation.external == nil else { return }
         continuing = ContinueModel(conversation: conversation, source: install(for: conversation))
     }
 
     func endContinue() {
         continuing = nil
         refresh()
+    }
+
+    /// The handoff being written, as a sheet.
+    var handingOff: HandoffModel?
+
+    func beginHandoff(_ conversation: ConversationRef) {
+        handingOff = HandoffModel(conversation: conversation)
+    }
+
+    /// Opens Terminal in `folder` and starts Claude Code with a handoff brief as its first
+    /// message. The brief is saved beside Better Claude's other files and read from there, so
+    /// nothing long goes through the shell.
+    func startClaudeCode(in folder: String, brief: String, title: String) {
+        let support = snapshot.paths.betterClaudeSupport
+        let handoffs = support.appendingPathComponent("Handoffs", isDirectory: true)
+        let stamp = Int(Date().timeIntervalSince1970)
+        let file = handoffs.appendingPathComponent("handoff-\(stamp).md")
+        let script = support.appendingPathComponent("Resume/handoff-\(stamp).command")
+        func quoted(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+        let prompt = "Here is a handoff from an earlier conversation, \(title). Read it, then continue from where it left off:\n\n"
+        let body = "#!/bin/zsh -l\ncd \(quoted(folder)) && exec claude \"$(cat \(quoted(file.path)))\"\n"
+        do {
+            try FileManager.default.createDirectory(at: handoffs, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: script.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data((prompt + brief).utf8).write(to: file, options: .atomic)
+            try Data(body.utf8).write(to: script, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+            NSWorkspace.shared.open(script)
+        } catch {
+            errorMessage = "Couldn't open Terminal: \(error.localizedDescription)"
+        }
     }
 
     /// Opens Terminal in `cwd` and resumes a Claude Code conversation there.

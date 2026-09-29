@@ -97,6 +97,9 @@ public enum Storage {
             add("environment", "Python environment",
                 "The scientific Python Claude Science runs its analyses in.", .yours, existing(["conda"]))
             add("projects", "Projects", "Your research projects and their files.", .yours, existing(["orgs"]))
+        case .external:
+            // Better Claude doesn't measure or tidy what other apps keep.
+            break
         }
         return result
     }

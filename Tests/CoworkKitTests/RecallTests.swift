@@ -115,4 +115,23 @@ struct RecallTests {
             "CLAUDE_USER_DATA_DIR": "/Volumes/Sample/Parallex/instances/work/data"]) == Self.work)
         #expect(access.consumer(registered: Self.personal, environment: ["CLAUDE_USER_DATA_DIR": "/elsewhere"]) == Self.personal)
     }
+
+    @Test("A handoff brief carries what it was about, the files changed, and the last exchange")
+    func handoff() async throws {
+        try await HistoryIndexTests.withSample { sample, snapshot, index in
+            try await index.update(from: snapshot)
+            let conversation = try #require(snapshot.conversations.first {
+                $0.title == "Retry failed webhook deliveries with backoff" })
+            let material = try #require(try await Handoff.material(for: conversation.id, index: index))
+            #expect(material.firstAsk?.hasPrefix("Webhook deliveries that fail") == true)
+            #expect(material.lastAsk == "Can we cap the total wait at ten minutes?")
+            #expect(material.filesChanged.contains { $0.hasSuffix("deliver.ts") })
+            let brief = Handoff.draft(material, home: sample.paths)
+            #expect(brief.hasPrefix("# Handoff: Retry failed webhook deliveries with backoff"))
+            #expect(brief.contains("## Files changed"))
+            #expect(brief.contains("~/Code/billing-service/src/webhooks/deliver.ts"))
+            #expect(brief.contains("**Asked:** Can we cap the total wait at ten minutes?"))
+            #expect(try await Handoff.material(for: "nope", index: index) == nil)
+        }
+    }
 }
