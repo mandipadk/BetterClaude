@@ -349,6 +349,9 @@ final class AppServices {
         refresh()
     }
 
+    /// A replay being set up or run, as a sheet.
+    var replaying: ReplayModel?
+
     /// The handoff being written, as a sheet.
     var handingOff: HandoffModel?
 

@@ -31,6 +31,15 @@ struct SettingsView: View {
                                 isOn: Binding(get: { openAtLogin }, set: { setOpenAtLogin($0) }))
             }
             Section {
+                APIKeyRow()
+            } header: {
+                Text("Your Anthropic API key")
+            } footer: {
+                Text("Off unless you add one. It's used only when you replay a conversation on another model, and each replay shows what it will cost first. Kept in your Keychain.")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Welcome").font(Theme.Font.body)
@@ -80,6 +89,38 @@ struct SettingsView: View {
         } catch {
             loginError = "macOS didn't allow it: \(error.localizedDescription)"
         }
+    }
+}
+
+/// Adding, replacing or removing the API key.
+private struct APIKeyRow: View {
+    @State private var key = ""
+    @State private var isSet = APIKeyStore.isSet
+    @State private var failure: String?
+
+    var body: some View {
+        HStack {
+            if isSet {
+                Text("A key is saved.").font(Theme.Font.body)
+                Spacer()
+                Button("Remove") { APIKeyStore.remove(); isSet = false }.buttonStyle(.secondary)
+            } else {
+                SecureField("sk-ant-…", text: $key).textFieldStyle(.roundedBorder)
+                Button("Save") {
+                    do {
+                        try APIKeyStore.save(key.trimmingCharacters(in: .whitespacesAndNewlines))
+                        key = ""
+                        isSet = true
+                        failure = nil
+                    } catch {
+                        failure = "Couldn't save it to the Keychain."
+                    }
+                }
+                .buttonStyle(.secondary)
+                .disabled(key.trimmingCharacters(in: .whitespaces).count < 20)
+            }
+        }
+        if let failure { Text(failure).font(Theme.Font.callout).foregroundStyle(Theme.failure) }
     }
 }
 

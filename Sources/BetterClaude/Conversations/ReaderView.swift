@@ -116,8 +116,10 @@ struct ReaderHeader: View {
                     if conversation.external == nil {
                         Button("Write a Handoff…") { services.beginHandoff(conversation) }
                             .disabled(conversation.isTranscriptMissing)
-                        Divider()
                     }
+                    Button("Replay on Another Model…") { services.replaying = ReplayModel(conversation: conversation) }
+                        .disabled(conversation.isTranscriptMissing)
+                    Divider()
                     if let session = conversation.claudeCodeSession, !session.resolvedCwd.isEmpty,
                        !session.transcriptURL.path.hasPrefix(Vault.root.path) {
                         Button("Resume in Terminal") {

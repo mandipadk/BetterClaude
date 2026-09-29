@@ -89,6 +89,10 @@ struct MainWindow: View {
         .sheet(item: $services.comparing) { pair in
             CompareSheet(pair: pair).environment(services)
         }
+        .sheet(item: $services.replaying) { model in
+            ReplaySheet(model: model) { services.replaying = nil }
+                .environment(services)
+        }
         .sheet(item: $services.handingOff) { model in
             HandoffSheet(model: model) { services.handingOff = nil }
                 .environment(services)

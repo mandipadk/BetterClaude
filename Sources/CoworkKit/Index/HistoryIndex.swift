@@ -423,6 +423,16 @@ public struct IndexedMessage: Sendable, Equatable {
     public let timestamp: Date?
     public let text: String
 
+    public init(ordinal: Int, uuid: String?, role: MessageText.Role, kind: TranscriptScan.Message.Kind,
+                timestamp: Date?, text: String) {
+        self.ordinal = ordinal
+        self.uuid = uuid
+        self.role = role
+        self.kind = kind
+        self.timestamp = timestamp
+        self.text = text
+    }
+
     init(_ row: SQLiteRow) {
         ordinal = Int(row.int(0))
         uuid = row.text(1)

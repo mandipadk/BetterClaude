@@ -12,6 +12,16 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.6.0": [
+            Item(symbol: "text.quote", title: "Prompts",
+                 detail: "The prompts you type again and again, from Claude Code's own history, and any of them made into a skill in a click."),
+            Item(symbol: "stethoscope", title: "What needs attention",
+                 detail: "Each install says which MCP servers failed or need signing in and which hooks failed, and Claude Code's page offers rules for the commands it keeps asking about."),
+            Item(symbol: "square.on.square", title: "Set up one Claude like another",
+                 detail: "Copy an MCP server from one Claude to another from Compare, and undo it from History."),
+            Item(symbol: "arrow.triangle.2.circlepath", title: "Replay",
+                 detail: "Ask a newer model what a past conversation asked, with your own API key, and compare its answers with the ones you got. The cost is shown first."),
+        ],
         "0.5.0": [
             Item(symbol: "doc.text", title: "Handoffs",
                  detail: "Turn a long conversation into a one-page brief, tightened on your Mac, and start a fresh Claude Code session with it."),

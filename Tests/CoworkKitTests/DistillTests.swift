@@ -158,3 +158,44 @@ struct FleetTests {
         }
     }
 }
+
+@Suite("Replay")
+struct ReplayTests {
+    static func message(_ ordinal: Int, _ role: MessageText.Role, _ text: String,
+                        kind: TranscriptScan.Message.Kind = .message) -> IndexedMessage {
+        IndexedMessage(ordinal: ordinal, uuid: nil, role: role, kind: kind, timestamp: nil, text: text)
+    }
+
+    @Test("Turns carry the real conversation before each prompt, merged and starting with the person")
+    func turns() {
+        let turns = Replay.turns(from: [
+            Self.message(0, .assistant, "Hello, how can I help?"),
+            Self.message(1, .user, "Add retries"),
+            Self.message(2, .user, "with backoff"),
+            Self.message(3, .assistant, "Done: five retries."),
+            Self.message(4, .system, "recap", kind: .recap),
+            Self.message(5, .user, "Cap it at ten minutes?"),
+        ])
+        #expect(turns.count == 2)
+        #expect(turns[0].prompt == "Add retries\n\nwith backoff")
+        #expect(turns[0].original == "Done: five retries.")
+        #expect(turns[0].history.isEmpty)
+        #expect(turns[1].history.map(\.role) == ["user", "assistant"])
+        #expect(turns[1].original == nil)
+        #expect(Replay.messages(for: turns[1]).last?.text == "Cap it at ten minutes?")
+        let estimate = Replay.estimate(turns, model: "claude-opus-5")
+        #expect(estimate.inputTokens > 0 && estimate.dollars > 0)
+        #expect(Replay.estimate(turns, model: "claude-fable-5-1").dollars > Replay.estimate(turns, model: "claude-haiku-4-5").dollars)
+    }
+
+    @Test("Requests are plain Messages API calls, and replies keep only their text")
+    func wireFormat() throws {
+        let request = AnthropicClient.request(model: "claude-opus-5", messages: [("user", "Hi")], maxTokens: 100)
+        #expect(request["model"]?.stringValue == "claude-opus-5")
+        #expect(request["messages"]?[0]?["content"]?.stringValue == "Hi")
+        let body = try JSONValue.parse(#"{"content":[{"type":"thinking","thinking":""},{"type":"text","text":"Hello"}],"stop_reason":"end_turn","usage":{"input_tokens":9,"output_tokens":3}}"#)
+        #expect(AnthropicClient.reply(from: body) == .init(text: "Hello", inputTokens: 9, outputTokens: 3, stopReason: "end_turn"))
+        let refused = try JSONValue.parse(#"{"content":[],"stop_reason":"refusal","usage":{"input_tokens":9,"output_tokens":0}}"#)
+        #expect(AnthropicClient.reply(from: refused).text.contains("declined"))
+    }
+}

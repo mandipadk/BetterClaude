@@ -56,6 +56,12 @@ enum DebugRoute {
                 }
             case "running":
                 services.destination = .running
+            case "replay":
+                if let match = services.snapshot.conversations.first(where: { $0.title.localizedCaseInsensitiveContains(argument) }) {
+                    services.selectedConversationID = match.id
+                    while !services.index.isReady { try? await Task.sleep(for: .milliseconds(50)) }
+                    services.replaying = ReplayModel(conversation: match)
+                }
             case "handoff":
                 if let match = services.snapshot.conversations.first(where: { $0.title.localizedCaseInsensitiveContains(argument) }) {
                     services.selectedConversationID = match.id
