@@ -27,7 +27,9 @@ struct RecallSection: View {
                         ForEach(others) { other in
                             ExplainedToggle(
                                 title: "Also \(other.displayName)",
-                                detail: "Another account's conversations. Opening this doesn't let that account's Claude read this one's.",
+                                detail: other.id == ClaudeAccount.codex.id
+                                    ? "Your Codex sessions on this Mac."
+                                    : "Another account's conversations. Opening this doesn't let that account's Claude read this one's.",
                                 isOn: Binding(get: { recall.isOpen(from: own.id, to: other.id) },
                                               set: { recall.setDoor(from: own.id, to: other.id, open: $0) }))
                         }

@@ -127,6 +127,7 @@ public struct CatalogSnapshot: Sendable {
         }
         if let cli = claudeCodeAccount, byID[cli.id]?.email == nil { byID[cli.id] = cli }
         let used = Set(conversations.compactMap(\.accountID))
+        if used.contains(ClaudeAccount.codex.id) { byID[ClaudeAccount.codex.id] = .codex }
         return byID.values.filter { used.contains($0.id) }.sorted { ($0.email ?? $0.id) < ($1.email ?? $1.id) }
     }
 
@@ -151,13 +152,19 @@ public struct CatalogSnapshot: Sendable {
 public struct ClaudeAccount: Sendable, Hashable, Identifiable {
     public let id: String
     public let email: String?
+    /// A name for history that isn't a Claude account, like Codex's.
+    public let label: String?
 
-    public init(id: String, email: String?) {
+    public init(id: String, email: String?, label: String? = nil) {
         self.id = id
         self.email = email
+        self.label = label
     }
 
-    public var displayName: String { email ?? "Account \(id.prefix(8))" }
+    public var displayName: String { label ?? email ?? "Account \(id.prefix(8))" }
+
+    /// Codex sessions, which a Claude can be let read like another account's history.
+    public static let codex = ClaudeAccount(id: "codex", email: nil, label: "Codex sessions")
 
     /// The account Claude Code is signed into, from its state file.
     public static func claudeCode(paths: HostPaths = .current) -> ClaudeAccount? {
@@ -275,7 +282,7 @@ public actor Catalog {
                 conversations.append(ConversationRef(
                     origin: .external(conversation), installID: codex.id, title: conversation.title,
                     lastActivity: conversation.updatedAt, projectPath: conversation.cwd, model: conversation.model,
-                    bytes: 0, isStarred: false, isArchived: false, accountID: "codex"))
+                    bytes: 0, isStarred: false, isArchived: false, accountID: ClaudeAccount.codex.id))
             }
         }
 

@@ -15,6 +15,9 @@ struct ExternalTests {
             #expect(session.title == "Refunds post twice on webhook retry")
             #expect(session.projectName == "billing-service")
             #expect(!session.isTranscriptMissing)
+            // No Claude reads Codex sessions until a door is opened to them, and there's one to open.
+            #expect(session.accountID == ClaudeAccount.codex.id)
+            #expect(snapshot.knownAccounts.contains(.codex))
 
             let scan = try #require(session.external).scan()
             #expect(scan.messages.map(\.role) == [.user, .assistant])
