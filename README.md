@@ -56,6 +56,23 @@ clicking it brings the right app forward. An optional switch adds three hooks to
 Code's settings so notifications can say what Claude asked; switching it off removes
 exactly those hooks.
 
+### Usage
+
+Every account's five-hour and weekly limits, as Claude itself last reported them: Claude
+Code's cached limits and the usage history each Desktop install keeps, merged per account.
+When Claude hasn't said when the week resets, it's worked out from the history and marked
+as an estimate. A forecast carries the week's pace to the reset, and what used it is shown
+by project and conversation, from the tokens every reply used weighed at list prices.
+**Continue in…** shows how much room each destination account has left.
+
+### Files
+
+Every file Claude wrote or edited: the conversations that read or changed it, every version
+Claude Code saved before a change with a diff against the file now, and its commits with
+the conversation each most likely came from. Any version can be put back and the restore
+undone from History. Saved versions and plans are kept before Claude Code's cleanup deletes
+them. The reader also marks where Claude compacted a conversation and shows what it kept.
+
 ### Ask
 
 A question about your past work, answered by the model built into macOS from passages the
@@ -235,6 +252,8 @@ cowork import chat.coworkbundle --to cowork:Claude-Work
 cowork index                                    # bring the history index up to date
 cowork search retry cap webhook                 # search every message, from the index
 cowork live                                     # Claude Code sessions running now
+cowork usage                                    # every account's limits and what used them
+cowork file ~/Code/app/src/main.swift           # where a file came from
 cowork library                                  # every artifact Claude ever produced
 cowork library --kind code --limit 50           # narrowed to one kind
 
