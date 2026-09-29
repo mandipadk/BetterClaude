@@ -15,6 +15,8 @@ struct CompareSheet: View {
 
     @State private var comparison: ConfigComparison?
     @State private var onlyDifferences = true
+    @State private var copying: (name: String, from: Install, to: Install)?
+    @State private var message: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -44,6 +46,16 @@ struct CompareSheet: View {
         .frame(width: 760, height: 620)
         .tint(Theme.accent)
         .task { await load() }
+        .confirmationDialog("Copy this server?", isPresented: Binding(get: { copying != nil }, set: { if !$0 { copying = nil } }),
+                            presenting: copying) { item in
+            Button("Copy into \(item.to.name)") { copy(item.name, from: item.from, to: item.to) }
+            Button("Cancel", role: .cancel) {}
+        } message: { item in
+            Text("\(item.name) is copied into \(item.to.name) as \(item.from.name) has it, including any keys in its settings.")
+        }
+        .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+            Button("OK") { message = nil }
+        }
     }
 
     private var header: some View {
@@ -99,7 +111,12 @@ struct CompareSheet: View {
                                     .padding(.bottom, 4)
                                     .accessibilityAddTraits(.isHeader)
                                 ForEach(rows.filter { $0.kind == kind }) { row in
-                                    CompareRow(row: row, leftName: pair.left.name, rightName: pair.right.name)
+                                    CompareRow(row: row, leftName: pair.left.name, rightName: pair.right.name,
+                                               copyTarget: copyTarget(for: row)) {
+                                        if let target = copyTarget(for: row) {
+                                            copying = (row.name, target.id == pair.left.id ? pair.right : pair.left, target)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -110,6 +127,26 @@ struct CompareSheet: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Where a server only one side has could be copied: the other side, if it's a Desktop install.
+    private func copyTarget(for row: ConfigComparison.Row) -> Install? {
+        guard row.kind == .mcpServer, row.name != RecallConnection.serverName else { return nil }
+        switch row.status {
+        case .onlyLeft: return Fleet.canReceiveServers(pair.right) ? pair.right : nil
+        case .onlyRight: return Fleet.canReceiveServers(pair.left) ? pair.left : nil
+        default: return nil
+        }
+    }
+
+    private func copy(_ name: String, from: Install, to: Install) {
+        do {
+            try Fleet.copyServer(named: name, from: from, to: to, paths: services.snapshot.paths)
+            message = "Copied \(name) into \(to.name). It's available the next time \(to.name) opens, and History can undo it."
+            Task { await load() }
+        } catch {
+            message = String(describing: error)
+        }
     }
 
     private func columnHead(_ install: Install) -> some View {
@@ -136,6 +173,8 @@ private struct CompareRow: View {
     let row: ConfigComparison.Row
     let leftName: String
     let rightName: String
+    var copyTarget: Install?
+    var onCopy: () -> Void = {}
 
     var body: some View {
         HStack(spacing: 10) {
@@ -146,6 +185,12 @@ private struct CompareRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)
+            if let copyTarget {
+                Button("Copy to \(copyTarget.name)", action: onCopy)
+                    .buttonStyle(.plain)
+                    .font(Theme.Font.callout)
+                    .foregroundStyle(Theme.accent)
+            }
             mark(row.left != nil)
                 .frame(width: 90)
             mark(row.right != nil)

@@ -15,6 +15,8 @@ public enum TransferDirection: String, Codable, Sendable {
     case fileRestore
     /// A skill written into a Claude Code config folder.
     case skill
+    /// Something one install is set up with, copied into another.
+    case fleet
 }
 
 /// SHA-256 helpers.

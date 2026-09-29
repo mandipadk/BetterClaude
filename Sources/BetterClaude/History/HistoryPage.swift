@@ -161,6 +161,7 @@ struct HistoryRow: View {
         case .branch: return "arrow.triangle.branch"
         case .fileRestore: return "clock.arrow.circlepath"
         case .skill: return "wand.and.stars"
+        case .fleet: return "square.on.square"
         default: return "arrow.right.circle"
         }
     }
@@ -171,6 +172,7 @@ struct HistoryRow: View {
         case .branch: return "Forked in \(Self.place(of: receipt)), \(when)"
         case .fileRestore: return "An earlier version put back, \(when)"
         case .skill: return "Added to Claude Code's skills, \(when)"
+        case .fleet: return "Copied into \(receipt.destination), \(when)"
         case .restore: return "Put back where Claude Code finds it, \(when)"
         default: return "Copied into \(Self.place(of: receipt)), \(when)"
         }

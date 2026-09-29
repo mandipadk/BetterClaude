@@ -134,3 +134,27 @@ struct DistillTests {
         }
     }
 }
+
+@Suite("Fleet")
+struct FleetTests {
+    @Test("An MCP server copies into another Desktop install beside its own, and Undo puts the file back")
+    func copyServer() throws {
+        try FixtureHomeTests.withSample { sample in
+            let installs = InstallDiscovery.all()
+            let claude = try #require(installs.first { $0.name == "Claude" })
+            let work = try #require(installs.first { $0.name == "Claude Work" })
+            let before = try Data(contentsOf: work.dataRoot.appendingPathComponent("claude_desktop_config.json"))
+
+            let receipt = try Fleet.copyServer(named: "calendar", from: claude, to: work, paths: sample.paths)
+            #expect(Fleet.serverEntry(named: "calendar", in: work, paths: sample.paths)?["command"]?.stringValue == "/usr/local/bin/calendar-mcp")
+            #expect(Fleet.serverEntry(named: "linear", in: work, paths: sample.paths) != nil)
+            #expect(throws: Fleet.Failure.self) { try Fleet.copyServer(named: "filesystem", from: claude, to: work, paths: sample.paths) }
+            #expect(throws: Fleet.Failure.self) { try Fleet.copyServer(named: "nope", from: claude, to: work, paths: sample.paths) }
+            // Better Claude's own server carries whose history it reads; it's never copied.
+            #expect(throws: Fleet.Failure.self) { try Fleet.copyServer(named: "better-claude", from: claude, to: work, paths: sample.paths) }
+
+            _ = try Undo.revert(receipt)
+            #expect(try Data(contentsOf: work.dataRoot.appendingPathComponent("claude_desktop_config.json")) == before)
+        }
+    }
+}
