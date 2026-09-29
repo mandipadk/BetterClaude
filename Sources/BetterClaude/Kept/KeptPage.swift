@@ -74,6 +74,8 @@ struct KeptPage: View {
     @Environment(AppServices.self) private var services
     @AppStorage("keepAutomatically") private var keepAutomatically = true
     @State private var reading: ConversationRef?
+    @State private var backup: BackupSheet.Mode?
+    @AppStorage(BackupSheet.lastBackupKey) private var lastBackup: Double = 0
 
     var body: some View {
         let kept = services.kept
@@ -84,8 +86,22 @@ struct KeptPage: View {
                 DetailSection(title: "Keeping") {
                     ExplainedToggle(
                         title: "Keep conversations automatically",
-                        detail: "Each Claude Code conversation is copied here whenever it changes, while Better Claude is open. Copies share space with the originals until Claude Code deletes those.",
+                        detail: "Each Claude Code conversation is copied here whenever it changes, while Better Claude is open, along with the versions of files Claude saved and its plans. Copies share space with the originals until Claude Code deletes those.",
                         isOn: $keepAutomatically)
+                }
+
+                DetailSection(title: "Backups",
+                              subtitle: "Everything kept here, in one file encrypted with a password of your choosing. Keep it in iCloud Drive, or anywhere, and restore it on another Mac.") {
+                    HStack(spacing: Theme.Space.s) {
+                        Text(lastBackup > 0
+                             ? "Last backed up \(Date(timeIntervalSince1970: lastBackup).formatted(.relative(presentation: .named)))."
+                             : "Not backed up yet.")
+                            .font(Theme.Font.callout)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Restore…") { chooseBackup() }.buttonStyle(.secondary)
+                        Button("Back Up…") { backup = .backUp }.buttonStyle(.primary)
+                    }
                 }
 
                 let soon = expiringSoon
@@ -127,7 +143,14 @@ struct KeptPage: View {
             .frame(maxWidth: 720, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .task { kept.reload() }
+        .task {
+            kept.reload()
+            if services.debugBackupSheet { services.debugBackupSheet = false; backup = .backUp }
+        }
+        .sheet(item: $backup) { mode in
+            BackupSheet(mode: mode) { backup = nil }
+                .environment(services)
+        }
         .sheet(item: $reading) { conversation in
             KeptReaderSheet(conversation: conversation) { reading = nil }
                 .environment(services)
@@ -168,6 +191,14 @@ struct KeptPage: View {
             }
             .padding(.top, 8)
         }
+    }
+
+    private func chooseBackup() {
+        let panel = NSOpenPanel()
+        panel.message = "Choose a Better Claude backup."
+        panel.allowedContentTypes = [.init(filenameExtension: "aea") ?? .data]
+        if let folder = Backup.iCloudFolder(paths: services.snapshot.paths) { panel.directoryURL = folder }
+        if panel.runModal() == .OK, let url = panel.url { backup = .restore(url) }
     }
 
     private var expiringSoon: [ConversationRef] {

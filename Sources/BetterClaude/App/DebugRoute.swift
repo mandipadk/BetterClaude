@@ -89,6 +89,9 @@ enum DebugRoute {
                 services.previewsMenuBarPanel = true
             case "history":
                 services.destination = .history
+            case "backup":
+                services.destination = .kept
+                services.debugBackupSheet = true
             case "kept":
                 services.destination = .kept
             case "storage":

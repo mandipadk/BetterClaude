@@ -12,6 +12,16 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.5.0": [
+            Item(symbol: "doc.text", title: "Handoffs",
+                 detail: "Turn a long conversation into a one-page brief, tightened on your Mac, and start a fresh Claude Code session with it."),
+            Item(symbol: "globe", title: "Your claude.ai history",
+                 detail: "Import the export claude.ai emails you, and those conversations join the timeline, search, Ask, and Claude's own history."),
+            Item(symbol: "chevron.left.forwardslash.chevron.right", title: "Codex, too",
+                 detail: "Codex sessions on this Mac appear beside everything else, read-only, so one search covers both."),
+            Item(symbol: "lock.doc", title: "Encrypted backups",
+                 detail: "Everything Better Claude keeps, in one password-protected file in iCloud Drive, ready to restore on another Mac."),
+        ],
         "0.4.0": [
             Item(symbol: "gauge.with.dots.needle.50percent", title: "Usage",
                  detail: "Every account's five-hour and weekly limits in one place, when each resets, and where the week is heading at your current pace."),

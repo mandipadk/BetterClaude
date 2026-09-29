@@ -269,6 +269,9 @@ final class AppServices {
         }
     }
 
+    /// Debug builds only: opens the backup sheet on the Kept page, to capture it.
+    var debugBackupSheet = false
+
     /// A one-line confirmation, shown as an alert.
     var notice: String?
 
