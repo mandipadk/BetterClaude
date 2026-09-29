@@ -60,6 +60,10 @@ struct ReaderView: View {
                                         })
                         case .tools(_, let names):
                             ToolsLine(names: names)
+                        case .compaction(let compaction):
+                            CompactionMarker(compaction: compaction)
+                        case .recap(_, let text, _):
+                            RecapLine(text: text)
                         }
                     }
                 }
@@ -280,3 +284,65 @@ struct ToolsLine: View {
         .foregroundStyle(.secondary)
     }
 }
+
+/// Where Claude compacted the conversation, and what it kept.
+struct CompactionMarker: View {
+    let compaction: ReadableConversation.Compaction
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            HStack(spacing: 10) {
+                Rectangle().fill(Theme.hairline).frame(height: 1)
+                Text(compaction.trigger == "manual" ? "Compacted on request" : "Claude compacted the conversation here")
+                    .font(Theme.Font.callout.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                Rectangle().fill(Theme.hairline).frame(height: 1)
+            }
+            Text(explanation)
+                .font(Theme.Font.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let summary = compaction.summary, !summary.isEmpty {
+                DisclosureGroup(isExpanded: $expanded) {
+                    MarkdownView(summary)
+                        .padding(.top, Theme.Space.s)
+                } label: {
+                    Text("What Claude kept").font(Theme.Font.callout.weight(.medium))
+                }
+                .tint(Theme.accent)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var explanation: String {
+        let past = "From here on, Claude no longer sees the messages above, only its summary of them."
+        guard let before = compaction.tokensBefore, let after = compaction.tokensAfter, before > 0 else { return past }
+        let shrink = Int((1 - Double(after) / Double(before)) * 100)
+        return "\(past) It went from \(Self.tokens(before)) to \(Self.tokens(after)) tokens, \(shrink)% smaller."
+    }
+
+    static func tokens(_ count: Int) -> String {
+        count >= 1_000 ? "\(count / 1_000)K" : "\(count)"
+    }
+}
+
+/// A recap Claude wrote when you stepped away.
+struct RecapLine: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "text.append").foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Claude's recap").font(Theme.Font.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text(text).font(Theme.Font.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+}
+

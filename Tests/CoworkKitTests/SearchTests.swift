@@ -55,4 +55,32 @@ struct SearchTests {
         #expect(messages.count == 1)
         #expect(messages[0].text == "real question")
     }
+
+    @Test("A compaction reads as a marker holding its summary, and a recap as Claude's, not the person's")
+    func compactionsAndRecaps() {
+        let boundary = JSONValue.object(JSONObject([
+            ("type", .string("system")), ("subtype", .string("compact_boundary")), ("uuid", .string("c")),
+            ("compactMetadata", .object(JSONObject([("trigger", .string("auto")),
+                                                    ("preTokens", .int(180_000)), ("postTokens", .int(12_000))]))),
+        ]))
+        var summary = message("user", "Earlier we chose five retries.", uuid: "s")
+        summary["isCompactSummary"] = .bool(true)
+        let recap = JSONValue.object(JSONObject([
+            ("type", .string("system")), ("subtype", .string("away_summary")), ("isMeta", .bool(true)),
+            ("uuid", .string("r")), ("content", .string("Retries are capped at ten minutes.")),
+        ]))
+        let readable = ReadableConversation(transcript: Transcript(records: [
+            message("user", "Add retries", uuid: "a"), boundary, summary, recap,
+            message("assistant", "Done", uuid: "b"),
+        ]))
+        #expect(readable.messageCount == 2)
+        guard readable.entries.count == 4, case .compaction(let compaction) = readable.entries[1],
+              case .recap(_, let text, _) = readable.entries[2] else {
+            Issue.record("expected message, compaction, recap, message")
+            return
+        }
+        #expect(compaction.summary == "Earlier we chose five retries.")
+        #expect(compaction.tokensBefore == 180_000 && compaction.tokensAfter == 12_000)
+        #expect(text == "Retries are capped at ten minutes.")
+    }
 }
