@@ -50,6 +50,10 @@ USAGE
   cowork search <words>... [--limit N]
       Search every message of every conversation, from the index.
 
+  cowork file <path>
+      Where a file came from: the conversations that changed it, every version Claude Code
+      saved, and the commits that changed it with the conversation each likely came from.
+
   cowork usage
       Show each account's five-hour and weekly limits, when they reset, where the week is
       heading, and which projects used the most this week.
@@ -121,6 +125,34 @@ func cmdSearch(_ args: Args) throws {
         print("\(hit.title)  (\(hit.matchingMessages) messages)")
     }
     print("\(hits.count) conversations in \(Int(elapsed)) ms.")
+}
+
+func cmdFile(_ args: Args) throws {
+    guard let raw = args.positional.first else { fail("name a file") }
+    let path = URL(fileURLWithPath: (raw as NSString).expandingTildeInPath).standardizedFileURL.path
+    let (history, commits) = try runBlocking { () -> Result<(FileHistory, [CommitLink]), Error> in
+        do {
+            let index = try HistoryIndex(readingFrom: HistoryIndex.defaultURL())
+            return .success((try await FileProvenance.history(of: path, index: index),
+                             try await CommitLinker.commits(touching: path, index: index)))
+        } catch { return .failure(error) }
+    }.get()
+    print(path)
+    if history.createdByClaude { print("Created by Claude.") }
+    print("\n\(history.conversations.count) conversation\(history.conversations.count == 1 ? "" : "s") touched it:")
+    for touch in history.conversations {
+        print("  \(touch.title)  (\(touch.tools.joined(separator: ", ")))")
+    }
+    print("\n\(history.versions.count) saved version\(history.versions.count == 1 ? "" : "s"):")
+    for version in history.versions {
+        let state = version.didNotExist ? "didn't exist" : version.copy == nil ? "copy gone" : "restorable"
+        print("  v\(version.version)  \(version.savedAt.map { stamp.string(from: $0) } ?? "")  \(state)  before a change in \(version.conversationTitle)")
+    }
+    print("\n\(commits.count) commit\(commits.count == 1 ? "" : "s"):")
+    for commit in commits {
+        let from = commit.match.map { "\($0.confidence.rawValue) from \($0.title)" } ?? "no conversation found"
+        print("  \(commit.shortSHA)  \(commit.subject)  (\(from))")
+    }
 }
 
 func cmdUsage() throws {
@@ -581,6 +613,7 @@ do {
     case "index": try cmdIndex(args)
     case "live": cmdLive()
     case "usage": try cmdUsage()
+    case "file": try cmdFile(args)
     case "search": try cmdSearch(args)
     case "encode":
         guard let path = args.positional.first else { fail("name a path") }

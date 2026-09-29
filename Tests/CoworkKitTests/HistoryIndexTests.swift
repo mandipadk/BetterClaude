@@ -144,4 +144,29 @@ struct HistoryIndexTests {
             #expect((rows.first?.int(2) ?? 0) > 0)
         }
     }
+
+    @Test("Another process can read the index after the app that wrote it has quit")
+    func readsAfterTheWriterCloses() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("reader-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("history-v\(HistoryIndex.schemaVersion).sqlite")
+        do { _ = try HistoryIndex(url: url) }
+        // What a clean close leaves behind: no shared-memory or write-ahead file.
+        for suffix in ["-shm", "-wal"] { try? FileManager.default.removeItem(atPath: url.path + suffix) }
+        let reader = try HistoryIndex(readingFrom: url)
+        #expect(try await reader.summary().conversations == 0)
+    }
+
+    @Test("An older version's index is cleared away, never rebuilt in place")
+    func separatesVersions() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("versions-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for old in ["history.sqlite", "history.sqlite-wal", "history-v1.sqlite"] {
+            try Data("old".utf8).write(to: folder.appendingPathComponent(old))
+        }
+        _ = try HistoryIndex(url: folder.appendingPathComponent("history-v\(HistoryIndex.schemaVersion).sqlite"))
+        let left = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        #expect(left.allSatisfy { $0.hasPrefix("history-v\(HistoryIndex.schemaVersion)") })
+    }
 }

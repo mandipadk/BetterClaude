@@ -75,4 +75,51 @@ struct ProvenanceTests {
             #expect(try String(contentsOf: copy, encoding: .utf8) == FixtureHome.deliverBefore)
         }
     }
+
+    static func run(_ arguments: [String], in directory: URL, date: Date? = nil) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", directory.path] + arguments
+        var environment = ["GIT_AUTHOR_NAME": "Alex", "GIT_AUTHOR_EMAIL": "alex@example.com",
+                           "GIT_COMMITTER_NAME": "Alex", "GIT_COMMITTER_EMAIL": "alex@example.com",
+                           "HOME": directory.path, "GIT_CONFIG_NOSYSTEM": "1"]
+        if let date {
+            let stamp = "\(Int(date.timeIntervalSince1970)) +0000"
+            environment["GIT_AUTHOR_DATE"] = stamp
+            environment["GIT_COMMITTER_DATE"] = stamp
+        }
+        process.environment = environment
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+    }
+
+    @Test("A commit is linked to the conversation that changed its files just before it")
+    func linksCommits() async throws {
+        guard FileManager.default.isExecutableFile(atPath: "/usr/bin/git") else { return }
+        try await HistoryIndexTests.withSample { sample, snapshot, index in
+            try await index.update(from: snapshot)
+            let (deliver, _) = Self.files(sample)
+            let repo = sample.paths.home.appendingPathComponent("Code/billing-service", isDirectory: true)
+            try Self.run(["init", "-q"], in: repo)
+            try Data("# billing\n".utf8).write(to: repo.appendingPathComponent("README.md"))
+            try Self.run(["add", "README.md"], in: repo)
+            try Self.run(["commit", "-q", "-m", "Start"], in: repo, date: sample.now.addingTimeInterval(-40 * 86_400))
+            try Self.run(["add", "src"], in: repo)
+            try Self.run(["commit", "-q", "-m", "Retry webhook deliveries"], in: repo, date: sample.now.addingTimeInterval(-2 * 3_600))
+
+            let links = try await CommitLinker.commits(inRepository: repo, index: index)
+            #expect(links.map(\.subject) == ["Retry webhook deliveries", "Start"])
+            let match = try #require(links.first?.match)
+            #expect(match.title == "Retry failed webhook deliveries with backoff")
+            #expect(match.confidence == .likely)
+            #expect(match.filesChanged == 2)
+            #expect(links.last?.match == nil)
+
+            let forFile = try await CommitLinker.commits(touching: deliver, index: index)
+            #expect(forFile.map(\.subject) == ["Retry webhook deliveries"])
+        }
+    }
 }

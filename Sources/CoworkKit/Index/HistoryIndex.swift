@@ -12,10 +12,23 @@ public actor HistoryIndex {
     /// Bumped whenever the schema or what gets extracted changes; an older file is rebuilt.
     public static let schemaVersion = 4
 
+    /// One file per schema, so an older copy of the app still running during an update
+    /// keeps its own index instead of rebuilding this one back and forth.
     public static func defaultURL(paths: HostPaths = .current) -> URL {
         paths.betterClaudeSupport
             .appendingPathComponent("Index", isDirectory: true)
-            .appendingPathComponent("history.sqlite")
+            .appendingPathComponent("history-v\(schemaVersion).sqlite")
+    }
+
+    /// Removes indexes written by older versions; they're caches, rebuilt from Claude's files.
+    static func removeOlderIndexes(beside url: URL) {
+        let folder = url.deletingLastPathComponent()
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        for name in names where name.hasPrefix("history") && !name.hasPrefix(url.lastPathComponent) {
+            let stem = name.components(separatedBy: ".sqlite").first ?? name
+            let version = Int(stem.replacingOccurrences(of: "history-v", with: "")) ?? 0
+            if version < schemaVersion { try? FileManager.default.removeItem(at: folder.appendingPathComponent(name)) }
+        }
     }
 
     public struct Progress: Sendable, Equatable {
@@ -30,6 +43,7 @@ public actor HistoryIndex {
     public init(url: URL?) throws {
         self.url = url
         var database = try SQLiteDatabase(url: url)
+        if let url { Self.removeOlderIndexes(beside: url) }
         if database.userVersion != Self.schemaVersion {
             if let url, database.userVersion != 0 {
                 database = try Self.recreate(at: url)

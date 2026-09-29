@@ -32,9 +32,13 @@ public final class SQLiteDatabase: @unchecked Sendable {
         sqlite3_busy_timeout(handle, 3_000)
     }
 
-    /// Opens an existing database without ever writing to it.
+    /// Opens an existing database for reading, without ever creating it.
+    ///
+    /// Not `SQLITE_OPEN_READONLY`: a read-only connection to a WAL database can't create the
+    /// shared-memory file SQLite removes when the last writer closes, so it fails to open
+    /// whenever the app isn't running. Callers only ever read.
     public init(readOnly url: URL) throws {
-        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX
         let status = sqlite3_open_v2(url.path, &handle, flags, nil)
         guard status == SQLITE_OK else {
             let message = handle.map { String(cString: sqlite3_errmsg($0)) } ?? "can't open"
