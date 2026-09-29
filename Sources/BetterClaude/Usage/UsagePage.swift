@@ -26,6 +26,7 @@ struct UsagePage: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                WeekSection()
                 ForEach(usage.quotas) { quota in
                     AccountUsageSection(quota: quota, items: usage.spend[quota.account.id] ?? [])
                 }

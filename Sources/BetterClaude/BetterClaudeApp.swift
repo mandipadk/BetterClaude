@@ -94,7 +94,10 @@ enum WhatsNewCheck {
         let last = defaults.string(forKey: key)
         defaults.set(version, forKey: key)
         #if DEBUG
-        if ProcessInfo.processInfo.environment["BC_UI_ROUTE"] == "whatsnew" { return true }
+        if let route = ProcessInfo.processInfo.environment["BC_UI_ROUTE"], !route.isEmpty {
+            // A screenshot of any other screen shouldn't have What's New over it.
+            return route == "whatsnew"
+        }
         #endif
         let upgraded = last != nil || defaults.bool(forKey: "onboardingCompleted")
             || defaults.object(forKey: "lastUpdateCheck") != nil

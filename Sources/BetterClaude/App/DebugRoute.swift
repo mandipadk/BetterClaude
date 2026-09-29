@@ -62,6 +62,8 @@ enum DebugRoute {
                     while !services.index.isReady { try? await Task.sleep(for: .milliseconds(50)) }
                     services.beginHandoff(match)
                 }
+            case "prompts":
+                services.destination = .prompts
             case "usage":
                 services.destination = .usage
             case "files":

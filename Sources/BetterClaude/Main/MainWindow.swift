@@ -139,6 +139,8 @@ struct MainWindow: View {
             UsagePage()
         case .files:
             FilesPage()
+        case .prompts:
+            PromptsPage()
         case .library:
             LibraryPage()
         case .history:
@@ -183,6 +185,8 @@ struct Sidebar: View {
                     .tag(SidebarDestination.files)
                 Label("Library", systemImage: "square.stack")
                     .tag(SidebarDestination.library)
+                Label("Prompts", systemImage: "text.quote")
+                    .tag(SidebarDestination.prompts)
             }
 
             if !services.installs.isEmpty {

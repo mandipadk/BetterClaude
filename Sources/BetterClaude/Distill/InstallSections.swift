@@ -1,0 +1,206 @@
+import CoworkKit
+import SwiftUI
+
+/// On an install's page: what's failing around its Claude Code sessions this week.
+struct HealthSection: View {
+    @Environment(AppServices.self) private var services
+    let install: Install
+    @State private var issues: [Doctor.Issue] = []
+
+    var body: some View {
+        // A real container: a task on an empty Group never runs.
+        VStack(alignment: .leading, spacing: 0) {
+            if !issues.isEmpty {
+                DetailSection(title: "Needs attention",
+                              subtitle: "What went wrong around this Claude's Code sessions in the last week, as Claude Code recorded it.") {
+                    VStack(alignment: .leading, spacing: Theme.Space.s) {
+                        ForEach(issues) { issue in
+                            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
+                                Image(systemName: symbol(issue.kind)).foregroundStyle(Theme.attention).frame(width: 18)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(title(issue)).font(Theme.Font.body)
+                                    Text(detail(issue)).font(Theme.Font.callout).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: services.index.generation) {
+            guard let index = services.index.index else { return }
+            issues = (try? await Doctor.issues(index: index, installIDs: [install.id],
+                                               since: Date().addingTimeInterval(-7 * 86_400))) ?? []
+        }
+    }
+
+    private func symbol(_ kind: TranscriptScan.HealthEvent.Kind) -> String {
+        switch kind {
+        case .mcpFailed: return "exclamationmark.triangle"
+        case .mcpNeedsAuth: return "person.badge.key"
+        case .hookFailed: return "bolt.trianglebadge.exclamationmark"
+        }
+    }
+
+    private func title(_ issue: Doctor.Issue) -> String {
+        switch issue.kind {
+        case .mcpFailed: return "\(issue.name) didn't start"
+        case .mcpNeedsAuth: return "\(issue.name) needs you to sign in"
+        case .hookFailed: return "The \(issue.name) hook failed"
+        }
+    }
+
+    private func detail(_ issue: Doctor.Issue) -> String {
+        var parts: [String] = []
+        if issue.kind == .mcpFailed, let code = issue.detail { parts.append(explain(code)) }
+        if issue.kind == .hookFailed, let detail = issue.detail { parts.append(detail.prefix(1).uppercased() + detail.dropFirst() + ".") }
+        if issue.kind == .mcpNeedsAuth { parts.append("Its tools aren't available until you do, from /mcp in Claude Code.") }
+        let when = issue.lastSeen.map { "Last seen \($0.listStamp.lowercasedIfWordLocal)" } ?? ""
+        parts.append(issue.times == 1 ? "\(when)." : "\(when), \(issue.times) times this week.")
+        return parts.joined(separator: " ")
+    }
+
+    private func explain(_ code: String) -> String {
+        switch code {
+        case "ECONNREFUSED": return "Nothing was listening where it's configured to connect."
+        case "ENDPOINT_NOT_FOUND": return "Its address didn't answer as an MCP server."
+        case "ENOENT": return "The command it starts wasn't found."
+        default: return "The error was \(code)."
+        }
+    }
+}
+
+/// On Claude Code's page: commands Claude runs most that the settings don't allow yet.
+struct CommandRulesSection: View {
+    @Environment(AppServices.self) private var services
+    let configDir: URL
+    @State private var suggestions: [PermissionTuner.Suggestion] = []
+    @State private var added: [String] = []
+    @State private var failure: String?
+
+    var body: some View {
+        // A real container: a task on an empty Group never runs.
+        VStack(alignment: .leading, spacing: 0) {
+            if !suggestions.isEmpty || !added.isEmpty {
+                DetailSection(title: "Commands you could allow",
+                              subtitle: "What Claude ran most in the last month that your settings still ask about. Each rule lets that command run with any arguments; nothing that deletes, publishes or reaches another machine is suggested.") {
+                    VStack(alignment: .leading, spacing: Theme.Space.s) {
+                        ForEach(suggestions.prefix(12)) { suggestion in
+                            HStack(alignment: .center, spacing: Theme.Space.m) {
+                                Text(suggestion.command)
+                                    .font(Theme.Font.code)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Theme.subtleFill, in: .rect(cornerRadius: 5))
+                                Text("\(suggestion.runs) runs in \(suggestion.conversations) conversations")
+                                    .font(Theme.Font.callout)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Allow") { allow([suggestion.rule]) }.buttonStyle(.secondary)
+                            }
+                        }
+                        if !added.isEmpty {
+                            HStack {
+                                Text(added.count == 1 ? "1 rule added by Better Claude." : "\(added.count) rules added by Better Claude.")
+                                    .font(Theme.Font.callout)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Take Them Out") { removeAdded() }.buttonStyle(.secondary)
+                            }
+                        }
+                        if let failure {
+                            Text(failure).font(Theme.Font.callout).foregroundStyle(Theme.failure)
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: services.index.generation) { await reload() }
+    }
+
+    private func reload() async {
+        added = PermissionTuner.added(configDir: configDir, paths: services.snapshot.paths)
+        guard let index = services.index.index else { return }
+        suggestions = (try? await PermissionTuner.suggestions(index: index, configDir: configDir,
+                                                              since: Date().addingTimeInterval(-30 * 86_400))) ?? []
+    }
+
+    private func allow(_ rules: [String]) {
+        do {
+            try PermissionTuner.allow(rules, configDir: configDir, paths: services.snapshot.paths)
+            failure = nil
+        } catch {
+            failure = "Couldn't change Claude Code's settings: \(error.localizedDescription)"
+        }
+        Task { await reload() }
+    }
+
+    private func removeAdded() {
+        do {
+            try PermissionTuner.removeAdded(configDir: configDir, paths: services.snapshot.paths)
+        } catch {
+            failure = "Couldn't change Claude Code's settings: \(error.localizedDescription)"
+        }
+        Task { await reload() }
+    }
+}
+
+/// On the Usage page: the week's work, and a summary of it written on this Mac.
+struct WeekSection: View {
+    @Environment(AppServices.self) private var services
+    @State private var digest: WeekDigest?
+    @State private var summary = ""
+    @State private var summarizing = false
+
+    var body: some View {
+        // A real container: a task on an empty Group never runs.
+        VStack(alignment: .leading, spacing: 0) {
+            if let digest, digest.conversations > 0 {
+                DetailSection(title: "This week",
+                              subtitle: [Self.count(digest.conversations, "conversation"), Self.count(digest.prompts, "prompt"),
+                                         Self.count(digest.filesChanged, "file") + " changed",
+                                         Self.count(digest.commands, "command") + " run"].joined(separator: ", ") + ".") {
+                    VStack(alignment: .leading, spacing: Theme.Space.m) {
+                        if !digest.projects.isEmpty {
+                            ForEach(digest.projects, id: \.name) { project in
+                                ShareRow(title: project.name,
+                                         detail: project.conversations == 1 ? "1 conversation" : "\(project.conversations) conversations",
+                                         share: Double(project.conversations) / Double(max(1, digest.conversations)))
+                            }
+                        }
+                        if !summary.isEmpty {
+                            MarkdownView(summary)
+                                .padding(Theme.Space.l)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Theme.subtleFill, in: .rect(cornerRadius: Theme.Radius.tile))
+                        }
+                        if services.ask.availability == .available {
+                            HStack {
+                                if summarizing { ProgressView().controlSize(.small) }
+                                Button(summary.isEmpty ? "Summarize My Week" : "Summarize Again") { summarize(digest) }
+                                    .buttonStyle(.secondary)
+                                    .disabled(summarizing)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: services.index.generation) {
+            guard let index = services.index.index else { return }
+            digest = try? await WeekDigest.build(index: index, since: Date().addingTimeInterval(-7 * 86_400))
+        }
+    }
+
+    static func count(_ n: Int, _ noun: String) -> String { "\(n) \(noun)\(n == 1 ? "" : "s")" }
+
+    private func summarize(_ digest: WeekDigest) {
+        summarizing = true
+        Task {
+            summary = await OnDeviceModel.write(instructions: WeekDigest.instructions, prompt: digest.prompt) { partial in
+                summary = partial
+            } ?? summary
+            summarizing = false
+        }
+    }
+}

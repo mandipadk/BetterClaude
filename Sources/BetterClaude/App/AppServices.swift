@@ -10,6 +10,7 @@ enum SidebarDestination: Hashable {
     case ask
     case usage
     case files
+    case prompts
     case library
     case install(String)
     case history
@@ -54,6 +55,7 @@ final class AppServices {
     let ask = AskModel()
     let usage = UsageModel()
     let files = FilesModel()
+    let prompts = PromptsModel()
     let search: SearchModel
     let library = LibraryModel()
     let kept = KeptModel()

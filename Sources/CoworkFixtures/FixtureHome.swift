@@ -417,6 +417,7 @@ public struct FixtureHome {
         }
 
         try writeFileHistory()
+        try writePromptHistory()
 
         // Memory, including one for a project folder that has since been deleted.
         for (project, files) in Script.memory {
@@ -537,11 +538,45 @@ public struct FixtureHome {
                          ]],
         ]
         let line = try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys, .withoutEscapingSlashes])
+        // One MCP server that wouldn't start, for the doctor to find.
+        let health = try JSONSerialization.data(withJSONObject: [
+            "type": "attachment", "timestamp": saved,
+            "attachment": ["type": "deferred_tools_delta", "addedNames": [String](),
+                           "failedMcpServers": [["name": "linear", "errorCode": "ECONNREFUSED", "error": "connect failed"]],
+                           "needsAuthMcpServers": ["github"]],
+        ] as [String: Any], options: [.sortedKeys])
         let handle = try FileHandle(forWritingTo: transcript)
         try handle.seekToEnd()
-        try handle.write(contentsOf: line + Data("\n".utf8))
+        try handle.write(contentsOf: line + Data("\n".utf8) + health + Data("\n".utf8))
         try handle.close()
         try touch(transcript, at: now.addingTimeInterval(-conversation.age + Double(conversation.turns.count) * 95 + 30))
+    }
+
+    /// `history.jsonl`: what was typed, including a few prompts typed again and again.
+    func writePromptHistory() throws {
+        let billing = paths.home.appendingPathComponent("Code/billing-service").path
+        let journal = paths.home.appendingPathComponent("Code/journal-app").path
+        let typed: [(String, String, TimeInterval)] = [
+            ("Run the tests and fix anything that fails, then summarise what changed", billing, 6 * 86_400),
+            ("Run the tests and fix anything that fails, then summarize what changed", journal, 5 * 86_400),
+            ("run the tests and fix anything that fails then summarise what changed", billing, 3 * 86_400),
+            ("Run the tests and fix anything that fails, then summarise what changed", billing, 1 * 86_400),
+            ("Write release notes for everything merged since the last tag, for people rather than developers", journal, 9 * 86_400),
+            ("Write release notes for everything merged since the last tag, for people rather than developers", journal, 2 * 86_400),
+            ("Write release notes for everything merged since the last tag, for people rather than developers", billing, 4 * 3_600),
+            ("Review this diff for anything that could break in production", billing, 8 * 86_400),
+            ("Review this diff for anything that could break in production", billing, 2 * 86_400),
+            ("yes", billing, 3_600), ("continue", billing, 3_500),
+        ]
+        let lines = try typed.map { text, project, age in
+            String(decoding: try JSONSerialization.data(withJSONObject: [
+                "display": text, "project": project, "pastedContents": [String: String](),
+                "timestamp": Int(now.addingTimeInterval(-age).timeIntervalSince1970 * 1000),
+                "sessionId": UUID().uuidString.lowercased(),
+            ], options: [.sortedKeys]), as: UTF8.self)
+        }
+        try Data((lines.joined(separator: "\n") + "\n").utf8)
+            .write(to: paths.claudeCodeConfigDir.appendingPathComponent("history.jsonl"))
     }
 
     public static let deliverBefore = """

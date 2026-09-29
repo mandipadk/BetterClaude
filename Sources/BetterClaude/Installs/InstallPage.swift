@@ -13,6 +13,8 @@ struct InstallPage: View {
                 header.padding(.bottom, Theme.Space.xl)
                 notices
                 conversations
+                HealthSection(install: install)
+                if install.kind == .claudeCode { CommandRulesSection(configDir: install.dataRoot) }
                 if RecallConnection.target(for: install) != nil { RecallSection(install: install) }
                 SetupSection(install: install)
                 details
