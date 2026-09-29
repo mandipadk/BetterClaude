@@ -123,7 +123,7 @@ public enum FileProvenance {
     public static func restore(_ version: FileHistory.SavedVersion, to path: String,
                                paths: HostPaths = .current) throws -> ImportReceipt {
         let target = URL(fileURLWithPath: path)
-        var receipt = ImportReceipt(direction: .restore, destination: path)
+        var receipt = ImportReceipt(direction: .fileRestore, destination: path)
         receipt.title = target.lastPathComponent
         receipt.itemCount = 1
         let fm = FileManager.default

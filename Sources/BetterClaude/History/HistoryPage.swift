@@ -125,7 +125,7 @@ struct HistoryRow: View {
 
     var body: some View {
         HStack(spacing: Theme.Space.m) {
-            Image(systemName: receipt.direction == .branch ? "arrow.triangle.branch" : "arrow.right.circle")
+            Image(systemName: symbol)
                 .font(.system(size: 15))
                 .foregroundStyle(.secondary)
                 .frame(width: 22)
@@ -156,9 +156,24 @@ struct HistoryRow: View {
         .accessibilityElement(children: .combine)
     }
 
+    private var symbol: String {
+        switch receipt.direction {
+        case .branch: return "arrow.triangle.branch"
+        case .fileRestore: return "clock.arrow.circlepath"
+        case .skill: return "wand.and.stars"
+        default: return "arrow.right.circle"
+        }
+    }
+
     private var description: String {
-        let verb = receipt.direction == .branch ? "Forked in" : "Copied into"
-        return "\(verb) \(Self.place(of: receipt)), \(receipt.timestamp.listStamp.lowercasedIfWord)"
+        let when = receipt.timestamp.listStamp.lowercasedIfWord
+        switch receipt.direction {
+        case .branch: return "Forked in \(Self.place(of: receipt)), \(when)"
+        case .fileRestore: return "An earlier version put back, \(when)"
+        case .skill: return "Added to Claude Code's skills, \(when)"
+        case .restore: return "Put back where Claude Code finds it, \(when)"
+        default: return "Copied into \(Self.place(of: receipt)), \(when)"
+        }
     }
 
     /// Where a receipt's change landed, in words: the install's name, or Claude Code.

@@ -10,7 +10,7 @@ import Foundation
 public actor HistoryIndex {
 
     /// Bumped whenever the schema or what gets extracted changes; an older file is rebuilt.
-    public static let schemaVersion = 5
+    public static let schemaVersion = 6
 
     /// One file per schema, so an older copy of the app still running during an update
     /// keeps its own index instead of rebuilding this one back and forth.
@@ -146,7 +146,8 @@ public actor HistoryIndex {
             message_uuid TEXT,
             timestamp REAL,
             name TEXT NOT NULL,
-            file_path TEXT
+            file_path TEXT,
+            detail TEXT
         );
         CREATE INDEX IF NOT EXISTS tool_calls_conversation ON tool_calls(conversation_id);
         CREATE INDEX IF NOT EXISTS tool_calls_file ON tool_calls(file_path) WHERE file_path IS NOT NULL;
@@ -160,6 +161,14 @@ public actor HistoryIndex {
             PRIMARY KEY (conversation_id, file_path, version)
         );
         CREATE INDEX IF NOT EXISTS file_versions_path ON file_versions(file_path);
+        CREATE TABLE IF NOT EXISTS health (
+            conversation_id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            name TEXT NOT NULL,
+            detail TEXT,
+            timestamp REAL
+        );
+        CREATE INDEX IF NOT EXISTS health_time ON health(timestamp);
         PRAGMA user_version = \(schemaVersion);
         """)
     }
@@ -295,6 +304,7 @@ public actor HistoryIndex {
             try database.run("DELETE FROM usage WHERE conversation_id = ?", [id])
             try database.run("DELETE FROM tool_calls WHERE conversation_id = ?", [id])
             try database.run("DELETE FROM file_versions WHERE conversation_id = ?", [id])
+            try database.run("DELETE FROM health WHERE conversation_id = ?", [id])
         }
         let insertMessage = try database.prepare("""
             INSERT INTO messages (conversation_id, ordinal, uuid, role, kind, timestamp, text)
@@ -317,12 +327,19 @@ public actor HistoryIndex {
                                  .int(usage.cacheWrite5m), .int(usage.cacheWrite1h)])
         }
         let insertTool = try database.prepare("""
-            INSERT INTO tool_calls (conversation_id, message_uuid, timestamp, name, file_path)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO tool_calls (conversation_id, message_uuid, timestamp, name, file_path, detail)
+            VALUES (?, ?, ?, ?, ?, ?)
             """)
         for call in scan.toolCalls {
             try insertTool.run([id, .optional(call.messageUUID), .date(call.timestamp), .text(call.name),
-                                .optional(call.filePath)])
+                                .optional(call.filePath), .optional(call.detail)])
+        }
+        let insertHealth = try database.prepare("""
+            INSERT INTO health (conversation_id, kind, name, detail, timestamp) VALUES (?, ?, ?, ?, ?)
+            """)
+        for event in scan.health {
+            try insertHealth.run([id, .text(event.kind.rawValue), .text(event.name), .optional(event.detail),
+                                  .date(event.timestamp)])
         }
         // Each snapshot repeats every tracked file; the first record of a version wins.
         let insertVersion = try database.prepare("""

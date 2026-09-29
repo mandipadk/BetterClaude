@@ -54,6 +54,10 @@ USAGE
       Where a file came from: the conversations that changed it, every version Claude Code
       saved, and the commits that changed it with the conversation each likely came from.
 
+  cowork distill
+      Prompts you repeat, commands Claude runs that your settings don't allow yet, what's
+      failing around Claude Code's turns, and this week in numbers.
+
   cowork usage
       Show each account's five-hour and weekly limits, when they reset, where the week is
       heading, and which projects used the most this week.
@@ -153,6 +157,32 @@ func cmdFile(_ args: Args) throws {
         let from = commit.match.map { "\($0.confidence.rawValue) from \($0.title)" } ?? "no conversation found"
         print("  \(commit.shortSHA)  \(commit.subject)  (\(from))")
     }
+}
+
+func cmdDistill() throws {
+    let paths = HostPaths.current
+    let prompts = PromptLibrary.repeated(configDirs: LiveSessions.configDirs(paths: paths))
+    let (suggestions, issues, digest) = try runBlocking { () -> Result<([PermissionTuner.Suggestion], [Doctor.Issue], WeekDigest), Error> in
+        do {
+            let index = try HistoryIndex(readingFrom: HistoryIndex.defaultURL())
+            let snapshot = await Catalog().snapshot()
+            let week = Date().addingTimeInterval(-7 * 86_400)
+            let codeInstalls = Set(snapshot.installs.filter { $0.kind == .claudeCode || $0.isDesktop }.map(\.id))
+            return .success((try await PermissionTuner.suggestions(index: index, configDir: paths.claudeCodeConfigDir,
+                                                                   since: Date().addingTimeInterval(-30 * 86_400)),
+                             try await Doctor.issues(index: index, installIDs: codeInstalls, since: week),
+                             try await WeekDigest.build(index: index, since: week)))
+        } catch { return .failure(error) }
+    }.get()
+    print("\(prompts.count) prompts you've typed three times or more.")
+    for prompt in prompts.prefix(5) {
+        print("  \(prompt.uses) times  \(String(prompt.text.replacingOccurrences(of: "\n", with: " ").prefix(70)))")
+    }
+    print("\n\(suggestions.count) commands Claude runs that your settings don't allow yet:")
+    for suggestion in suggestions.prefix(10) { print("  \(suggestion.rule)  \(suggestion.runs) runs in \(suggestion.conversations) conversations") }
+    print("\n\(issues.count) things failing this week:")
+    for issue in issues.prefix(10) { print("  \(issue.kind.rawValue)  \(issue.name)  \(issue.times) times  \(issue.detail ?? "")") }
+    print("\nThis week: \(digest.conversations) conversations, \(digest.prompts) prompts, \(digest.filesChanged) files changed, \(digest.commands) commands.")
 }
 
 func cmdUsage() throws {
@@ -613,6 +643,7 @@ do {
     case "index": try cmdIndex(args)
     case "live": cmdLive()
     case "usage": try cmdUsage()
+    case "distill": try cmdDistill()
     case "file": try cmdFile(args)
     case "search": try cmdSearch(args)
     case "encode":

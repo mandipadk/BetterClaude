@@ -42,6 +42,19 @@ public struct TranscriptScan: Sendable {
         public let name: String
         /// The file the tool read or wrote, for the tools that name one.
         public let filePath: String?
+        /// The command, for a shell call: its first line, trimmed.
+        public var detail: String? = nil
+    }
+
+    /// Something that went wrong around a turn: an MCP server that failed to start or needs
+    /// signing in to, or a hook that failed.
+    public struct HealthEvent: Sendable, Equatable {
+        public enum Kind: String, Sendable { case mcpFailed, mcpNeedsAuth, hookFailed }
+        public let kind: Kind
+        public let name: String
+        /// The error code for a server, or the hook's event and exit status.
+        public let detail: String?
+        public let timestamp: Date?
     }
 
     /// One version of a file Claude Code saved before changing it, from a
@@ -68,6 +81,7 @@ public struct TranscriptScan: Sendable {
     public var usage: [Usage] = []
     public var toolCalls: [ToolCall] = []
     public var fileVersions: [FileVersion] = []
+    public var health: [HealthEvent] = []
     public var cost: CostState?
     public var title: String?
     public var gitBranch: String?
@@ -173,6 +187,27 @@ public enum TranscriptScanner {
             if let title = record["customTitle"]?.stringValue, !title.isEmpty { result.title = title }
         case "ai-title":
             if let title = record["aiTitle"]?.stringValue, !title.isEmpty { result.title = title }
+        case "attachment":
+            guard let attachment = record["attachment"] else { return }
+            switch attachment["type"]?.stringValue {
+            case "deferred_tools_delta":
+                for server in attachment["failedMcpServers"]?.arrayValue ?? [] {
+                    guard let name = server["name"]?.stringValue else { continue }
+                    result.health.append(.init(kind: .mcpFailed, name: name, detail: server["errorCode"]?.stringValue,
+                                               timestamp: timestamp))
+                }
+                for name in attachment["needsAuthMcpServers"]?.arrayValue?.compactMap(\.stringValue) ?? [] {
+                    result.health.append(.init(kind: .mcpNeedsAuth, name: name, detail: nil, timestamp: timestamp))
+                }
+            case "hook_non_blocking_error":
+                // Only which hook and how it ended: its output can hold anything.
+                let event = attachment["hookEvent"]?.stringValue ?? "hook"
+                let status = attachment["exitCode"]?.intValue.map { "exit \($0)" } ?? "failed"
+                result.health.append(.init(kind: .hookFailed, name: attachment["hookName"]?.stringValue ?? event,
+                                           detail: "\(event), \(status)", timestamp: timestamp))
+            default:
+                break
+            }
         case "file-history-snapshot":
             let snapshot = record["snapshot"]
             let messageID = record["messageId"]?.stringValue ?? snapshot?["messageId"]?.stringValue
@@ -216,7 +251,12 @@ public enum TranscriptScanner {
         for block in message["content"]?.arrayValue ?? [] where block["type"]?.stringValue == "tool_use" {
             guard let name = block["name"]?.stringValue else { continue }
             let path = fileTools[name].flatMap { block["input"]?[$0]?.stringValue }
-            result.toolCalls.append(.init(messageUUID: uuid, timestamp: timestamp, name: name, filePath: path))
+            var call = TranscriptScan.ToolCall(messageUUID: uuid, timestamp: timestamp, name: name, filePath: path)
+            if name == "Bash", let command = block["input"]?["command"]?.stringValue {
+                let first = command.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? command
+                call.detail = String(first.trimmingCharacters(in: .whitespaces).prefix(300))
+            }
+            result.toolCalls.append(call)
         }
     }
 }

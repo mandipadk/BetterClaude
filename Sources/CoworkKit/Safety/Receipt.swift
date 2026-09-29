@@ -11,6 +11,10 @@ public enum TransferDirection: String, Codable, Sendable {
     case branch
     /// A kept conversation put back where Claude Code reads it.
     case restore
+    /// An earlier version of a file put back.
+    case fileRestore
+    /// A skill written into a Claude Code config folder.
+    case skill
 }
 
 /// SHA-256 helpers.
