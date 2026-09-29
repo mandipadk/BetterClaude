@@ -10,7 +10,7 @@ import Foundation
 public actor HistoryIndex {
 
     /// Bumped whenever the schema or what gets extracted changes; an older file is rebuilt.
-    public static let schemaVersion = 3
+    public static let schemaVersion = 4
 
     public static func defaultURL(paths: HostPaths = .current) -> URL {
         paths.betterClaudeSupport
@@ -136,6 +136,16 @@ public actor HistoryIndex {
         );
         CREATE INDEX IF NOT EXISTS tool_calls_conversation ON tool_calls(conversation_id);
         CREATE INDEX IF NOT EXISTS tool_calls_file ON tool_calls(file_path) WHERE file_path IS NOT NULL;
+        CREATE TABLE IF NOT EXISTS file_versions (
+            conversation_id TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            version INTEGER NOT NULL,
+            backup_file TEXT,
+            backup_time REAL,
+            message_id TEXT,
+            PRIMARY KEY (conversation_id, file_path, version)
+        );
+        CREATE INDEX IF NOT EXISTS file_versions_path ON file_versions(file_path);
         PRAGMA user_version = \(schemaVersion);
         """)
     }
@@ -268,6 +278,7 @@ public actor HistoryIndex {
             try database.run("DELETE FROM messages WHERE conversation_id = ?", [id])
             try database.run("DELETE FROM usage WHERE conversation_id = ?", [id])
             try database.run("DELETE FROM tool_calls WHERE conversation_id = ?", [id])
+            try database.run("DELETE FROM file_versions WHERE conversation_id = ?", [id])
         }
         let insertMessage = try database.prepare("""
             INSERT INTO messages (conversation_id, ordinal, uuid, role, kind, timestamp, text)
@@ -296,6 +307,15 @@ public actor HistoryIndex {
         for call in scan.toolCalls {
             try insertTool.run([id, .optional(call.messageUUID), .date(call.timestamp), .text(call.name),
                                 .optional(call.filePath)])
+        }
+        // Each snapshot repeats every tracked file; the first record of a version wins.
+        let insertVersion = try database.prepare("""
+            INSERT OR IGNORE INTO file_versions (conversation_id, file_path, version, backup_file, backup_time, message_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """)
+        for version in scan.fileVersions {
+            try insertVersion.run([id, .text(version.path), .int(Int64(version.version)), .optional(version.backupFileName),
+                                   .date(version.backupTime), .optional(version.messageID)])
         }
         let latestModel = scan.usage.last?.model
         try database.run("""

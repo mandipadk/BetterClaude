@@ -378,6 +378,8 @@ public struct FixtureHome {
             ], to: sessions.appendingPathComponent("\(entry.0).json"))
         }
 
+        try writeFileHistory()
+
         // Memory, including one for a project folder that has since been deleted.
         for (project, files) in Script.memory {
             let cwd = paths.home.appendingPathComponent(project).path
@@ -466,6 +468,75 @@ public struct FixtureHome {
         try writeJSON(["samples": samples], to: userData.appendingPathComponent("plan-usage-history.json"))
     }
 
+    /// The webhook conversation's files, as Claude Code leaves them: `deliver.ts` as it is
+    /// now with the version saved before Claude's edit, and `backoff.ts`, which Claude
+    /// created — recorded as a version that didn't exist.
+    func writeFileHistory() throws {
+        guard let conversation = Script.claudeCode.first(where: { $0.title.hasPrefix("Retry failed webhook") }) else { return }
+        let project = paths.home.appendingPathComponent(conversation.project ?? "Code")
+        let folder = project.appendingPathComponent("src/webhooks", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let deliver = folder.appendingPathComponent("deliver.ts")
+        let backoff = folder.appendingPathComponent("backoff.ts")
+        try Data(Self.deliverNow.utf8).write(to: deliver)
+        try Data(Self.backoffNow.utf8).write(to: backoff)
+
+        let history = paths.claudeCodeConfigDir.appendingPathComponent("file-history/\(conversation.cliId)", isDirectory: true)
+        try FileManager.default.createDirectory(at: history, withIntermediateDirectories: true)
+        try Data(Self.deliverBefore.utf8).write(to: history.appendingPathComponent("3f1c9a2b7d4e8f60@v1"))
+
+        let transcript = paths.claudeCodeConfigDir.appendingPathComponent("projects", isDirectory: true)
+            .appendingPathComponent(PathEncoder.encode(project.path), isDirectory: true)
+            .appendingPathComponent("\(conversation.cliId).jsonl")
+        let saved = Transcriber.stamp(now.addingTimeInterval(-conversation.age + 25))
+        let record: [String: Any] = [
+            "type": "file-history-snapshot", "messageId": Transcriber.uuid(seed: conversation.cliId, index: 1),
+            "isSnapshotUpdate": false,
+            "snapshot": ["messageId": Transcriber.uuid(seed: conversation.cliId, index: 1), "timestamp": saved,
+                         "trackedFileBackups": [
+                            deliver.path: ["backupFileName": "3f1c9a2b7d4e8f60@v1", "version": 1, "backupTime": saved],
+                            backoff.path: ["backupFileName": NSNull(), "version": 1, "backupTime": saved],
+                         ]],
+        ]
+        let line = try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys, .withoutEscapingSlashes])
+        let handle = try FileHandle(forWritingTo: transcript)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: line + Data("\n".utf8))
+        try handle.close()
+        try touch(transcript, at: now.addingTimeInterval(-conversation.age + Double(conversation.turns.count) * 95 + 30))
+    }
+
+    public static let deliverBefore = """
+        export async function deliver(event: WebhookEvent) {
+          const response = await fetch(event.url, { method: "POST", body: JSON.stringify(event.payload) })
+          if (!response.ok) {
+            log.warn("webhook delivery failed", { id: event.id, status: response.status })
+          }
+        }
+
+        """
+
+    public static let deliverNow = """
+        import { nextDelay } from "./backoff"
+
+        export async function deliver(event: WebhookEvent, attempt = 0) {
+          const response = await fetch(event.url, { method: "POST", body: JSON.stringify(event.payload) })
+          if (response.ok) return
+          if (attempt >= 4) return deadLetter.push(event)
+          await sleep(nextDelay(attempt))
+          return deliver(event, attempt + 1)
+        }
+
+        """
+
+    public static let backoffNow = """
+        export function nextDelay(attempt: number): number {
+          const base = 2 ** attempt * 1_000
+          return base / 2 + Math.random() * (base / 2)
+        }
+
+        """
+
     // MARK: - Helpers
 
     func writeJSON(_ object: Any, to url: URL) throws {
@@ -537,12 +608,17 @@ struct Transcriber {
             clock.addTimeInterval(20)
 
             for tool in turn.tools {
+                // Claude Code names files by absolute path.
+                var input = tool.input
+                if let path = input["file_path"] as? String, !path.hasPrefix("/") {
+                    input["file_path"] = (cwd as NSString).appendingPathComponent(path)
+                }
                 let useId = "toolu_" + nextUUID().replacingOccurrences(of: "-", with: "").prefix(20)
                 let assistantId = nextUUID()
                 emit(["type": "assistant", "uuid": assistantId, "parentUuid": parent!,
                       "message": ["role": "assistant", "model": conversation.model,
                                   "content": [["type": "tool_use", "id": String(useId),
-                                               "name": tool.name, "input": tool.input]]]])
+                                               "name": tool.name, "input": input]]]])
                 parent = assistantId
                 clock.addTimeInterval(4)
                 let resultId = nextUUID()

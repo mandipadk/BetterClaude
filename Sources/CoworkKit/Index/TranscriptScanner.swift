@@ -44,6 +44,19 @@ public struct TranscriptScan: Sendable {
         public let filePath: String?
     }
 
+    /// One version of a file Claude Code saved before changing it, from a
+    /// `file-history-snapshot` record.
+    public struct FileVersion: Sendable, Equatable {
+        public let path: String
+        public let version: Int
+        /// The copy's name in `file-history/<session>/`; `nil` when the file didn't exist yet,
+        /// so this version is the moment Claude created it.
+        public let backupFileName: String?
+        public let backupTime: Date?
+        /// The message the change belongs to.
+        public let messageID: String?
+    }
+
     /// Claude Code's own running total for the session.
     public struct CostState: Sendable, Equatable {
         public let totalUSD: Double
@@ -54,6 +67,7 @@ public struct TranscriptScan: Sendable {
     public var messages: [Message] = []
     public var usage: [Usage] = []
     public var toolCalls: [ToolCall] = []
+    public var fileVersions: [FileVersion] = []
     public var cost: CostState?
     public var title: String?
     public var gitBranch: String?
@@ -159,6 +173,16 @@ public enum TranscriptScanner {
             if let title = record["customTitle"]?.stringValue, !title.isEmpty { result.title = title }
         case "ai-title":
             if let title = record["aiTitle"]?.stringValue, !title.isEmpty { result.title = title }
+        case "file-history-snapshot":
+            let snapshot = record["snapshot"]
+            let messageID = record["messageId"]?.stringValue ?? snapshot?["messageId"]?.stringValue
+            for (path, entry) in snapshot?["trackedFileBackups"]?.objectValue?.orderedPairs ?? [] {
+                guard let version = entry["version"]?.intValue else { continue }
+                result.fileVersions.append(.init(
+                    path: path, version: Int(version), backupFileName: entry["backupFileName"]?.stringValue,
+                    backupTime: entry["backupTime"]?.stringValue.flatMap(Transcript.parseTimestamp),
+                    messageID: messageID))
+            }
         case "cost-state":
             result.cost = .init(totalUSD: record["totalCostUSD"]?.doubleValue ?? 0,
                                 linesAdded: record["totalLinesAdded"]?.intValue ?? 0,

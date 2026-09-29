@@ -204,6 +204,7 @@ enum Script {
                      """,
                      tools: [Tool(name: "Read", input: ["file_path": "src/webhooks/deliver.ts"], result: "export async function deliver(event) { … }"),
                              Tool(name: "Edit", input: ["file_path": "src/webhooks/deliver.ts"], result: "Applied 2 edits."),
+                             Tool(name: "Write", input: ["file_path": "src/webhooks/backoff.ts"], result: "File created."),
                              Tool(name: "Bash", input: ["command": "npm test -- webhooks"], result: "12 passed")]),
                 Turn(user: "Can we cap the total wait at ten minutes?",
                      assistant: "Yes. `nextDelay` now clamps to whatever remains of a ten-minute budget, so a delivery never waits longer than that in total."),
