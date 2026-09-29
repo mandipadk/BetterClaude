@@ -201,7 +201,21 @@ public struct Recall: Sendable {
             GROUP BY c.id, t.file_path ORDER BY MAX(t.timestamp) DESC LIMIT 25
             """, [match] + accounts.sorted().map(SQLiteValue.text))
         guard !rows.isEmpty else { return "No past conversation read or changed \(path)." }
-        var out = "Conversations that read or changed \(path), most recent first.\n"
+        let exact = isBareName ? rows.first?.text(2) : (path as NSString).expandingTildeInPath
+        var versionsNote = ""
+        if let exact {
+            let history = try await FileProvenance.history(of: exact, index: index)
+            let restorable = history.versions.filter { $0.copy != nil }.count
+            if history.createdByClaude { versionsNote += "Claude created this file in \"\(history.versions[0].conversationTitle)\".\n" }
+            if !history.versions.isEmpty {
+                versionsNote += "Claude Code saved \(history.versions.count) earlier version\(history.versions.count == 1 ? "" : "s") of it, \(restorable) still on disk; the person can compare or restore them in Better Claude's Files page.\n"
+            }
+            let commits = (try? await CommitLinker.commits(touching: exact, index: index, limit: 5)) ?? []
+            for commit in commits where commit.match != nil {
+                versionsNote += "Commit \(commit.shortSHA) \"\(commit.subject)\" \(commit.match!.confidence == .likely ? "likely" : "possibly") came from \"\(commit.match!.title)\".\n"
+            }
+        }
+        var out = versionsNote + "Conversations that read or changed \(path), most recent first.\n"
         for row in rows {
             out += "\n- \(row.text(1) ?? "Untitled")\n"
             out += "  id: \(row.text(0) ?? "")\n"

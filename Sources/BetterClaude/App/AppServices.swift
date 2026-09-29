@@ -230,6 +230,14 @@ final class AppServices {
         if on { spotlight.update(snapshot: snapshot, index: index.index) } else { spotlight.clear() }
     }
 
+    /// Shows a file's history on the Files page, even one Claude has only read.
+    func showFile(_ path: String) {
+        files.attach(self)
+        destination = .files
+        files.filter = ""
+        files.selectedPath = path
+    }
+
     /// Opens a conversation chosen in Spotlight.
     func openSpotlightItem(_ identifier: String) {
         if let conversation = snapshot.conversations.first(where: { $0.id == identifier }) {

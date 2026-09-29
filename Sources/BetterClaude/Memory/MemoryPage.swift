@@ -177,6 +177,7 @@ private struct MemoryDetail: View {
 }
 
 private struct MemoryFileView: View {
+    @Environment(AppServices.self) private var services
     let file: MemoryFile
     @State private var text: String?
 
@@ -192,6 +193,12 @@ private struct MemoryFileView: View {
                     .buttonStyle(.plain)
                     .font(Theme.Font.callout)
                     .foregroundStyle(Theme.accent)
+                // Claude edits memory with the same tools as any file, so its history shows
+                // which conversation changed what.
+                Button("History") { services.showFile(file.url.path) }
+                    .buttonStyle(.plain)
+                    .font(Theme.Font.callout)
+                    .foregroundStyle(.secondary)
                 Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file.url]) }
                     .buttonStyle(.plain)
                     .font(Theme.Font.callout)

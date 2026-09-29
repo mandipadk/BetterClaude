@@ -19,6 +19,10 @@ enum ReleaseHighlights {
                  detail: "The projects and conversations that used the most of this week, from the tokens every reply used."),
             Item(symbol: "arrow.right.circle", title: "Continue where there's room",
                  detail: "Continue in… shows how much of its limit each account has left, and lists the one with the most room first."),
+            Item(symbol: "doc.text.magnifyingglass", title: "Files",
+                 detail: "Every file Claude changed: the conversations that changed it, every version saved before each change, and the commit each likely became. Put any version back, and undo it."),
+            Item(symbol: "rectangle.compress.vertical", title: "See what compaction kept",
+                 detail: "The reader marks where Claude compacted a conversation, and shows the summary it kept of everything above."),
         ],
         "0.3.0": [
             Item(symbol: "text.magnifyingglass", title: "Search every message as you type",
