@@ -49,12 +49,13 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 ICONSET="$(dirname "$APP")/BetterClaude.iconset"
 
 # Shortcuts and Siri find the app's actions from Metadata.appintents, which Xcode makes with
-# appintentsmetadataprocessor. SwiftPM builds leave the compiler's constant values behind, so
-# the same tool runs here. Without it the app still works; the actions just don't appear.
+# appintentsmetadataprocessor. SwiftPM builds with Swift Build leave the compiler's constant
+# values behind, so the same tool runs here. Older toolchains don't, and the app still works;
+# the actions just don't appear.
 INTENTS_WORK="$(mktemp -d)"
 CONFIG_DIR="$([ "$CONFIG" = "release" ] && echo Release || echo Debug)"
 find "$ROOT/.build/out/Intermediates.noindex/BetterClaude.build/$CONFIG_DIR/BetterClaude-p.build/Objects-normal/arm64" \
-  -name '*.swiftconstvalues' > "$INTENTS_WORK/constvals.txt" 2>/dev/null
+  -name '*.swiftconstvalues' > "$INTENTS_WORK/constvals.txt" 2>/dev/null || true
 find "$ROOT/Sources/BetterClaude" -name '*.swift' > "$INTENTS_WORK/sources.txt"
 if [ -s "$INTENTS_WORK/constvals.txt" ] && xcrun --find appintentsmetadataprocessor >/dev/null 2>&1; then
   xcrun appintentsmetadataprocessor --output "$APP/Contents/Resources" \
