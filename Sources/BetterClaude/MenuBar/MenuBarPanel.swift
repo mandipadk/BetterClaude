@@ -215,6 +215,7 @@ struct MenuBarPanel: View {
 
     private func showInWindow(_ then: () -> Void) {
         then()
+        NSApp.setActivationPolicy(.regular)
         openWindow(id: "main")
         NSApp.activate(ignoringOtherApps: true)
     }

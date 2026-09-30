@@ -50,6 +50,9 @@ enum DebugRoute {
                 if let studio = services.installs.first(where: { $0.kind == .external(.otherMac) }) {
                     services.destination = .install(studio.id)
                 }
+            case "tomenubar":
+                try? await Task.sleep(for: .seconds(2))
+                AppDelegate.closeToMenuBar()
             case "secrets":
                 services.destination = .secrets
             case "projects":

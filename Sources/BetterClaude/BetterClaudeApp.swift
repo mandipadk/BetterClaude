@@ -13,10 +13,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
+    /// ⌘Q while the menu bar icon is on: the windows close and the Dock icon goes, and Better
+    /// Claude stays in the menu bar, keeping and watching as before. The menu bar's Quit, ⌥⌘Q,
+    /// updates and logging out still quit it completely.
+    @MainActor static func closeToMenuBar() {
+        guard UserDefaults.standard.object(forKey: "showInMenuBar") as? Bool ?? true else { quit(); return }
+        for window in NSApp.windows where window.canBecomeMain && window.isVisible {
+            while let sheet = window.attachedSheet { window.endSheet(sheet) }
+            window.close()
+        }
+        NSApp.setActivationPolicy(.accessory)
+    }
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSAppleEventManager.shared().setEventHandler(
             self, andSelector: #selector(handleQuit(_:reply:)),
             forEventClass: AEEventClass(kCoreEventClass), andEventID: AEEventID(kAEQuitApplication))
+        // A window coming back, from the menu bar or by opening the app again, brings the Dock
+        // icon back with it.
+        NotificationCenter.default.addObserver(forName: NSWindow.didBecomeMainNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated {
+                if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
+            }
+        }
+    }
+
+    /// With every window closed, the app stays for the menu bar; without the menu bar icon, it
+    /// quits like any other app.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        !(UserDefaults.standard.object(forKey: "showInMenuBar") as? Bool ?? true)
     }
 
     @objc func handleQuit(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
@@ -75,8 +100,15 @@ struct BetterClaudeApp: App {
                 Button("Open Another Mac's Backup…") { services.openOtherMac() }
             }
             CommandGroup(replacing: .appTermination) {
-                Button("Quit Better Claude") { AppDelegate.quit() }
-                    .keyboardShortcut("q")
+                if showInMenuBar {
+                    Button("Close to Menu Bar") { AppDelegate.closeToMenuBar() }
+                        .keyboardShortcut("q")
+                    Button("Quit Better Claude") { AppDelegate.quit() }
+                        .keyboardShortcut("q", modifiers: [.command, .option])
+                } else {
+                    Button("Quit Better Claude") { AppDelegate.quit() }
+                        .keyboardShortcut("q")
+                }
             }
             CommandGroup(after: .appInfo) {
                 Button("Check for Updates…") {

@@ -19,7 +19,7 @@ struct SettingsView: View {
                                 detail: "Copies each Claude Code conversation as it changes, before Claude Code's cleanup deletes it.",
                                 isOn: $keepAutomatically)
                 ExplainedToggle(title: "Show in the menu bar",
-                                detail: "Find any conversation from anywhere, without opening the window.",
+                                detail: "Find any conversation from anywhere, without opening the window. ⌘Q then closes to the menu bar, so keeping, alerts and Claude's history keep working; ⌥⌘Q quits completely.",
                                 isOn: $showInMenuBar)
                 ExplainedToggle(title: "Show conversations in Spotlight",
                                 detail: "Their titles, where they happened and what you first asked. Never whole conversations.",
