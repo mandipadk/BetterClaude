@@ -170,6 +170,22 @@ final class PulseNotifier: NSObject, UNUserNotificationCenterDelegate {
     var onOpenConversation: ((String) -> Void)?
     static let limitsKey = "notifyLimits"
     static let contextKey = "notifyContext"
+    static let cacheKey = "notifyCache"
+
+    /// A session waiting on you whose cache is about to go cold.
+    func post(cacheExpiring session: String, conversationID: String, minutes: Int, context: Int64, extra: Double, key: String) {
+        guard Self.available, UserDefaults.standard.object(forKey: Self.cacheKey) as? Bool ?? true else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "\(session)'s cache expires in \(minutes == 1 ? "a minute" : "\(minutes) minutes")"
+        content.body = "Replying after that writes its \(context / 1_000)K tokens into the cache again, about \(extra.formatted(.currency(code: "USD").precision(.fractionLength(2)))) more at list prices. Replying, compacting or handing off before then avoids it."
+        content.userInfo = ["conversation": conversationID]
+        content.threadIdentifier = conversationID
+        let request = UNNotificationRequest(identifier: "cache.\(key)", content: content, trigger: nil)
+        Task {
+            guard await ensureAuthorized() else { return }
+            try? await UNUserNotificationCenter.current().add(request)
+        }
+    }
 
     /// A running session's replies switched model with nothing on record asking for it.
     func post(drift change: ModelDrift.Switch, project: String) {

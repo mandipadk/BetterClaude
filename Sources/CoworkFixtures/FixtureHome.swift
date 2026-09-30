@@ -666,11 +666,12 @@ public struct FixtureHome {
         let transcript = paths.claudeCodeConfigDir.appendingPathComponent("projects", isDirectory: true)
             .appendingPathComponent(PathEncoder.encode(project.path), isDirectory: true)
             .appendingPathComponent("\(conversation.cliId).jsonl")
-        let start = now.addingTimeInterval(-conversation.age - 3 * 3_600)
+        let start = now.addingTimeInterval(-conversation.age - 4.5 * 3_600)
         var lines: [Data] = []
         var context = 24_000
         for step in 0..<72 {
-            let time = start.addingTimeInterval(Double(step) * 140)
+            // A long break at step 30: the cache expired, and the next reply wrote it all again.
+            let time = start.addingTimeInterval(Double(step) * 140 + (step >= 30 ? 5_400 : 0))
             if step == 44 {
                 lines.append(try JSONSerialization.data(withJSONObject: [
                     "type": "user", "isSidechain": true, "isCompactSummary": true, "timestamp": Transcriber.stamp(time),
@@ -686,8 +687,8 @@ public struct FixtureHome {
                 // Partway through, replies came from another model with nothing asking for it.
                 "message": ["role": "assistant", "model": step >= 50 ? "claude-opus-4-8" : conversation.model, "id": id,
                             "usage": ["input_tokens": 4, "output_tokens": 180 + (step * 53) % 900,
-                                      "cache_read_input_tokens": context,
-                                      "cache_creation_input_tokens": 2_000 + (step * 71) % 3_000],
+                                      "cache_read_input_tokens": step == 30 ? 0 : context,
+                                      "cache_creation_input_tokens": step == 30 ? context : 2_000 + (step * 71) % 3_000],
                             "content": [["type": "tool_use", "id": "toolu_long\(step)", "name": step % 3 == 0 ? "Edit" : "Read",
                                          "input": ["file_path": project.appendingPathComponent("src/DatePicker.tsx").path]]]],
             ] as [String: Any], options: [.sortedKeys]))

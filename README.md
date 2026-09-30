@@ -105,6 +105,11 @@ active and the longest run of them, the hours you work, models, the tools Claude
 projects (names hidden unless you choose), and what it came to. Copy it or save it as an
 image.
 
+**Coming back after a break** on Usage shows what re-reading conversations cost this month
+after the prompt cache expired (five minutes or an hour after the last reply), and in which
+projects; the cost chart marks those replies. A running session waiting on you with a big
+conversation gets a notification two minutes before its cache goes cold.
+
 When a conversation's replies switched model partway, the reader says when, to what, and
 whether anyone asked for it: you with `/model`, Claude Code with a fallback after a refusal,
 or nothing on record. Usage lists every change nobody asked for in the last month, and a

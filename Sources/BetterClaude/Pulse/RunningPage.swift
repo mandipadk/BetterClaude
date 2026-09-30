@@ -8,6 +8,7 @@ struct RunningPage: View {
     @AppStorage(PulseNotifier.needsYouKey) private var notifyNeedsYou = true
     @AppStorage(PulseNotifier.finishedKey) private var notifyFinished = true
     @AppStorage(PulseNotifier.contextKey) private var notifyContext = true
+    @AppStorage(PulseNotifier.cacheKey) private var notifyCache = true
     @State private var hookError: String?
 
     var body: some View {
@@ -40,6 +41,9 @@ struct RunningPage: View {
                         ExplainedToggle(title: "When a session's context is filling up",
                                         detail: "At 75% and 90% of the context window, once each until it compacts. Every reply rereads the whole conversation, so this is when compacting or a handoff saves the most.",
                                         isOn: $notifyContext)
+                        ExplainedToggle(title: "Before a waiting session's cache expires",
+                                        detail: "Two minutes before, for conversations over 80K tokens. After that, your next reply there writes the whole conversation into the cache again.",
+                                        isOn: $notifyCache)
                         ExplainedToggle(title: "Say what Claude asked",
                                         detail: hookError ?? "Adds three small hooks to Claude Code's settings so an alert can include Claude's question and any error. Turning this off takes out exactly those hooks. Your settings are backed up first.",
                                         isOn: Binding(get: { pulse.hooksInstalled }, set: { setHooks($0) }))

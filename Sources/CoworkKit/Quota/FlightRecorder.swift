@@ -12,6 +12,9 @@ public struct FlightRecord: Sendable, Equatable {
         public let context: Int
         public let output: Int
         public let cost: Double
+        /// When this reply came after the prompt cache had expired and had to write the
+        /// conversation back into it: how long the break was.
+        public var afterBreak: TimeInterval? = nil
     }
 
     public let replies: [Reply]
@@ -40,13 +43,16 @@ public struct FlightRecord: Sendable, Equatable {
             SELECT model, timestamp, input, output, cache_read, cache_write_5m, cache_write_1h FROM usage
             WHERE conversation_id = ? AND agent_id IS NULL AND timestamp IS NOT NULL ORDER BY timestamp
             """, [.text(conversationID)])
+        let breaks = Dictionary(CacheBreaks.detect(conversationID: conversationID, rows: rows).map { ($0.at, $0.gap) },
+                                uniquingKeysWith: { first, _ in first })
         let replies = rows.enumerated().compactMap { offset, row -> Reply? in
             guard let model = row.text(0), let time = row.date(1) else { return nil }
             let input = row.int(2), output = row.int(3), read = row.int(4), write5 = row.int(5), write1 = row.int(6)
             return Reply(id: offset, model: model, timestamp: time, context: Int(input + read + write5 + write1),
                          output: Int(output),
                          cost: Pricing.cost(model: model, input: input, output: output, cacheRead: read,
-                                            cacheWrite5m: write5, cacheWrite1h: write1))
+                                            cacheWrite5m: write5, cacheWrite1h: write1),
+                         afterBreak: breaks[time])
         }
         let compactions = try await index.rows("""
             SELECT timestamp FROM messages WHERE conversation_id = ? AND kind = 'compaction' AND timestamp IS NOT NULL
@@ -64,6 +70,95 @@ public struct FlightRecord: Sendable, Equatable {
         record.agents = Int(try await index.rows("SELECT COUNT(*) FROM subagents WHERE conversation_id = ?",
                                                  [.text(conversationID)]).first?.int(0) ?? 0)
         return record
+    }
+}
+
+/// Coming back after the prompt cache expired. Each reply writes the conversation into the
+/// cache for five minutes or an hour; after a longer break the next reply writes it all again,
+/// at the write price, where it would otherwise have read it for a tenth of that or less.
+public enum CacheBreaks {
+
+    public struct Break: Sendable, Equatable {
+        public let conversationID: String
+        public let at: Date
+        public let gap: TimeInterval
+        /// Tokens written back into the cache.
+        public let tokens: Int64
+        /// What writing them cost beyond reading them from the cache, at list prices.
+        public let extra: Double
+    }
+
+    /// Only conversations this big are worth a word: re-reading a small one costs little.
+    static let minimumContext: Int64 = 20_000
+
+    /// Breaks in a conversation, from its usage rows: model, timestamp, input, output,
+    /// cache read, 5-minute write, 1-hour write, in time order.
+    static func detect(conversationID: String, rows: [SQLiteRow]) -> [Break] {
+        var found: [Break] = []
+        for index in rows.indices.dropFirst() {
+            let previous = rows[index - 1], row = rows[index]
+            guard let then = previous.date(1), let now = row.date(1), let model = row.text(0) else { continue }
+            let ttl: TimeInterval = previous.int(6) > 0 ? 3_600 : 300
+            let gap = now.timeIntervalSince(then)
+            let written = row.int(5) + row.int(6)
+            let context = row.int(2) + row.int(4) + written
+            guard gap > ttl, context >= minimumContext, written * 2 > context else { continue }
+            let rate = Pricing.rate(for: model)
+            let multiplier = row.int(6) > 0 ? 2.0 : 1.25
+            let extra = Double(written) * rate.input * (multiplier - rate.cacheReadFactor) / 1_000_000
+            found.append(Break(conversationID: conversationID, at: now, gap: gap, tokens: written, extra: extra))
+        }
+        return found
+    }
+
+    public struct Summary: Sendable {
+        public let breaks: Int
+        public let tokens: Int64
+        public let extra: Double
+        /// Where it happened most, by project folder name, costliest first.
+        public let projects: [(name: String, extra: Double, breaks: Int)]
+        /// Whether this Mac's sessions mostly keep the cache for an hour, rather than five minutes.
+        public let hourLong: Bool
+    }
+
+    public static func summary(index: HistoryIndex, since: Date) async throws -> Summary {
+        let rows = try await index.rows("""
+            SELECT u.model, u.timestamp, u.input, u.output, u.cache_read, u.cache_write_5m, u.cache_write_1h,
+                   u.conversation_id, c.project_path
+            FROM usage u JOIN conversations c ON c.id = u.conversation_id
+            WHERE u.agent_id IS NULL AND u.timestamp >= ? ORDER BY u.conversation_id, u.timestamp
+            """, [.date(since.addingTimeInterval(-3_600))])
+        var all: [Break] = []
+        var projectOf: [String: String] = [:]
+        var start = 0
+        var hourWrites = 0, fiveWrites = 0
+        for (index, row) in rows.enumerated() {
+            if row.int(6) > 0 { hourWrites += 1 } else if row.int(5) > 0 { fiveWrites += 1 }
+            let isLast = index == rows.count - 1 || rows[index + 1].text(7) != row.text(7)
+            guard isLast, let id = row.text(7) else { continue }
+            if let project = row.text(8) { projectOf[id] = URL(fileURLWithPath: Projects.root(of: project)).lastPathComponent }
+            all += detect(conversationID: id, rows: Array(rows[start...index])).filter { $0.at >= since }
+            start = index + 1
+        }
+        var byProject: [String: (Double, Int)] = [:]
+        for item in all {
+            let name = projectOf[item.conversationID] ?? "Other"
+            byProject[name] = ((byProject[name]?.0 ?? 0) + item.extra, (byProject[name]?.1 ?? 0) + 1)
+        }
+        return Summary(breaks: all.count, tokens: all.reduce(0) { $0 + $1.tokens }, extra: all.reduce(0) { $0 + $1.extra },
+                       projects: byProject.map { ($0.key, $0.value.0, $0.value.1) }.sorted { $0.1 > $1.1 },
+                       hourLong: hourWrites >= fiveWrites)
+    }
+
+    /// When a conversation's cache goes cold: an hour or five minutes after its last reply,
+    /// depending on how that reply wrote it. Nil when the last reply wrote nothing.
+    public static func expiry(conversationID: String, index: HistoryIndex) async throws -> (at: Date, context: Int64, model: String)? {
+        guard let row = try await index.rows("""
+            SELECT model, timestamp, input, cache_read, cache_write_5m, cache_write_1h FROM usage
+            WHERE conversation_id = ? AND agent_id IS NULL AND timestamp IS NOT NULL ORDER BY timestamp DESC LIMIT 1
+            """, [.text(conversationID)]).first, let model = row.text(0), let at = row.date(1) else { return nil }
+        let ttl: TimeInterval = row.int(5) > 0 ? 3_600 : 300
+        return (at.addingTimeInterval(ttl), row.int(2) + row.int(3) + row.int(4) + row.int(5), model)
     }
 }
 

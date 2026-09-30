@@ -12,6 +12,12 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.22.0": [
+            Item(symbol: "clock.badge.exclamationmark", title: "Coming back after a break",
+                 detail: "Usage shows what re-reading conversations after the prompt cache expired cost this month, and where. The cost chart marks those replies."),
+            Item(symbol: "bell.badge", title: "Before a waiting session's cache expires",
+                 detail: "Two minutes before a big conversation's cache goes cold while it waits on you, a notification, so you can reply, compact or hand off first."),
+        ],
         "0.21.0": [
             Item(symbol: "arrow.triangle.swap", title: "Model changes you didn't ask for",
                  detail: "A conversation says when its replies switched model and whether anyone asked, with /model or a fallback. Usage lists the ones nobody asked for, and a running session that switches on its own sends a notification."),

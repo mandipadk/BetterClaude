@@ -80,3 +80,50 @@ struct ModelDriftSection: View {
         }
     }
 }
+
+/// On Usage: what coming back after the prompt cache expired cost this month.
+struct CacheBreaksSection: View {
+    @Environment(AppServices.self) private var services
+    @State private var summary: CacheBreaks.Summary?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let summary, summary.breaks > 0 {
+                DetailSection(title: "Coming back after a break",
+                              subtitle: "Each reply keeps the conversation in Claude's cache for \(summary.hourLong ? "an hour" : "five minutes"). After a longer break, the next reply writes all of it into the cache again, at many times the price of reading it.") {
+                    VStack(alignment: .leading, spacing: Theme.Space.m) {
+                        Text("In the last 30 days, \(summary.breaks) repl\(summary.breaks == 1 ? "y" : "ies") re-read a conversation after its cache expired: \(tokens(summary.tokens)) tokens, about \(dollars(summary.extra)) more at list prices than reading them from the cache.")
+                            .font(Theme.Font.body)
+                            .fixedSize(horizontal: false, vertical: true)
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(summary.projects.prefix(5), id: \.name) { project in
+                                HStack {
+                                    Text(project.name).font(Theme.Font.callout)
+                                    Spacer()
+                                    Text("\(project.breaks) time\(project.breaks == 1 ? "" : "s"), \(dollars(project.extra))")
+                                        .font(Theme.Font.callout).foregroundStyle(.secondary).monospacedDigit()
+                                }
+                            }
+                        }
+                        Text("Before stepping away from a long conversation, compacting it or writing a handoff costs less than re-reading it later.")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .task(id: services.index.generation) {
+            guard let index = services.index.index else { return }
+            summary = try? await CacheBreaks.summary(index: index, since: Date().addingTimeInterval(-30 * 86_400))
+        }
+    }
+
+    private func tokens(_ count: Int64) -> String {
+        count >= 1_000_000 ? "\((Double(count) / 1e6).formatted(.number.precision(.fractionLength(0...1))))M" : "\(count / 1_000)K"
+    }
+
+    private func dollars(_ value: Double) -> String {
+        value.formatted(.currency(code: "USD").precision(.fractionLength(value >= 100 ? 0 : 2)))
+    }
+}

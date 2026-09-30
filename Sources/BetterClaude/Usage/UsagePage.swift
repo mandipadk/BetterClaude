@@ -35,6 +35,7 @@ struct UsagePage: View {
                 }
                 WeekSection()
                 ModelDriftSection()
+                CacheBreaksSection()
                 ForEach(usage.quotas) { quota in
                     AccountUsageSection(quota: quota, items: usage.spend[quota.account.id] ?? [])
                 }

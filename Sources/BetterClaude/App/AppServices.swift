@@ -91,6 +91,7 @@ final class AppServices {
             coachLiveSessions()
         }
         usage.notifier = pulse.notifier
+        watchCaches()
         pulse.notifier.onOpenConversation = { [weak self] id in
             guard let self, let conversation = snapshot.conversations.first(where: { $0.id == id }) else { return }
             NSApp.activate()
@@ -176,6 +177,40 @@ final class AppServices {
     }
 
     private static let coachedKey = "contextNudgesSent"
+    private var cacheWatch: Timer?
+
+    /// Every half minute: a session waiting on you whose cache goes cold in under two minutes
+    /// gets one heads-up, when its conversation is big enough for that to cost something.
+    func watchCaches() {
+        guard cacheWatch == nil else { return }
+        cacheWatch = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkCaches() }
+        }
+    }
+
+    private func checkCaches() {
+        guard let history = index.index else { return }
+        let waiting = pulse.sessions.filter { $0.state != .working }.compactMap { session -> (LiveSession, ConversationRef)? in
+            conversation(forSession: session.sessionID).map { (session, $0) }
+        }
+        guard !waiting.isEmpty else { return }
+        Task {
+            var sent = UserDefaults.standard.stringArray(forKey: Self.coachedKey) ?? []
+            for (session, conversation) in waiting {
+                guard let cache = try? await CacheBreaks.expiry(conversationID: conversation.id, index: history),
+                      cache.context >= 80_000 else { continue }
+                let left = cache.at.timeIntervalSinceNow
+                let key = "cache|\(conversation.id)|\(Int(cache.at.timeIntervalSince1970))"
+                guard left > 0, left <= 120, !sent.contains(key) else { continue }
+                let rate = Pricing.rate(for: cache.model)
+                let extra = Double(cache.context) * rate.input * (2 - rate.cacheReadFactor) / 1_000_000
+                pulse.notifier.post(cacheExpiring: session.projectName, conversationID: conversation.id,
+                                    minutes: max(1, Int((left / 60).rounded(.up))), context: cache.context, extra: extra, key: key)
+                sent.append(key)
+            }
+            UserDefaults.standard.set(Array(sent.suffix(300)), forKey: Self.coachedKey)
+        }
+    }
 
     /// After each index pass: any running session that has read most of its context gets one
     /// heads-up per stretch.

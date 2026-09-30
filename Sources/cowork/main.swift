@@ -346,6 +346,14 @@ func cmdUsage() throws {
         }
         print("  \(quota.history.count) readings, the latest \(Int(Date().timeIntervalSince(quota.asOf) / 60)) min ago\n")
     }
+    if let summary = try? runBlocking({ () -> Result<CacheBreaks.Summary, Error> in
+        do { return .success(try await CacheBreaks.summary(index: try HistoryIndex(readingFrom: HistoryIndex.defaultURL()),
+                                                           since: Date().addingTimeInterval(-30 * 86_400))) }
+        catch { return .failure(error) }
+    }).get(), summary.breaks > 0 {
+        let extra = summary.extra.formatted(.currency(code: "USD").precision(.fractionLength(0)))
+        print("Coming back after a break, the last 30 days: \(summary.breaks) replies re-read their conversation after the cache expired, \(summary.tokens / 1_000_000)M tokens, about \(extra) more at list prices than reading them from the cache.")
+    }
 }
 
 func cmdLive() {

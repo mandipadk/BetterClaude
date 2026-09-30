@@ -93,7 +93,7 @@ struct FlightRecorderView: View {
                 Text("Cost of each reply").font(Theme.Font.caption).foregroundStyle(.secondary)
                 Chart(record.replies) { reply in
                     BarMark(x: .value("Time", reply.timestamp), y: .value("Dollars", reply.cost), width: .fixed(3))
-                        .foregroundStyle(Theme.accent.opacity(0.7))
+                        .foregroundStyle(reply.afterBreak == nil ? Theme.accent.opacity(0.7) : Theme.attention)
                 }
                 .chartYAxis {
                     AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
@@ -102,6 +102,13 @@ struct FlightRecorderView: View {
                     }
                 }
                 .frame(height: 70)
+                let breaks = record.replies.filter { $0.afterBreak != nil }
+                if !breaks.isEmpty {
+                    Text("\(breaks.count == 1 ? "One reply" : "\(breaks.count) replies") in orange came after a break long enough for the cache to expire, and wrote the conversation back into it.")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -111,7 +118,7 @@ struct FlightRecorderView: View {
                         Text(reply.timestamp.formatted(.dateTime.weekday(.abbreviated).hour().minute()))
                             .frame(width: 120, alignment: .leading)
                         Text(dollars(reply.cost)).frame(width: 70, alignment: .trailing)
-                        Text("read \(tokens(reply.context)) tokens, wrote \(tokens(reply.output))")
+                        Text("read \(tokens(reply.context)) tokens, wrote \(tokens(reply.output))\(reply.afterBreak.map { ", after \(breakLength($0)) away" } ?? "")")
                             .foregroundStyle(.secondary)
                     }
                     .font(Theme.Font.callout)
@@ -128,6 +135,11 @@ struct FlightRecorderView: View {
         }
         .padding(Theme.Space.l)
         .background(Theme.subtleFill, in: .rect(cornerRadius: Theme.Radius.tile))
+    }
+
+    private func breakLength(_ gap: TimeInterval) -> String {
+        gap >= 86_400 ? "\(Int(gap / 86_400)) day\(gap >= 172_800 ? "s" : "")"
+            : gap >= 7_200 ? "\(Int(gap / 3_600)) h" : "\(Int(gap / 60)) min"
     }
 
     private func tokens(_ count: Int) -> String {
