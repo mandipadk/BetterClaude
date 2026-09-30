@@ -33,7 +33,28 @@ public struct ReadableConversation: Sendable {
         public var summary: String?
     }
 
+    /// A pull request Claude Code linked to the conversation.
+    public struct PullRequest: Sendable, Hashable {
+        public let url: URL
+        public let number: Int?
+        public let repository: String?
+
+        /// `owner/repo#12`, or the link itself.
+        public var name: String {
+            guard let number else { return url.absoluteString }
+            return repository.map { "\($0)#\(number)" } ?? "#\(number)"
+        }
+    }
+
+    /// Another conversation this one came from or went on in, by its session id.
+    public enum Relative: Sendable, Hashable {
+        case continuedIn(String)
+        case forkedFrom(String)
+    }
+
     public let entries: [Entry]
+    public private(set) var pullRequests: [PullRequest] = []
+    public private(set) var relatives: [Relative] = []
     /// The model that answered most recently, as recorded in the transcript.
     public let model: String?
     public let firstTimestamp: Date?
@@ -72,7 +93,31 @@ public struct ReadableConversation: Sendable {
             pendingID = nil
         }
 
+        var pullRequests: [PullRequest] = []
+        var relatives: [Relative] = []
+
         for (index, record) in transcript.records.enumerated() {
+            switch record["type"]?.stringValue {
+            case "pr-link":
+                if let link = record["prUrl"]?.stringValue, let url = URL(string: link), url.scheme == "https",
+                   !pullRequests.contains(where: { $0.url == url }) {
+                    pullRequests.append(PullRequest(url: url, number: record["prNumber"]?.intValue.map(Int.init),
+                                                    repository: record["prRepository"]?.stringValue))
+                }
+                continue
+            case "continued-in":
+                if let id = record["continuedInSessionId"]?.stringValue, !relatives.contains(.continuedIn(id)) {
+                    relatives.append(.continuedIn(id))
+                }
+                continue
+            case "branched-from":
+                if let id = record["sourceSessionId"]?.stringValue, !relatives.contains(.forkedFrom(id)) {
+                    relatives.append(.forkedFrom(id))
+                }
+                continue
+            default:
+                break
+            }
             if record["type"]?.stringValue == "system" {
                 let stamp = record["timestamp"]?.stringValue.flatMap(Transcript.parseTimestamp)
                 switch record["subtype"]?.stringValue {
@@ -138,6 +183,8 @@ public struct ReadableConversation: Sendable {
         flushTools()
 
         self.entries = entries
+        self.pullRequests = pullRequests
+        self.relatives = relatives
         self.model = model
         self.firstTimestamp = first
         self.lastTimestamp = last

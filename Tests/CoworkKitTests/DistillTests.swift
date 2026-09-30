@@ -126,6 +126,9 @@ struct DistillTests {
             let stored = try await index.rows("SELECT COUNT(*) FROM health WHERE detail LIKE '%secret%' OR name LIKE '%secret%'")
             #expect(stored.first?.int(0) == 0)
 
+            let pulls = try await index.rows("SELECT number, repository FROM pull_requests WHERE conversation_id = ?", [.text(conversation.id)])
+            #expect(pulls.first?.int(0) == 318 && pulls.first?.text(1) == "northwind/billing-service")
+
             let digest = try await WeekDigest.build(index: index, since: sample.now.addingTimeInterval(-7 * 86_400))
             #expect(digest.conversations > 0)
             #expect(digest.filesChanged >= 2)

@@ -59,6 +59,7 @@ struct RecallTests {
             let recent = try await recall.recent(project: "billing", days: 60, limit: 5)
             #expect(recent.contains("Retry failed webhook deliveries with backoff"))
             #expect(recent.contains("first asked: Webhook deliveries"))
+            #expect(recent.contains("pull requests: https://github.com/northwind/billing-service/pull/318"))
             let found = try await recall.search(query: "backoff", project: nil, sinceDays: nil, limit: 5)
             #expect(found.contains("Claude Code, in"))
         }

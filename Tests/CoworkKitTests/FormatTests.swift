@@ -111,6 +111,24 @@ struct FormatTests {
         #expect(version.messageID == "u1" && version.backupTime != nil)
     }
 
+    @Test("The reader shows a conversation's pull requests and where it came from or went on")
+    func pullRequestsAndRelatives() throws {
+        let records = try [
+            #"{"type":"pr-link","sessionId":"s1","prNumber":42,"prRepository":"acme/app","prUrl":"https://github.com/acme/app/pull/42","timestamp":"2026-09-01T10:00:00.000Z"}"#,
+            #"{"type":"pr-link","sessionId":"s1","prNumber":42,"prRepository":"acme/app","prUrl":"https://github.com/acme/app/pull/42","timestamp":"2026-09-01T10:05:00.000Z"}"#,
+            #"{"type":"pr-link","sessionId":"s1","prUrl":"javascript:alert(1)"}"#,
+            #"{"type":"branched-from","sessionId":"s1","sourceSessionId":"s0","cutUuid":"u9","cutMessageIndex":3,"branchedAt":"2026-09-01T09:00:00.000Z"}"#,
+            #"{"type":"continued-in","sessionId":"s1","continuedInSessionId":"s2","timestamp":"2026-09-01T11:00:00.000Z"}"#,
+        ].map { try JSONValue.parse($0) }
+        let readable = ReadableConversation(transcript: Transcript(records: records))
+        #expect(readable.pullRequests.map(\.name) == ["acme/app#42"])
+        #expect(readable.relatives == [.forkedFrom("s0"), .continuedIn("s2")])
+
+        var scan = TranscriptScan()
+        for record in records { TranscriptScanner.absorb(record, into: &scan) }
+        #expect(scan.pullRequests.count == 2 && scan.pullRequests.allSatisfy { $0.number == 42 })
+    }
+
     @Test("Versions sort by their numbers")
     func versionOrder() {
         #expect(FormatSurvey.ordered(["2.1.10", "2.1.9", "2.0.100", "0.146.0-alpha.9.2", "0.146.0-alpha.3.1"])
@@ -157,6 +175,7 @@ struct FormatTests {
             case "attachment.type", "payload.type": return .string(parts.count > 1 ? parts[1] : "")
             case "payload.role": return .string("assistant")
             case "message.model": return .string("claude-opus-5")
+            case "prUrl": return .string("https://example.com/pull/1")
             case "message.role": return .string(kind == "user" ? "user" : "assistant")
             default: break
             }
@@ -216,6 +235,7 @@ struct FormatTests {
             }
             if let result = scan("file-history-delta") { #expect(!result.fileVersions.isEmpty, "\(label) file deltas") }
             if let result = scan("system/away_summary") { #expect(result.messages.first?.kind == .recap, "\(label) recaps") }
+            if let result = scan("pr-link") { #expect(!result.pullRequests.isEmpty, "\(label) pull requests") }
             if let result = scan("cost-state") { #expect(result.cost != nil, "\(label) cost") }
             if let result = scan("ai-title") { #expect(result.title != nil, "\(label) titles") }
             if let result = scan("attachment/hook_non_blocking_error") { #expect(!result.health.isEmpty, "\(label) hooks") }

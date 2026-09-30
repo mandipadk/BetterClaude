@@ -169,6 +169,15 @@ public actor HistoryIndex {
             timestamp REAL
         );
         CREATE INDEX IF NOT EXISTS health_time ON health(timestamp);
+        CREATE TABLE IF NOT EXISTS pull_requests (
+            conversation_id TEXT NOT NULL,
+            url TEXT NOT NULL,
+            number INTEGER,
+            repository TEXT,
+            timestamp REAL,
+            PRIMARY KEY (conversation_id, url)
+        );
+        CREATE INDEX IF NOT EXISTS pull_requests_number ON pull_requests(number);
         PRAGMA user_version = \(schemaVersion);
         """)
     }
@@ -305,6 +314,7 @@ public actor HistoryIndex {
             try database.run("DELETE FROM tool_calls WHERE conversation_id = ?", [id])
             try database.run("DELETE FROM file_versions WHERE conversation_id = ?", [id])
             try database.run("DELETE FROM health WHERE conversation_id = ?", [id])
+            try database.run("DELETE FROM pull_requests WHERE conversation_id = ?", [id])
         }
         let insertMessage = try database.prepare("""
             INSERT INTO messages (conversation_id, ordinal, uuid, role, kind, timestamp, text)
@@ -349,6 +359,13 @@ public actor HistoryIndex {
         for version in scan.fileVersions {
             try insertVersion.run([id, .text(version.path), .int(Int64(version.version)), .optional(version.backupFileName),
                                    .date(version.backupTime), .optional(version.messageID)])
+        }
+        let insertPull = try database.prepare("""
+            INSERT OR IGNORE INTO pull_requests (conversation_id, url, number, repository, timestamp) VALUES (?, ?, ?, ?, ?)
+            """)
+        for pull in scan.pullRequests {
+            try insertPull.run([id, .text(pull.url), pull.number.map { .int(Int64($0)) } ?? .null,
+                                .optional(pull.repository), .date(pull.timestamp)])
         }
         let latestModel = scan.usage.last?.model
         try database.run("""

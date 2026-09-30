@@ -130,6 +130,8 @@ public struct Recall: Sendable {
         out += "last active: \(Self.stamp(conversation.lastActivity))"
         if let project = conversation.projectPath { out += ", in \(project)" }
         out += "\nmessages: \(conversation.messageCount)\n"
+        let pulls = try await index.rows("SELECT url FROM pull_requests WHERE conversation_id = ? ORDER BY timestamp", [.text(conversation.id)])
+        if !pulls.isEmpty { out += "pull requests: \(pulls.compactMap { $0.text(0) }.joined(separator: ", "))\n" }
         if let link = Optional(Self.link(conversation.sessionID)), !link.isEmpty { out += "open in Better Claude: \(link)\n" }
         if first > 0 { out += "(starting at message \(first))\n" }
         var budget = maxCharacters
@@ -167,7 +169,8 @@ public struct Recall: Sendable {
                    (SELECT text FROM messages WHERE conversation_id = c.id AND role = 'user' AND kind = 'message'
                     ORDER BY ordinal LIMIT 1),
                    (SELECT text FROM messages WHERE conversation_id = c.id AND kind = 'recap'
-                    ORDER BY ordinal DESC LIMIT 1)
+                    ORDER BY ordinal DESC LIMIT 1),
+                   (SELECT GROUP_CONCAT(url, ', ') FROM pull_requests WHERE conversation_id = c.id)
             FROM conversations c WHERE \(filters.joined(separator: " AND "))
             ORDER BY c.last_activity DESC LIMIT ?
             """, values)
@@ -181,6 +184,7 @@ public struct Recall: Sendable {
             out += "\n"
             if let asked = row.text(7) { out += "  first asked: \(Self.clip(asked, 280))\n" }
             if let recap = row.text(8) { out += "  Claude's recap: \(Self.clip(recap, 400))\n" }
+            if let pulls = row.text(9) { out += "  pull requests: \(pulls)\n" }
         }
         return out
     }

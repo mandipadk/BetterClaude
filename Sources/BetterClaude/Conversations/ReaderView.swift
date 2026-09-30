@@ -162,6 +162,31 @@ struct ReaderHeader: View {
                 Spacer(minLength: 0)
             }
 
+            if let readable, !readable.pullRequests.isEmpty || !related(readable).isEmpty {
+                HStack(alignment: .top, spacing: 28) {
+                    if !readable.pullRequests.isEmpty {
+                        Fact(label: readable.pullRequests.count == 1 ? "Pull request" : "Pull requests") {
+                            HStack(spacing: 10) {
+                                ForEach(readable.pullRequests, id: \.self) { pull in
+                                    Link(pull.name, destination: pull.url)
+                                        .foregroundStyle(Theme.accent)
+                                        .help(pull.url.absoluteString)
+                                }
+                            }
+                        }
+                    }
+                    ForEach(related(readable), id: \.conversation.id) { item in
+                        Fact(label: item.label) {
+                            Button(item.conversation.title) { services.selectedConversationID = item.conversation.id }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(Theme.accent)
+                                .help("Open it")
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+
             FindField(text: $reader.findQuery)
                 .frame(maxWidth: 260)
         }
@@ -169,6 +194,18 @@ struct ReaderHeader: View {
 }
 
 extension ReaderHeader {
+    /// The conversations this one came from or went on in, when they're still on this Mac.
+    func related(_ readable: ReadableConversation) -> [(label: String, conversation: ConversationRef)] {
+        readable.relatives.compactMap { relative in
+            switch relative {
+            case .continuedIn(let id):
+                return services.conversation(forSession: id).map { ("Continued in", $0) }
+            case .forkedFrom(let id):
+                return services.conversation(forSession: id).map { ("Forked from", $0) }
+            }
+        }
+    }
+
     /// "in 3 days" when Claude Code's cleanup is near, for a conversation Claude Code owns.
     var deletionText: String? {
         guard let url = conversation.claudeCodeSession?.transcriptURL,

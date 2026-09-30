@@ -71,6 +71,11 @@ extension FormatContract {
             Requirement(kinds: ["file-history-delta"], path: "backup.version", types: number, feature: "file versions"),
             Requirement(kinds: ["file-history-delta"], path: "backup.backupFileName", types: textOrNull, feature: "file versions"),
             Requirement(kinds: ["file-history-delta"], path: "backup.backupTime", types: text, feature: "file versions"),
+            // Pull requests and where a conversation came from or went on.
+            Requirement(kinds: ["pr-link"], path: "prUrl", types: text, feature: "pull requests"),
+            Requirement(kinds: ["pr-link"], path: "prNumber", types: number, feature: "pull requests", optional: true),
+            Requirement(kinds: ["continued-in"], path: "continuedInSessionId", types: text, feature: "where a conversation went on"),
+            Requirement(kinds: ["branched-from"], path: "sourceSessionId", types: text, feature: "where a fork came from"),
             // What needs attention.
             Requirement(kinds: ["attachment/deferred_tools_delta"], path: "attachment.failedMcpServers", types: ["array"],
                         feature: "MCP servers that failed", optional: true),
@@ -85,11 +90,11 @@ extension FormatContract {
             // Read.
             "user", "assistant", "ai-title", "custom-title", "system/away_summary", "system/compact_boundary",
             "cost-state", "file-history-snapshot", "file-history-delta", "attachment/deferred_tools_delta",
-            "attachment/hook_non_blocking_error",
+            "attachment/hook_non_blocking_error", "pr-link", "continued-in", "branched-from",
             // Looked at, and not needed: Claude Code's own bookkeeping, reminders it gives itself,
             // and context it adds to a turn.
             "summary", "last-prompt", "mode", "permission-mode", "agent-name", "queue-operation", "atis-latch",
-            "frame-link", "pr-link", "continued-in", "branched-from", "bridge-session", "history-suppression",
+            "frame-link", "bridge-session", "history-suppression",
             "artifact-autoreact-ledger", "artifact-comment-monitor", "progress",
             "system/stop_hook_summary", "system/turn_duration", "system/local_command", "system/informational",
             "system/api_error", "system/model_refusal_fallback", "system/bridge_status",

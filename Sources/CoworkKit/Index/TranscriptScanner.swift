@@ -77,7 +77,16 @@ public struct TranscriptScan: Sendable {
         public let linesRemoved: Int64
     }
 
+    /// A pull request Claude Code linked to the conversation.
+    public struct PullRequest: Sendable, Equatable {
+        public let url: String
+        public let number: Int?
+        public let repository: String?
+        public let timestamp: Date?
+    }
+
     public var messages: [Message] = []
+    public var pullRequests: [PullRequest] = []
     public var usage: [Usage] = []
     public var toolCalls: [ToolCall] = []
     public var fileVersions: [FileVersion] = []
@@ -227,6 +236,10 @@ public enum TranscriptScanner {
                 path: path, version: Int(version), backupFileName: backup["backupFileName"]?.stringValue,
                 backupTime: backup["backupTime"]?.stringValue.flatMap(Transcript.parseTimestamp),
                 messageID: record["snapshotMessageId"]?.stringValue ?? record["messageId"]?.stringValue))
+        case "pr-link":
+            guard let url = record["prUrl"]?.stringValue, url.hasPrefix("https://") else { return }
+            result.pullRequests.append(.init(url: url, number: record["prNumber"]?.intValue.map(Int.init),
+                                             repository: record["prRepository"]?.stringValue, timestamp: timestamp))
         case "cost-state":
             result.cost = .init(totalUSD: record["totalCostUSD"]?.doubleValue ?? 0,
                                 linesAdded: record["totalLinesAdded"]?.intValue ?? 0,
