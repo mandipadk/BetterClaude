@@ -48,6 +48,27 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 ICONSET="$(dirname "$APP")/BetterClaude.iconset"
 
+# Shortcuts and Siri find the app's actions from Metadata.appintents, which Xcode makes with
+# appintentsmetadataprocessor. SwiftPM builds leave the compiler's constant values behind, so
+# the same tool runs here. Without it the app still works; the actions just don't appear.
+INTENTS_WORK="$(mktemp -d)"
+CONFIG_DIR="$([ "$CONFIG" = "release" ] && echo Release || echo Debug)"
+find "$ROOT/.build/out/Intermediates.noindex/BetterClaude.build/$CONFIG_DIR/BetterClaude-p.build/Objects-normal/arm64" \
+  -name '*.swiftconstvalues' > "$INTENTS_WORK/constvals.txt" 2>/dev/null
+find "$ROOT/Sources/BetterClaude" -name '*.swift' > "$INTENTS_WORK/sources.txt"
+if [ -s "$INTENTS_WORK/constvals.txt" ] && xcrun --find appintentsmetadataprocessor >/dev/null 2>&1; then
+  xcrun appintentsmetadataprocessor --output "$APP/Contents/Resources" \
+    --toolchain-dir "$(dirname "$(dirname "$(dirname "$(xcrun --find swiftc)")")")" \
+    --module-name BetterClaude --sdk-root "$(xcrun --sdk macosx --show-sdk-path)" \
+    --xcode-version "$(xcodebuild -version | awk '/Build version/ {print $3}')" \
+    --platform-family macOS --deployment-target 14.0 --target-triple arm64-apple-macos14.0 \
+    --source-file-list "$INTENTS_WORK/sources.txt" --swift-const-vals-list "$INTENTS_WORK/constvals.txt" >/dev/null 2>&1 \
+    || echo "Shortcuts actions weren't described; the app works without them."
+else
+  echo "Shortcuts actions weren't described: no compiler constant values found."
+fi
+rm -rf "$INTENTS_WORK"
+
 # Icon: generated rather than checked in, so the mark stays tied to the palette in
 # Theme.swift and every size is redrawn from the same geometry.
 ICON_BIN="${TMPDIR:-/tmp/}bc-icon"

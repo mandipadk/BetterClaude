@@ -12,6 +12,10 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.17.0": [
+            Item(symbol: "square.stack.3d.up", title: "Shortcuts and Siri",
+                 detail: "Search Claude History and Show Claude Limits are actions in Shortcuts, and work from Spotlight and Siri: “Search Better Claude history”, “Show my Better Claude limits”."),
+        ],
         "0.16.0": [
             Item(symbol: "signpost.right.and.left", title: "Decisions",
                  detail: "A project's page lists what was settled in its conversations, from what you said and Claude's summaries, each linked to where. Claude's history tools can check them before deciding the same thing again."),

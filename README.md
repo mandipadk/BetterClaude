@@ -57,6 +57,12 @@ decided, each linked to its conversation. Anything that isn't really a decision 
 dismissed. Claude's `decisions` tool gives Claude the same list, so it checks before
 deciding again.
 
+### Shortcuts and Siri
+
+**Search Claude History** and **Show Claude Limits** are Shortcuts actions, so they work in
+your own shortcuts, from Spotlight, and by asking Siri ("Search Better Claude history",
+"Show my Better Claude limits"). Both read Better Claude's index on your Mac.
+
 ### Claude remembers your past work
 
 Better Claude ships an MCP server, `bc-recall`, inside the app. Switch it on from an
