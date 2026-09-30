@@ -23,7 +23,7 @@ struct ProvenanceTests {
             #expect(try await FileProvenance.recentFiles(index: index, matching: "backoff").map(\.path) == [backoff])
 
             let history = try await FileProvenance.history(of: deliver, index: index, paths: sample.paths)
-            #expect(history.versions.count == 1)
+            #expect(history.versions.count == 2)
             #expect(history.versions.first?.copy != nil)
             #expect(history.versions.first?.conversationTitle == "Retry failed webhook deliveries with backoff")
             #expect(history.conversations.first?.tools.contains("Edit") == true)
@@ -109,7 +109,8 @@ struct ProvenanceTests {
             try Data("# Plan\n".utf8).write(to: plans.appendingPathComponent("retry-plan.md"))
 
             let report = KeptFileHistory.keep(configDirs: [config], paths: sample.paths)
-            #expect(report.copied == 2)
+            // Two saved versions of deliver.ts, and the plan.
+            #expect(report.copied == 3)
             #expect(KeptFileHistory.keep(configDirs: [config], paths: sample.paths).copied == 0)
 
             try FileManager.default.removeItem(at: config.appendingPathComponent("file-history"))

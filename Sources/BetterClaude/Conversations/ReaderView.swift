@@ -121,6 +121,7 @@ struct ReaderHeader: View {
                         .disabled(conversation.isTranscriptMissing)
                     if conversation.external == nil {
                         Button("What It Changed…") { services.rewinding = RewindModel(conversation: conversation) }
+                        Button("Watch It Change…") { services.watching = TimelapseModel(conversation: conversation) }
                     }
                     Divider()
                     if let session = conversation.claudeCodeSession, !session.resolvedCwd.isEmpty,

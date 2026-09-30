@@ -12,6 +12,10 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.19.0": [
+            Item(symbol: "film.stack", title: "Watch it change",
+                 detail: "Watch It Change… in a conversation's ⋯ menu plays a file through the conversation step by step, from before it to now, each change beside what was asked for it."),
+        ],
         "0.18.0": [
             Item(symbol: "laptopcomputer", title: "Another Mac's history",
                  detail: "File, Open Another Mac's Backup… opens a backup made on your other Mac. The conversations it kept join your timeline and search under that Mac's name, read-only."),

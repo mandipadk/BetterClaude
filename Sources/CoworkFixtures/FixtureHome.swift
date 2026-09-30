@@ -670,9 +670,24 @@ public struct FixtureHome {
             "type": "pr-link", "sessionId": conversation.cliId, "timestamp": saved, "prNumber": 318,
             "prRepository": "northwind/billing-service", "prUrl": "https://github.com/northwind/billing-service/pull/318",
         ] as [String: Any], options: [.sortedKeys, .withoutEscapingSlashes])
+        // A second version of deliver.ts, saved as the second prompt's turn began.
+        try Data(Self.deliverMiddle.utf8).write(to: history.appendingPathComponent("3f1c9a2b7d4e8f60@v2"))
+        let prompts = try String(contentsOf: transcript, encoding: .utf8).components(separatedBy: "\n").compactMap { line -> String? in
+            guard let record = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  record["type"] as? String == "user", let message = record["message"] as? [String: Any],
+                  message["content"] is String else { return nil }
+            return record["uuid"] as? String
+        }
+        let middle = try JSONSerialization.data(withJSONObject: [
+            "type": "file-history-delta", "messageId": "delta-2", "snapshotMessageId": prompts.dropFirst().first ?? "",
+            "trackingPath": deliver.path, "timestamp": Transcriber.stamp(now.addingTimeInterval(-conversation.age + 120)),
+            "backup": ["backupFileName": "3f1c9a2b7d4e8f60@v2", "version": 2,
+                       "backupTime": Transcriber.stamp(now.addingTimeInterval(-conversation.age + 120))],
+        ] as [String: Any], options: [.sortedKeys, .withoutEscapingSlashes])
         let handle = try FileHandle(forWritingTo: transcript)
         try handle.seekToEnd()
-        try handle.write(contentsOf: line + Data("\n".utf8) + health + Data("\n".utf8) + pull + Data("\n".utf8))
+        try handle.write(contentsOf: line + Data("\n".utf8) + middle + Data("\n".utf8) + health + Data("\n".utf8)
+                         + pull + Data("\n".utf8))
         try handle.close()
         try touch(transcript, at: now.addingTimeInterval(-conversation.age + Double(conversation.turns.count) * 95 + 30))
     }
@@ -710,6 +725,17 @@ public struct FixtureHome {
           if (!response.ok) {
             log.warn("webhook delivery failed", { id: event.id, status: response.status })
           }
+        }
+
+        """
+
+    /// Halfway: retries without backoff, before the cap was asked for.
+    public static let deliverMiddle = """
+        export async function deliver(event: WebhookEvent, attempt = 0) {
+          const response = await fetch(event.url, { method: "POST", body: JSON.stringify(event.payload) })
+          if (response.ok) return
+          log.warn("webhook delivery failed", { id: event.id, status: response.status, attempt })
+          return deliver(event, attempt + 1)
         }
 
         """

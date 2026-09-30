@@ -410,6 +410,7 @@ final class AppServices {
     /// A replay being set up or run, as a sheet.
     var replaying: ReplayModel?
     var rewinding: RewindModel?
+    var watching: TimelapseModel?
     var lookingBack: MonthModel?
 
     /// The handoff being written, as a sheet.

@@ -126,6 +126,10 @@ conversation created are taken away, and Undo in History reverses the whole thin
 long after the session ended, and after Claude Code's cleanup for versions Better Claude
 kept. Claude's `conversation_changes` tool gives Claude the same list.
 
+**Watch It Change…** plays one of those files through the conversation: from before it,
+through each version Claude Code saved, to now, each change shown as a diff beside what was
+asked in the turn that made it. Scrub or press Play.
+
 ### Ask
 
 A question about your past work, answered by the model built into macOS from passages the

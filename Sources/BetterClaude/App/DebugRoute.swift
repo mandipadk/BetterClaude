@@ -117,6 +117,16 @@ enum DebugRoute {
                     while !services.index.isReady { try? await Task.sleep(for: .milliseconds(50)) }
                     services.replaying = ReplayModel(conversation: match)
                 }
+            case "timelapse":
+                if let match = services.snapshot.conversations.first(where: { $0.title.localizedCaseInsensitiveContains(argument) }) {
+                    services.selectedConversationID = match.id
+                    while !services.index.isReady { try? await Task.sleep(for: .milliseconds(50)) }
+                    let model = TimelapseModel(conversation: match)
+                    services.watching = model
+                    // The last step: what the final turn changed.
+                    while model.timelapse == nil { try? await Task.sleep(for: .milliseconds(50)) }
+                    model.step = max(0, (model.timelapse?.frames.count ?? 1) - 1)
+                }
             case "rewind":
                 if let match = services.snapshot.conversations.first(where: { $0.title.localizedCaseInsensitiveContains(argument) }) {
                     services.selectedConversationID = match.id

@@ -101,6 +101,10 @@ struct MainWindow: View {
             MonthSheet(model: model) { services.lookingBack = nil }
                 .environment(services)
         }
+        .sheet(item: $services.watching) { model in
+            TimelapseSheet(model: model) { services.watching = nil }
+                .environment(services)
+        }
         .sheet(item: $services.rewinding) { model in
             RewindSheet(model: model) { services.rewinding = nil }
                 .environment(services)
