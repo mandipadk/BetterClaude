@@ -127,7 +127,8 @@ whether anyone asked for it: you with `/model`, Claude Code with a fallback afte
 or nothing on record. Usage lists every change nobody asked for in the last month, and a
 running session that switches on its own sends a notification.
 
-Every sub-agent a Claude Code conversation spawned is listed under its title: what kind it
+Every sub-agent a Claude Code conversation spawned is listed under its title, after a
+timeline of who was working when, with the conversation and each sub-agent as a lane: what kind it
 was, the task it was given, its model, replies, tools and cost, what it came back with, and
 the sub-agents it spawned in turn. Runs that ended without replying, and ones that ran on a
 different model than they were asked to, are marked. Their usage

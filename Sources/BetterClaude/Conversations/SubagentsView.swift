@@ -10,6 +10,7 @@ struct SubagentsView: View {
     @AppStorage("subagentsOpen") private var open = false
     @State private var runs: [Subagents.Run] = []
     @State private var expanded: Set<String> = []
+    @State private var ownReplies: [Date] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
@@ -34,6 +35,7 @@ struct SubagentsView: View {
                 .buttonStyle(.plain)
 
                 if open {
+                    if runs.contains(where: { $0.started != nil }) { timeline }
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(runs) { run in row(run) }
                     }
@@ -47,7 +49,82 @@ struct SubagentsView: View {
         .task(id: "\(conversation.id)#\(services.index.generation)") {
             guard let index = services.index.index else { return }
             runs = (try? await Subagents.runs(conversationID: conversation.id, index: index)) ?? []
+            guard !runs.isEmpty else { return }
+            ownReplies = (try? await FlightRecord.load(conversationID: conversation.id, index: index))?.replies.map(\.timestamp) ?? []
         }
+    }
+
+    /// Who was working when: the conversation's own replies and each sub-agent, as lanes.
+    private var timeline: some View {
+        let lanes = laneData
+        let start = lanes.flatMap { $0.spans.map(\.0) }.min() ?? Date()
+        let end = lanes.flatMap { $0.spans.map(\.1) }.max() ?? start
+        let length = max(60, end.timeIntervalSince(start))
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Who was working when").font(Theme.Font.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(start.formatted(date: .omitted, time: .shortened)) to \(end.formatted(date: .omitted, time: .shortened))")
+                    .font(Theme.Font.caption).foregroundStyle(.secondary).monospacedDigit()
+            }
+            ForEach(lanes, id: \.id) { lane in
+                HStack(spacing: 10) {
+                    Text(lane.label)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(lane.depth == 0 ? .primary : .secondary)
+                        .lineLimit(1)
+                        .padding(.leading, CGFloat(max(0, lane.depth - 1)) * 12)
+                        .frame(width: 190, alignment: .leading)
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Theme.hairline).frame(height: 2)
+                            ForEach(Array(lane.spans.enumerated()), id: \.offset) { _, span in
+                                let x = geometry.size.width * span.0.timeIntervalSince(start) / length
+                                let width = max(6, geometry.size.width * span.1.timeIntervalSince(span.0) / length)
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(lane.failed ? Theme.attention : Theme.accent.opacity(lane.depth == 0 ? 0.9 : 0.55))
+                                    .frame(width: min(width, geometry.size.width - x), height: 10)
+                                    .offset(x: x)
+                            }
+                        }
+                        .frame(height: geometry.size.height)
+                    }
+                    .frame(height: 14)
+                }
+            }
+        }
+        .padding(Theme.Space.l)
+        .background(Theme.subtleFill, in: .rect(cornerRadius: Theme.Radius.tile))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Timeline of the conversation and its \(runs.count) sub-agents")
+    }
+
+    private struct Lane {
+        let id: String
+        let label: String
+        let depth: Int
+        let spans: [(Date, Date)]
+        let failed: Bool
+    }
+
+    private var laneData: [Lane] {
+        var lanes: [Lane] = []
+        // The conversation's own work, as stretches of replies less than five minutes apart.
+        var spans: [(Date, Date)] = []
+        for at in ownReplies.sorted() {
+            if let last = spans.last, at.timeIntervalSince(last.1) < 300 { spans[spans.count - 1].1 = at } else { spans.append((at, at)) }
+        }
+        let first = runs.compactMap(\.started).min() ?? .distantPast
+        let last = runs.compactMap(\.ended).max() ?? .distantFuture
+        // Only the stretch around the sub-agents, so the lanes line up at a readable scale.
+        let near = spans.filter { $0.1 >= first.addingTimeInterval(-1_800) && $0.0 <= last.addingTimeInterval(1_800) }
+        if !near.isEmpty { lanes.append(Lane(id: "main", label: "Claude", depth: 0, spans: near, failed: false)) }
+        for (offset, run) in runs.enumerated() {
+            guard let start = run.started else { continue }
+            lanes.append(Lane(id: run.agentID, label: "\(offset + 1). \(run.title)", depth: run.depth,
+                              spans: [(start, run.ended ?? start)], failed: run.result == nil))
+        }
+        return lanes
     }
 
     private var summary: String {

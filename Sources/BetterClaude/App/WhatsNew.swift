@@ -12,6 +12,10 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.27.0": [
+            Item(symbol: "chart.bar.xaxis", title: "Who was working when",
+                 detail: "A conversation's sub-agents open with a timeline: the conversation and each sub-agent as a lane, nested ones under their parent, so a run that fanned out finally makes sense."),
+        ],
         "0.26.0": [
             Item(symbol: "moon.zzz", title: "Unattended",
                  detail: "Running shows background jobs and conversations that loop on their own: how each ended, what it came back with, and the ones that stopped without finishing. A job that finishes, fails or stalls sends a notification."),
