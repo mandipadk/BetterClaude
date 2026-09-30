@@ -10,7 +10,7 @@ import Foundation
 public actor HistoryIndex {
 
     /// Bumped whenever the schema or what gets extracted changes; an older file is rebuilt.
-    public static let schemaVersion = 10
+    public static let schemaVersion = 11
 
     /// One file per schema, so an older copy of the app still running during an update
     /// keeps its own index instead of rebuilding this one back and forth.
@@ -180,10 +180,17 @@ public actor HistoryIndex {
             PRIMARY KEY (conversation_id, url)
         );
         CREATE INDEX IF NOT EXISTS pull_requests_number ON pull_requests(number);
+        CREATE TABLE IF NOT EXISTS model_markers (
+            conversation_id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            timestamp REAL
+        );
+        CREATE INDEX IF NOT EXISTS model_markers_conversation ON model_markers(conversation_id);
         CREATE TABLE IF NOT EXISTS subagents (
             conversation_id TEXT NOT NULL,
             agent_id TEXT NOT NULL,
             agent_type TEXT,
+            requested_model TEXT,
             description TEXT,
             tool_use_id TEXT,
             parent_agent_id TEXT,
@@ -360,11 +367,11 @@ public actor HistoryIndex {
                 let result = scan.messages.last { $0.role == .assistant }?.text
                 let meta = job.file.meta
                 try database.run("""
-                    INSERT OR REPLACE INTO subagents (conversation_id, agent_id, agent_type, description, tool_use_id,
+                    INSERT OR REPLACE INTO subagents (conversation_id, agent_id, agent_type, requested_model, description, tool_use_id,
                         parent_agent_id, depth, model, first_activity, last_activity, replies, tools, prompt, result,
                         source_path, source_size, source_mtime)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, [id, agent, .optional(meta?.agentType), .optional(meta?.description), .optional(meta?.toolUseID),
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, [id, agent, .optional(meta?.agentType), .optional(meta?.model), .optional(meta?.description), .optional(meta?.toolUseID),
                           .optional(meta?.parentAgentID), meta?.depth.map { .int(Int64($0)) } ?? .null,
                           .optional(scan.usage.last?.model), .date(scan.firstTimestamp), .date(scan.lastTimestamp),
                           .int(Int64(scan.usage.count)), .int(Int64(scan.toolCalls.count)),
@@ -412,6 +419,7 @@ public actor HistoryIndex {
             try database.run("DELETE FROM file_versions WHERE conversation_id = ?", [id])
             try database.run("DELETE FROM health WHERE conversation_id = ?", [id])
             try database.run("DELETE FROM pull_requests WHERE conversation_id = ?", [id])
+            try database.run("DELETE FROM model_markers WHERE conversation_id = ?", [id])
         }
         let insertMessage = try database.prepare("""
             INSERT INTO messages (conversation_id, ordinal, uuid, role, kind, timestamp, text)
@@ -461,6 +469,10 @@ public actor HistoryIndex {
                 : URL(fileURLWithPath: root!).appendingPathComponent(version.path).standardizedFileURL.path
             try insertVersion.run([id, .text(path), .int(Int64(version.version)), .optional(version.backupFileName),
                                    .date(version.backupTime), .optional(version.messageID)])
+        }
+        let insertMarker = try database.prepare("INSERT INTO model_markers (conversation_id, kind, timestamp) VALUES (?, ?, ?)")
+        for marker in scan.modelMarkers {
+            try insertMarker.run([id, .text(marker.kind.rawValue), .date(marker.timestamp)])
         }
         let insertPull = try database.prepare("""
             INSERT OR IGNORE INTO pull_requests (conversation_id, url, number, repository, timestamp) VALUES (?, ?, ?, ?, ?)

@@ -193,6 +193,7 @@ struct ReaderHeader: View {
             }
 
             if conversation.external == nil {
+                ModelSwitchesView(conversation: conversation)
                 FlightRecorderView(conversation: conversation)
                 SubagentsView(conversation: conversation)
             }

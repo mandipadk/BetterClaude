@@ -195,6 +195,14 @@ final class AppServices {
                 pulse.notifier.post(nudge)
                 sent.append(nudge.key)
             }
+            // A running session whose replies just changed model on their own.
+            for session in live {
+                let switches = (try? await ModelDrift.switches(conversationID: session.conversationID, index: history)) ?? []
+                guard let latest = switches.last, latest.cause == .unexplained,
+                      Date().timeIntervalSince(latest.at) < 20 * 60, !sent.contains("drift|" + latest.id) else { continue }
+                pulse.notifier.post(drift: latest, project: session.project)
+                sent.append("drift|" + latest.id)
+            }
             defaults.set(Array(sent.suffix(300)), forKey: Self.coachedKey)
         }
     }

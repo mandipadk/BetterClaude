@@ -75,6 +75,10 @@ struct SubagentsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(run.title).font(Theme.Font.body).lineLimit(1)
                         Text(facts(run)).font(Theme.Font.caption).foregroundStyle(.secondary).lineLimit(1)
+                        if run.ranOnOtherModel, let asked = run.requestedModel, let model = run.model {
+                            Text("Asked for \(asked.prefix(1).uppercased() + asked.dropFirst()), ran on \(humanModelName(model))")
+                                .font(Theme.Font.caption).foregroundStyle(Theme.attention)
+                        }
                         if run.result == nil {
                             Text("Ended without replying").font(Theme.Font.caption).foregroundStyle(Theme.attention)
                         }

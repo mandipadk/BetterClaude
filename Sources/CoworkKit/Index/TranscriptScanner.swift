@@ -85,8 +85,17 @@ public struct TranscriptScan: Sendable {
         public let timestamp: Date?
     }
 
+    /// Something that explains a change of model: you asked with /model, or Claude Code fell
+    /// back after a refusal.
+    public struct ModelMarker: Sendable, Equatable {
+        public enum Kind: String, Sendable { case requested, fallback }
+        public let kind: Kind
+        public let timestamp: Date?
+    }
+
     public var messages: [Message] = []
     public var pullRequests: [PullRequest] = []
+    public var modelMarkers: [ModelMarker] = []
     public var usage: [Usage] = []
     public var toolCalls: [ToolCall] = []
     public var fileVersions: [FileVersion] = []
@@ -187,12 +196,21 @@ public enum TranscriptScanner {
             if record["isMeta"]?.boolValue == true { return }
             let text = ConversationText.plainText(of: message)
             guard !text.isEmpty else { return }
-            if type == "user", InjectedContext.contains(text) { return }
+            if type == "user", InjectedContext.contains(text) {
+                if text.contains("<command-name>/model") {
+                    result.modelMarkers.append(.init(kind: .requested, timestamp: timestamp))
+                }
+                return
+            }
             let isCompaction = record["isCompactSummary"]?.boolValue == true
             result.messages.append(.init(uuid: uuid, role: type == "user" ? .user : .assistant,
                                          kind: isCompaction ? .compaction : .message,
                                          timestamp: timestamp, text: text))
         case "system":
+            if record["subtype"]?.stringValue == "model_refusal_fallback" {
+                result.modelMarkers.append(.init(kind: .fallback, timestamp: timestamp))
+                return
+            }
             guard record["subtype"]?.stringValue == "away_summary",
                   let text = record["content"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !text.isEmpty else { return }
@@ -205,6 +223,8 @@ public enum TranscriptScanner {
         case "attachment":
             guard let attachment = record["attachment"] else { return }
             switch attachment["type"]?.stringValue {
+            case "model":
+                result.modelMarkers.append(.init(kind: .requested, timestamp: timestamp))
             case "deferred_tools_delta":
                 for server in attachment["failedMcpServers"]?.arrayValue ?? [] {
                     guard let name = server["name"]?.stringValue else { continue }

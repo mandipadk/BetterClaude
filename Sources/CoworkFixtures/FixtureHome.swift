@@ -570,6 +570,8 @@ public struct FixtureHome {
             var meta: [String: Any] = ["agentType": agent.type, "description": agent.description,
                                        "toolUseId": "toolu_spawn_\(agent.id)", "spawnDepth": agent.depth]
             if let parent = agent.parent { meta["parentAgentId"] = parent }
+            // The helper was asked to run on Opus, and didn't.
+            if agent.id == "c3d2helper" { meta["model"] = "opus" }
             try Data(try JSONSerialization.data(withJSONObject: meta, options: [.sortedKeys])).write(to: folder.appendingPathComponent("agent-\(agent.id).meta.json"))
         }
         // An older sub-agent, from before Claude Code wrote a meta file, that stopped mid-task.
@@ -681,7 +683,8 @@ public struct FixtureHome {
             let id = "msg_long\(step)"
             lines.append(try JSONSerialization.data(withJSONObject: [
                 "type": "assistant", "isSidechain": true, "timestamp": Transcriber.stamp(time),
-                "message": ["role": "assistant", "model": conversation.model, "id": id,
+                // Partway through, replies came from another model with nothing asking for it.
+                "message": ["role": "assistant", "model": step >= 50 ? "claude-opus-4-8" : conversation.model, "id": id,
                             "usage": ["input_tokens": 4, "output_tokens": 180 + (step * 53) % 900,
                                       "cache_read_input_tokens": context,
                                       "cache_creation_input_tokens": 2_000 + (step * 71) % 3_000],
@@ -689,6 +692,11 @@ public struct FixtureHome {
                                          "input": ["file_path": project.appendingPathComponent("src/DatePicker.tsx").path]]]],
             ] as [String: Any], options: [.sortedKeys]))
         }
+        // Then you switched back, with /model, before the conversation's own turns.
+        lines.append(try JSONSerialization.data(withJSONObject: [
+            "type": "user", "isSidechain": true, "timestamp": Transcriber.stamp(now.addingTimeInterval(-conversation.age - 60)),
+            "message": ["role": "user", "content": "<command-name>/model</command-name>\n<command-args>sonnet</command-args>"],
+        ] as [String: Any], options: [.sortedKeys]))
         let handle = try FileHandle(forWritingTo: transcript)
         try handle.seekToEnd()
         for line in lines { try handle.write(contentsOf: line + Data("\n".utf8)) }

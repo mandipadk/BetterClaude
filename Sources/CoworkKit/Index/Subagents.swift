@@ -11,9 +11,11 @@ public enum Subagents {
         public let toolUseID: String?
         public let parentAgentID: String?
         public let depth: Int?
+        /// The model it was asked to run on: "opus", "sonnet", "inherit", or an id.
+        public let model: String?
 
         enum CodingKeys: String, CodingKey {
-            case agentType, description
+            case agentType, description, model
             case toolUseID = "toolUseId"
             case parentAgentID = "parentAgentId"
             case depth = "spawnDepth"
@@ -49,6 +51,8 @@ public enum Subagents {
         public let parentAgentID: String?
         public let depth: Int
         public let model: String?
+        /// The model it was asked for, when it was asked for one.
+        public let requestedModel: String?
         public let started: Date?
         public let ended: Date?
         public let replies: Int
@@ -57,6 +61,12 @@ public enum Subagents {
         public let result: String?
         public let cost: Double
         public let tokens: Int64
+
+        /// Asked for one model family and ran on another.
+        public var ranOnOtherModel: Bool {
+            guard let requested = requestedModel?.lowercased(), requested != "inherit", let model = model?.lowercased() else { return false }
+            return !model.contains(requested.replacingOccurrences(of: "claude-", with: ""))
+        }
 
         public var title: String {
             if let description, !description.isEmpty { return description }
@@ -81,12 +91,13 @@ public enum Subagents {
         }
         let runs = try await index.rows("""
             SELECT agent_id, agent_type, description, parent_agent_id, depth, model, first_activity, last_activity,
-                   replies, tools, prompt, result
+                   replies, tools, prompt, result, requested_model
             FROM subagents WHERE conversation_id = ? ORDER BY first_activity
             """, [.text(conversationID)]).compactMap { row -> Run? in
             guard let agent = row.text(0) else { return nil }
             return Run(agentID: agent, type: row.text(1), description: row.text(2), parentAgentID: row.text(3),
-                       depth: Int(row.intOrNil(4) ?? 1), model: row.text(5), started: row.date(6), ended: row.date(7),
+                       depth: Int(row.intOrNil(4) ?? 1), model: row.text(5), requestedModel: row.text(12),
+                       started: row.date(6), ended: row.date(7),
                        replies: Int(row.int(8)), tools: Int(row.int(9)), prompt: row.text(10), result: row.text(11),
                        cost: costs[agent]?.0 ?? 0, tokens: costs[agent]?.1 ?? 0)
         }

@@ -171,6 +171,21 @@ final class PulseNotifier: NSObject, UNUserNotificationCenterDelegate {
     static let limitsKey = "notifyLimits"
     static let contextKey = "notifyContext"
 
+    /// A running session's replies switched model with nothing on record asking for it.
+    func post(drift change: ModelDrift.Switch, project: String) {
+        guard Self.available, UserDefaults.standard.object(forKey: Self.contextKey) as? Bool ?? true else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "\(project) switched to \(humanModelName(change.to)) on its own"
+        content.body = "Its replies came from \(humanModelName(change.from)) until now, and nothing on record asked for the change."
+        content.userInfo = ["conversation": change.conversationID]
+        content.threadIdentifier = change.conversationID
+        let request = UNNotificationRequest(identifier: "drift.\(change.id)", content: content, trigger: nil)
+        Task {
+            guard await ensureAuthorized() else { return }
+            try? await UNUserNotificationCenter.current().add(request)
+        }
+    }
+
     /// A running session has read most of its context window.
     func post(_ nudge: ContextCoach.Nudge) {
         guard Self.available, UserDefaults.standard.object(forKey: Self.contextKey) as? Bool ?? true else { return }

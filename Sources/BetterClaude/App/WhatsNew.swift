@@ -12,6 +12,12 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.21.0": [
+            Item(symbol: "arrow.triangle.swap", title: "Model changes you didn't ask for",
+                 detail: "A conversation says when its replies switched model and whether anyone asked, with /model or a fallback. Usage lists the ones nobody asked for, and a running session that switches on its own sends a notification."),
+            Item(symbol: "person.2.wave.2", title: "Sub-agents on the wrong model",
+                 detail: "A sub-agent asked to run on one model that ran on another is marked."),
+        ],
         "0.20.0": [
             Item(symbol: "person.2.wave.2", title: "Sub-agents",
                  detail: "Every sub-agent a Claude Code conversation spawned, under its title: what it was asked, what it came back with, what it cost, and the ones it spawned in turn."),
