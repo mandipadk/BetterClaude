@@ -112,13 +112,8 @@ public enum Backup {
     /// Opens a backup and adds whatever it holds that isn't here already. Nothing already on
     /// this Mac is replaced, so restoring onto a Mac in use only fills in what's missing.
     @discardableResult
-    public static func restore(from backup: URL, password: String, paths: HostPaths = .current) throws -> Report {
-        let fm = FileManager.default
-        let target = paths.betterClaudeSupport
-        let staging = target.appendingPathComponent(".restoring-\(UUID().uuidString.prefix(8))", isDirectory: true)
-        try fm.createDirectory(at: staging, withIntermediateDirectories: true)
-        defer { try? fm.removeItem(at: staging) }
-
+    /// Decrypts and unpacks a backup into `folder`.
+    static func extract(_ backup: URL, password: String, into staging: URL) throws {
         guard let input = ArchiveByteStream.fileStream(path: FilePath(backup.path), mode: .readOnly, options: [],
                                                        permissions: FilePermissions(rawValue: 0o644)),
               let context = ArchiveEncryptionContext(from: input) else { throw Failure.wrongPasswordOrDamaged }
@@ -139,6 +134,16 @@ public enum Backup {
             try? decrypted.close()
             throw Failure.wrongPasswordOrDamaged
         }
+    }
+
+    public static func restore(from backup: URL, password: String, paths: HostPaths = .current) throws -> Report {
+        let fm = FileManager.default
+        let target = paths.betterClaudeSupport
+        let staging = target.appendingPathComponent(".restoring-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: staging) }
+
+        try extract(backup, password: password, into: staging)
 
         var report = Report()
         guard let walker = fm.enumerator(at: staging, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey]) else { return report }

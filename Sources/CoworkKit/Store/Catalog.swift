@@ -286,6 +286,15 @@ public actor Catalog {
             }
         }
 
+        for mac in installs where mac.kind == .external(.otherMac) {
+            for conversation in OtherMacs.conversations(in: mac.dataRoot) {
+                conversations.append(ConversationRef(
+                    origin: .external(conversation), installID: mac.id, title: conversation.title,
+                    lastActivity: conversation.updatedAt, projectPath: conversation.cwd, model: nil,
+                    bytes: 0, isStarred: false, isArchived: false, accountID: nil))
+            }
+        }
+
         conversations.sort {
             $0.lastActivity == $1.lastActivity ? $0.id < $1.id : $0.lastActivity > $1.lastActivity
         }

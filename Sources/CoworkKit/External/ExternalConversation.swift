@@ -7,11 +7,14 @@ public struct ExternalConversation: Sendable, Hashable {
         /// Conversations from claude.ai, imported from its data export.
         case claudeWeb
         case codex
+        /// Kept conversations from another Mac, opened from its backup.
+        case otherMac
 
         public var name: String {
             switch self {
             case .claudeWeb: return "claude.ai"
             case .codex: return "Codex"
+            case .otherMac: return "Another Mac"
             }
         }
     }
@@ -44,6 +47,7 @@ public struct ExternalConversation: Sendable, Hashable {
         switch source {
         case .codex: return try CodexSessions.scan(fileURL)
         case .claudeWeb: return try ClaudeWebImport.scan(fileURL)
+        case .otherMac: return try TranscriptScanner.scan(fileURL)
         }
     }
 }

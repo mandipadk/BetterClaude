@@ -301,6 +301,24 @@ final class AppServices {
         }
     }
 
+    /// A backup from another Mac, waiting for its password.
+    var openingMac: OtherMacRequest?
+
+    func openOtherMac() {
+        let panel = NSOpenPanel()
+        panel.message = "Choose a Better Claude backup made on another Mac."
+        panel.allowedContentTypes = [.init(filenameExtension: "aea") ?? .data]
+        panel.directoryURL = Backup.iCloudFolder(paths: snapshot.paths)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        openingMac = OtherMacRequest(backup: url)
+    }
+
+    func removeOtherMac(_ install: Install) {
+        try? OtherMacs.remove(install.dataRoot)
+        destination = .conversations
+        refresh()
+    }
+
     func removeClaudeWebImport() {
         do {
             try ClaudeWebImport.removeAll(paths: snapshot.paths)

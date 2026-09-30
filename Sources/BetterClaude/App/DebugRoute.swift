@@ -35,6 +35,21 @@ enum DebugRoute {
                 services.destination = .usage
                 while !services.index.isReady { try? await Task.sleep(for: .milliseconds(50)) }
                 services.lookingBack = MonthModel()
+            case "othermac":
+                // The sample Mac's own backup, opened as if it came from another Mac.
+                let paths = services.snapshot.paths
+                let archive = FileManager.default.temporaryDirectory.appendingPathComponent("bc-other-\(UUID().uuidString).aea")
+                _ = await Task.detached {
+                    _ = try? Backup.create(at: archive, password: "lamplight folio marginalia", paths: paths)
+                    _ = try? OtherMacs.open(archive, password: "lamplight folio marginalia", name: "Studio", paths: paths)
+                }.value
+                services.refresh()
+                while services.isLoading || !services.installs.contains(where: { $0.kind == .external(.otherMac) }) {
+                    try? await Task.sleep(for: .milliseconds(50))
+                }
+                if let studio = services.installs.first(where: { $0.kind == .external(.otherMac) }) {
+                    services.destination = .install(studio.id)
+                }
             case "secrets":
                 services.destination = .secrets
             case "projects":

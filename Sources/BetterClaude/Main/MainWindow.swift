@@ -93,6 +93,10 @@ struct MainWindow: View {
             ReplaySheet(model: model) { services.replaying = nil }
                 .environment(services)
         }
+        .sheet(item: $services.openingMac) { request in
+            OtherMacSheet(request: request) { services.openingMac = nil }
+                .environment(services)
+        }
         .sheet(item: $services.lookingBack) { model in
             MonthSheet(model: model) { services.lookingBack = nil }
                 .environment(services)

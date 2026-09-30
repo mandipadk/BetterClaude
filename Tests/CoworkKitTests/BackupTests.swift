@@ -56,3 +56,36 @@ struct BackupTests {
         }
     }
 }
+
+@Suite("Another Mac")
+struct OtherMacTests {
+    @Test("Another Mac's backup opens read-only, joins the timeline under its name, and can be removed")
+    func openAnotherMac() async throws {
+        try await HistoryIndexTests.withSample { sample, _, index in
+            let archive = sample.root.appendingPathComponent("backups/Studio.aea")
+            try Backup.create(at: archive, password: BackupTests.password, paths: sample.paths)
+            #expect(throws: Backup.Failure.self) {
+                try OtherMacs.open(archive, password: "not the right password at all", name: "Studio", paths: sample.paths)
+            }
+            let opened = try OtherMacs.open(archive, password: BackupTests.password, name: "Studio", paths: sample.paths)
+            #expect(opened > 0)
+
+            let snapshot = await Catalog(paths: sample.paths).snapshot()
+            let studio = try #require(snapshot.installs.first { $0.kind == .external(.otherMac) })
+            #expect(studio.name == "Studio")
+            let theirs = snapshot.conversations.filter { $0.installID == studio.id }
+            #expect(theirs.count == opened)
+            #expect(theirs.allSatisfy { $0.accountID == nil && $0.external != nil })
+            let scan = try #require(theirs.first?.external).scan()
+            #expect(!scan.messages.isEmpty)
+
+            try await index.update(from: snapshot)
+            let found = try await index.rows("SELECT COUNT(*) FROM conversations WHERE install_id = ?", [.text(studio.id)])
+            #expect(found.first?.int(0) == Int64(opened))
+            #expect(HistorySearch.place(kind: "otherMac", install: "Studio") == "Studio")
+
+            try OtherMacs.remove(studio.dataRoot, paths: sample.paths)
+            #expect(OtherMacs.all(paths: sample.paths).isEmpty)
+        }
+    }
+}

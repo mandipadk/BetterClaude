@@ -273,6 +273,7 @@ struct InstallIcon: View {
         case .claudeCode: return "terminal.fill"
         case .external(.claudeWeb): return "globe"
         case .external(.codex): return "chevron.left.forwardslash.chevron.right"
+        case .external(.otherMac): return "laptopcomputer"
         default: return "questionmark"
         }
     }

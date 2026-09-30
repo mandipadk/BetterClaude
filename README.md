@@ -147,6 +147,9 @@ their session files and titles are read, never their credentials.
 **Backups.** Everything Better Claude keeps — kept conversations, saved file versions and
 plans, imports, receipts — goes into one Apple Encrypted Archive locked with a password
 that's never stored, in iCloud Drive or anywhere. Restoring only adds what's missing.
+**File → Open Another Mac's Backup…** reads a backup made on your other Mac without
+restoring it: the conversations that Mac kept appear under its name in the sidebar, in the
+timeline and in search, read-only, and Claude's history tools don't see them.
 
 ### Prompts, and what needs attention
 

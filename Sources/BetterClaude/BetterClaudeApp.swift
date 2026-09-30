@@ -72,6 +72,7 @@ struct BetterClaudeApp: App {
             CommandGroup(after: .newItem) {
                 Button("Import claude.ai Export…") { services.importClaudeWebExport() }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
+                Button("Open Another Mac's Backup…") { services.openOtherMac() }
             }
             CommandGroup(replacing: .appTermination) {
                 Button("Quit Better Claude") { AppDelegate.quit() }

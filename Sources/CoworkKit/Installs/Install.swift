@@ -87,7 +87,7 @@ public enum InstallDiscovery {
     static let notInstalls: Set<String> = ["Parallex", "BetterClaude"]
 
     public static func all() -> [Install] {
-        desktopInstalls() + parallexInstalls() + [science(), claudeCode(), claudeWeb(), codex()].compactMap { $0 }
+        desktopInstalls() + parallexInstalls() + [science(), claudeCode(), claudeWeb(), codex()].compactMap { $0 } + otherMacs()
     }
 
     // MARK: Desktop
@@ -185,6 +185,14 @@ public enum InstallDiscovery {
                        appURL: nil, iconURL: nil, badge: nil, store: nil)
     }
 
+    /// Another Mac's history, opened from its backup.
+    static func otherMacs() -> [Install] {
+        OtherMacs.all().map { folder, mac in
+            Install(id: "othermac:\(folder.lastPathComponent)", kind: .external(.otherMac), name: mac.name, dataRoot: folder,
+                    appURL: nil, iconURL: nil, badge: nil, store: nil)
+        }
+    }
+
     // MARK: Helpers
 
     static func store(at dataRoot: URL, name: String, launcher: LauncherRef?) -> StoreRef? {
@@ -205,5 +213,13 @@ public enum InstallDiscovery {
             }
         }
         return nil
+    }
+}
+
+extension Install {
+    /// Read-only conversations from outside this Mac's Claude apps.
+    public var isExternal: Bool {
+        if case .external = kind { return true }
+        return false
     }
 }

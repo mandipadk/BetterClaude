@@ -13,10 +13,10 @@ struct InstallPage: View {
                 header.padding(.bottom, Theme.Space.xl)
                 notices
                 conversations
-                HealthSection(install: install)
+                if install.kind != .external(.otherMac) { HealthSection(install: install) }
                 if install.kind == .claudeCode { CommandRulesSection(configDir: install.dataRoot) }
                 if RecallConnection.target(for: install) != nil { RecallSection(install: install) }
-                SetupSection(install: install)
+                if !install.isExternal { SetupSection(install: install) }
                 details
             }
             .padding(.horizontal, 32)
@@ -58,6 +58,11 @@ struct InstallPage: View {
                     }
                     Divider()
                 }
+                if install.kind == .external(.otherMac) {
+                    Button("Open a Newer Backup…") { services.openOtherMac() }
+                    Button("Remove This Mac's History") { services.removeOtherMac(install) }
+                    Divider()
+                }
                 if install.kind == .external(.claudeWeb) {
                     Button("Import a Newer Export…") { services.importClaudeWebExport() }
                     Button("Remove Imported Conversations") { services.removeClaudeWebImport() }
@@ -83,6 +88,7 @@ struct InstallPage: View {
         case .science: return "Research projects and their files"
         case .external(.claudeWeb): return "Conversations imported from your claude.ai export, read-only"
         case .external(.codex): return "Codex sessions on this Mac, read-only"
+        case .external(.otherMac): return "Conversations kept on another Mac, opened from its backup, read-only"
         case .parallex: return isRunning ? "Open now, a copy made by Parallex" : "A copy of Claude made by Parallex"
         case .desktop: return isRunning ? "Open now" : "Claude for Mac"
         }

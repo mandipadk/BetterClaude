@@ -197,6 +197,7 @@ public enum HistorySearch {
         case "codeTab": return "the Code tab in \(install ?? "Claude")"
         case "claudeWeb": return "claude.ai"
         case "codex": return "Codex"
+        case "otherMac": return install ?? "another Mac"
         default: return "Claude Code"
         }
     }
