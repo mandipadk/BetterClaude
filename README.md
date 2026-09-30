@@ -346,6 +346,8 @@ cowork file ~/Code/app/src/main.swift           # where a file came from
 cowork distill                                  # repeated prompts, what needs attention, rules to allow
 cowork formats                                  # whether Better Claude still reads what Claude Code writes
 cowork secrets                                  # keys and tokens that ended up in a conversation, masked
+cowork projects                                 # every project folder, with conversations and cost
+cowork month 2026-09                            # a month with every Claude, in numbers
 cowork library                                  # every artifact Claude ever produced
 cowork library --kind code --limit 50           # narrowed to one kind
 

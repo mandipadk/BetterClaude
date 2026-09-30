@@ -11,13 +11,15 @@ struct ProjectsTests {
         #expect(Projects.root(of: "/Volumes/Sample/app/.claude/worktrees/fix-login") == "/Volumes/Sample/app")
         #expect(Projects.root(of: "/Volumes/Sample/app/") == "/Volumes/Sample/app")
         #expect(Projects.root(of: "/Volumes/Sample/app") == "/Volumes/Sample/app")
+        #expect(Projects.isScratch("/private/tmp/work-1", home: "/Volumes/Sample/home"))
+        #expect(!Projects.isScratch("/private/tmp/sample-home/Code/app", home: "/private/tmp/sample-home"))
     }
 
     @Test("A project joins its conversations, files, pull request, cost and activity")
     func billingService() async throws {
         try await HistoryIndexTests.withSample { sample, snapshot, index in
             try await index.update(from: snapshot)
-            let projects = try await Projects.list(index: index)
+            let projects = try await Projects.list(index: index, paths: sample.paths)
             let billing = try #require(projects.first { $0.name == "billing-service" })
             #expect(billing.conversations >= 2)
             #expect(billing.filesChanged >= 2)

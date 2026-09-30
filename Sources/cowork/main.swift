@@ -63,6 +63,13 @@ USAGE
       --all surveys every conversation, not just the latest; --write merges each version's
       shape (fields and kinds of record, never content) into <dir>/<tool>/<version>.json.
 
+  cowork projects
+      Every project folder Claude worked in, with its conversations, cost and last activity.
+
+  cowork month [YYYY-MM]
+      A month with every Claude in numbers: conversations, prompts, active days, models,
+      tools and cost.
+
   cowork secrets [--counts]
       Find API keys and tokens that ended up in a conversation, masked, with where each
       appears. --counts prints only how many of each kind.
@@ -227,6 +234,33 @@ func cmdFormats(_ args: Args) throws {
             print("  \(version)  \(shape.kinds.count) kinds\(findings.isEmpty ? "" : "  " + findings.map(\.description).joined(separator: "; "))")
         }
     }
+}
+
+func cmdProjects() throws {
+    let projects = try runBlocking { () -> Result<[ProjectSummary], Error> in
+        do { return .success(try await Projects.list(index: try HistoryIndex(readingFrom: HistoryIndex.defaultURL()))) }
+        catch { return .failure(error) }
+    }.get()
+    print("\(projects.count) projects.")
+    for project in projects {
+        let cost = project.cost.formatted(.currency(code: "USD").precision(.fractionLength(2)))
+        print("  \(project.name)  \(project.conversations) conversations  \(cost)  \(project.filesChanged) files  \(project.places.joined(separator: ", "))")
+    }
+}
+
+func cmdMonth(_ args: Args) throws {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM"
+    let month = args.positional.first.flatMap(formatter.date(from:)) ?? Date()
+    let stats = try runBlocking { () -> Result<MonthStats, Error> in
+        do { return .success(try await MonthStats.build(index: try HistoryIndex(readingFrom: HistoryIndex.defaultURL()), month: month)) }
+        catch { return .failure(error) }
+    }.get()
+    print("\(stats.month.formatted(.dateTime.month(.wide).year())): \(stats.conversations) conversations, \(stats.prompts) prompts, \(stats.replies) replies.")
+    print("  \(stats.activeDays) days active, \(stats.longestStreak) in a row, busiest hour \(stats.busiestHour.map(String.init) ?? "none").")
+    print("  Models: " + stats.models.map { "\($0.name) \($0.replies)" }.joined(separator: ", "))
+    print("  Tools: " + stats.tools.map { "\($0.name) \($0.uses)" }.joined(separator: ", "))
+    print("  \(stats.cost.formatted(.currency(code: "USD").precision(.fractionLength(0)))) at list prices, \(stats.tokens) tokens, \(stats.filesChanged) files, \(stats.pullRequests) pull requests, \(stats.compactions) compactions.")
 }
 
 func cmdSecrets(_ args: Args) {
@@ -713,6 +747,8 @@ do {
     case "distill": try cmdDistill()
     case "formats": try cmdFormats(args)
     case "secrets": cmdSecrets(args)
+    case "projects": try cmdProjects()
+    case "month": try cmdMonth(args)
     case "file": try cmdFile(args)
     case "search": try cmdSearch(args)
     case "encode":

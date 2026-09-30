@@ -77,8 +77,15 @@ public enum Projects {
         return costs
     }
 
+    /// Scratch folders sessions ran in aren't projects.
+    static func isScratch(_ path: String, home: String) -> Bool {
+        guard !path.hasPrefix(home + "/") else { return false }
+        return ["/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/"].contains { path.hasPrefix($0) }
+    }
+
     /// Every project folder with conversations, most recently active first.
-    public static func list(index: HistoryIndex) async throws -> [ProjectSummary] {
+    public static func list(index: HistoryIndex, paths: HostPaths = .current) async throws -> [ProjectSummary] {
+        let home = paths.home.path
         let costs = try await costs(index: index)
         var files: [String: Set<String>] = [:]
         for row in try await index.rows("""
@@ -103,7 +110,7 @@ public enum Projects {
             SELECT id, project_path, kind, install_name, account_id, first_activity, last_activity FROM conversations
             WHERE project_path LIKE '/%'
             """) {
-            guard let id = row.text(0), let project = row.text(1).map(root(of:)) else { continue }
+            guard let id = row.text(0), let project = row.text(1).map(root(of:)), !isScratch(project, home: home) else { continue }
             var tally = tallies[project] ?? Tally()
             tally.conversations += 1
             tally.places[HistorySearch.place(kind: row.text(2), install: row.text(3)), default: 0] += 1
