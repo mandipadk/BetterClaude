@@ -1,0 +1,71 @@
+{
+  "format" : "claude-code",
+  "kinds" : {
+    "bridge-session" : {
+      "fields" : {
+        "bridgeSessionId" : "string",
+        "lastSequenceNum" : "int",
+        "ownerAccountUuid" : "string",
+        "ownerOrganizationUuid" : "string",
+        "sessionId" : "string",
+        "type" : "string"
+      }
+    },
+    "cost-state" : {
+      "fields" : {
+        "hasUnknownModelCost" : "bool",
+        "modelUsage" : "object",
+        "sessionId" : "string",
+        "startTime" : "int",
+        "totalAPIDuration" : "int",
+        "totalAPIDurationWithoutRetries" : "int",
+        "totalCostUSD" : "int",
+        "totalDuration" : "int",
+        "totalLinesAdded" : "int",
+        "totalLinesRemoved" : "int",
+        "totalToolDuration" : "int",
+        "type" : "string"
+      }
+    },
+    "last-prompt" : {
+      "fields" : {
+        "lastPrompt" : "string",
+        "leafUuid" : "string",
+        "sessionId" : "string",
+        "type" : "string"
+      }
+    },
+    "system/local_command" : {
+      "fields" : {
+        "content" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isMeta" : "bool",
+        "isSidechain" : "bool",
+        "level" : "string",
+        "parentUuid" : "string",
+        "sessionId" : "string",
+        "slug" : "string",
+        "subtype" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "level" : [
+          "info"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    }
+  },
+  "version" : "2.1.248"
+}

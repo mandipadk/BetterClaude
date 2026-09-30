@@ -15,13 +15,18 @@ APPCAST := dist/appcast.json
 NOTES ?= dist/release-notes.md
 REPO := mandipadk/BetterClaude
 
-.PHONY: build test app app-install debug-app capture dist publish deploy-site clean
+.PHONY: build test corpus app app-install debug-app capture dist publish deploy-site clean
 
 build:
 	swift build
 
 test:
 	swift test
+
+# Adds the shapes of this Mac's Claude Code and Codex files (field names and types, never
+# content) to the test corpus, one file per version. Review the diff before committing.
+corpus:
+	swift run cowork formats --write Tests/CoworkKitTests/Corpus
 
 app:
 	Scripts/make-app.sh release

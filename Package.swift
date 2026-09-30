@@ -24,6 +24,7 @@ let package = Package(
         // A synthetic Mac for tests and screenshots. Never linked into the shipped app.
         .target(name: "CoworkFixtures", dependencies: ["CoworkKit"]),
         .executableTarget(name: "bc-fixture", dependencies: ["CoworkFixtures"]),
-        .testTarget(name: "CoworkKitTests", dependencies: ["CoworkKit", "CoworkFixtures"]),
+        // Corpus: the shapes of real Claude Code and Codex files, read from the source tree.
+        .testTarget(name: "CoworkKitTests", dependencies: ["CoworkKit", "CoworkFixtures"], exclude: ["Corpus"]),
     ]
 )

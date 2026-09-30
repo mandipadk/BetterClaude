@@ -1,0 +1,84 @@
+{
+  "format" : "claude-code",
+  "kinds" : {
+    "attachment/hook_success" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.command" : "string",
+        "attachment.content" : "string",
+        "attachment.durationMs" : "int",
+        "attachment.exitCode" : "int",
+        "attachment.hookEvent" : "string",
+        "attachment.hookName" : "string",
+        "attachment.stderr" : "string",
+        "attachment.stdout" : "string",
+        "attachment.toolUseID" : "string",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "sessionId" : "string",
+        "slug" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "bridge-session" : {
+      "fields" : {
+        "bridgeSessionId" : "string",
+        "lastSequenceNum" : "int",
+        "noHistoryBackfill" : "bool",
+        "ownerAccountUuid" : "string",
+        "ownerOrganizationUuid" : "string",
+        "sessionId" : "string",
+        "type" : "string"
+      }
+    },
+    "system/informational" : {
+      "fields" : {
+        "content" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isMeta" : "bool",
+        "isSidechain" : "bool",
+        "level" : "string",
+        "parentUuid" : "string",
+        "sessionId" : "string",
+        "slug" : "string",
+        "subtype" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "level" : [
+          "notice",
+          "warning"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    }
+  },
+  "version" : "2.1.282"
+}

@@ -1,0 +1,417 @@
+{
+  "format" : "claude-code",
+  "kinds" : {
+    "assistant" : {
+      "fields" : {
+        "attributionSkill" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "message" : "object",
+        "message.content" : "array",
+        "message.content[text]" : "object",
+        "message.content[text].text" : "string",
+        "message.content[text].type" : "string",
+        "message.content[thinking]" : "object",
+        "message.content[thinking].signature" : "string",
+        "message.content[thinking].thinking" : "string",
+        "message.content[thinking].type" : "string",
+        "message.content[tool_use]" : "object",
+        "message.content[tool_use].caller" : "object",
+        "message.content[tool_use].caller.type" : "string",
+        "message.content[tool_use].id" : "string",
+        "message.content[tool_use].input" : "object",
+        "message.content[tool_use].input.command" : "string",
+        "message.content[tool_use].input.file_path" : "string",
+        "message.content[tool_use].name" : "string",
+        "message.content[tool_use].type" : "string",
+        "message.diagnostics" : "null object",
+        "message.diagnostics.cache_miss_reason" : "object",
+        "message.diagnostics.cache_miss_reason.type" : "string",
+        "message.id" : "string",
+        "message.model" : "string",
+        "message.role" : "string",
+        "message.stop_details" : "null",
+        "message.stop_reason" : "string",
+        "message.stop_sequence" : "null",
+        "message.type" : "string",
+        "message.usage" : "object",
+        "message.usage.cache_creation" : "object",
+        "message.usage.cache_creation.ephemeral_1h_input_tokens" : "int",
+        "message.usage.cache_creation.ephemeral_5m_input_tokens" : "int",
+        "message.usage.cache_creation_input_tokens" : "int",
+        "message.usage.cache_read_input_tokens" : "int",
+        "message.usage.inference_geo" : "string",
+        "message.usage.input_tokens" : "int",
+        "message.usage.iterations" : "array",
+        "message.usage.iterations[]" : "object",
+        "message.usage.iterations[].cache_creation" : "object",
+        "message.usage.iterations[].cache_creation_input_tokens" : "int",
+        "message.usage.iterations[].cache_read_input_tokens" : "int",
+        "message.usage.iterations[].input_tokens" : "int",
+        "message.usage.iterations[].output_tokens" : "int",
+        "message.usage.iterations[].type" : "string",
+        "message.usage.output_tokens" : "int",
+        "message.usage.server_tool_use" : "object",
+        "message.usage.server_tool_use.web_fetch_requests" : "int",
+        "message.usage.server_tool_use.web_search_requests" : "int",
+        "message.usage.service_tier" : "string",
+        "message.usage.speed" : "string",
+        "parentUuid" : "string",
+        "requestId" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "claude-desktop"
+        ],
+        "message.model" : [
+          "claude-sonnet-5"
+        ],
+        "message.role" : [
+          "assistant"
+        ],
+        "message.stop_reason" : [
+          "end_turn",
+          "tool_use"
+        ],
+        "message.type" : [
+          "message"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/agent_listing_delta" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.addedLines" : "array",
+        "attachment.addedLines[]" : "string",
+        "attachment.addedTypes" : "array",
+        "attachment.addedTypes[]" : "string",
+        "attachment.isInitial" : "bool",
+        "attachment.removedTypes" : "array",
+        "attachment.showConcurrencyNote" : "bool",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "claude-desktop"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/auto_mode" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.autoModeConsentFlow" : "bool",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "claude-desktop"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/command_permissions" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.allowedTools" : "array",
+        "attachment.allowedTools[]" : "string",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "claude-desktop"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/deferred_tools_delta" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.addedLines" : "array",
+        "attachment.addedLines[]" : "string",
+        "attachment.addedNames" : "array",
+        "attachment.addedNames[]" : "string",
+        "attachment.needsAuthMcpServers" : "array",
+        "attachment.needsAuthMcpServers[]" : "string",
+        "attachment.pendingMcpServers" : "array",
+        "attachment.pendingMcpServers[]" : "string",
+        "attachment.readdedNames" : "array",
+        "attachment.removedNames" : "array",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "claude-desktop"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/mcp_instructions_delta" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.addedBlocks" : "array",
+        "attachment.addedBlocks[]" : "string",
+        "attachment.addedNames" : "array",
+        "attachment.addedNames[]" : "string",
+        "attachment.removedNames" : "array",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "claude-desktop"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/skill_listing" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.content" : "string",
+        "attachment.isInitial" : "bool",
+        "attachment.names" : "array",
+        "attachment.names[]" : "string",
+        "attachment.skillCount" : "int",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "claude-desktop"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/task_reminder" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.content" : "array",
+        "attachment.itemCount" : "int",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "claude-desktop"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "custom-title" : {
+      "fields" : {
+        "customTitle" : "string",
+        "sessionId" : "string",
+        "type" : "string"
+      }
+    },
+    "last-prompt" : {
+      "fields" : {
+        "lastPrompt" : "string",
+        "leafUuid" : "string",
+        "sessionId" : "string",
+        "type" : "string"
+      }
+    },
+    "mode" : {
+      "fields" : {
+        "mode" : "string",
+        "sessionId" : "string",
+        "type" : "string"
+      }
+    },
+    "queue-operation" : {
+      "fields" : {
+        "content" : "string",
+        "operation" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string"
+      }
+    },
+    "system/stop_hook_summary" : {
+      "fields" : {
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "hasOutput" : "bool",
+        "hookAdditionalContext" : "array",
+        "hookCount" : "int",
+        "hookErrors" : "array",
+        "hookInfos" : "array",
+        "hookInfos[]" : "object",
+        "hookInfos[].command" : "string",
+        "hookInfos[].durationMs" : "int",
+        "isSidechain" : "bool",
+        "level" : "string",
+        "parentUuid" : "string",
+        "preventedContinuation" : "bool",
+        "sessionId" : "string",
+        "stopReason" : "string",
+        "subtype" : "string",
+        "timestamp" : "string",
+        "toolUseID" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "claude-desktop"
+        ],
+        "level" : [
+          "suggestion"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "user" : {
+      "fields" : {
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isMeta" : "bool",
+        "isSidechain" : "bool",
+        "message" : "object",
+        "message.content" : "array string",
+        "message.content[text]" : "object",
+        "message.content[text].text" : "string",
+        "message.content[text].type" : "string",
+        "message.content[tool_result]" : "object",
+        "message.content[tool_result].content" : "string",
+        "message.content[tool_result].is_error" : "bool",
+        "message.content[tool_result].tool_use_id" : "string",
+        "message.content[tool_result].type" : "string",
+        "message.role" : "string",
+        "origin" : "object",
+        "origin.kind" : "string",
+        "parentUuid" : "null string",
+        "permissionMode" : "string",
+        "promptId" : "string",
+        "promptSource" : "string",
+        "sessionId" : "string",
+        "sourceToolAssistantUUID" : "string",
+        "sourceToolUseID" : "string",
+        "timestamp" : "string",
+        "toolUseResult" : "object",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "claude-desktop"
+        ],
+        "message.role" : [
+          "user"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    }
+  },
+  "version" : "2.1.205"
+}

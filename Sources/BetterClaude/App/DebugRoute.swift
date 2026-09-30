@@ -56,6 +56,25 @@ enum DebugRoute {
                 }
             case "running":
                 services.destination = .running
+            case "drift":
+                // Claude Code's page, as if a newer Claude Code had renamed what file versions
+                // and token usage are read from.
+                var delta = FormatShape.Kind()
+                delta.fields = ["type": ["string"], "path": ["string"], "backup": ["object"], "backup.version": ["int"],
+                                "backup.backupFileName": ["null", "string"], "backup.backupTime": ["string"]]
+                var assistant = FormatShape.Kind()
+                assistant.fields = ["type": ["string"], "uuid": ["string"], "parentUuid": ["null", "string"],
+                                    "sessionId": ["string"], "timestamp": ["string"], "cwd": ["string"],
+                                    "message": ["object"], "message.id": ["string"], "message.model": ["string"],
+                                    "message.content": ["array"], "message.usage": ["object"], "message.usage.input": ["int"],
+                                    "message.usage.output_tokens": ["int"], "message.usage.cache_read_input_tokens": ["int"],
+                                    "message.usage.cache_creation_input_tokens": ["int"]]
+                let shape = FormatShape(format: "claude-code", version: "2.2.0",
+                                        kinds: ["file-history-delta": delta, "assistant": assistant])
+                services.formats.show(.init(contract: .claudeCode, shape: shape))
+                if let install = services.installs.first(where: { $0.kind == .claudeCode }) {
+                    services.destination = .install(install.id)
+                }
             case "replay":
                 if let match = services.snapshot.conversations.first(where: { $0.title.localizedCaseInsensitiveContains(argument) }) {
                     services.selectedConversationID = match.id

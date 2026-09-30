@@ -1,0 +1,211 @@
+{
+  "format" : "codex",
+  "kinds" : {
+    "event_msg/item_completed" : {
+      "fields" : {
+        "ordinal" : "int",
+        "payload" : "object",
+        "payload.completed_at_ms" : "int",
+        "payload.item" : "object",
+        "payload.item.action" : "object",
+        "payload.item.action.queries" : "array",
+        "payload.item.action.query" : "string",
+        "payload.item.action.type" : "string",
+        "payload.item.aggregated_output" : "string",
+        "payload.item.command" : "array",
+        "payload.item.command[]" : "string",
+        "payload.item.content" : "array",
+        "payload.item.content[]" : "object",
+        "payload.item.cwd" : "string",
+        "payload.item.duration" : "object",
+        "payload.item.duration.nanos" : "int",
+        "payload.item.duration.secs" : "int",
+        "payload.item.exit_code" : "int",
+        "payload.item.id" : "string",
+        "payload.item.parsed_cmd" : "array",
+        "payload.item.parsed_cmd[]" : "object",
+        "payload.item.phase" : "string",
+        "payload.item.process_id" : "string",
+        "payload.item.query" : "string",
+        "payload.item.source" : "string",
+        "payload.item.status" : "string",
+        "payload.item.type" : "string",
+        "payload.thread_id" : "string",
+        "payload.turn_id" : "string",
+        "payload.type" : "string",
+        "timestamp" : "string",
+        "type" : "string"
+      }
+    },
+    "event_msg/task_complete" : {
+      "fields" : {
+        "ordinal" : "int",
+        "payload" : "object",
+        "payload.completed_at" : "int",
+        "payload.duration_ms" : "int",
+        "payload.last_agent_message" : "string",
+        "payload.time_to_first_token_ms" : "int",
+        "payload.turn_id" : "string",
+        "payload.type" : "string",
+        "timestamp" : "string",
+        "type" : "string"
+      }
+    },
+    "event_msg/task_started" : {
+      "fields" : {
+        "ordinal" : "int",
+        "payload" : "object",
+        "payload.collaboration_mode_kind" : "string",
+        "payload.model_context_window" : "int",
+        "payload.started_at" : "int",
+        "payload.turn_id" : "string",
+        "payload.type" : "string",
+        "timestamp" : "string",
+        "type" : "string"
+      }
+    },
+    "event_msg/token_count" : {
+      "fields" : {
+        "ordinal" : "int",
+        "payload" : "object",
+        "payload.info" : "null object",
+        "payload.rate_limits" : "object",
+        "payload.type" : "string",
+        "timestamp" : "string",
+        "type" : "string"
+      }
+    },
+    "response_item/function_call" : {
+      "fields" : {
+        "ordinal" : "int",
+        "payload" : "object",
+        "payload.arguments" : "string",
+        "payload.call_id" : "string",
+        "payload.name" : "string",
+        "payload.type" : "string",
+        "timestamp" : "string",
+        "type" : "string"
+      }
+    },
+    "response_item/function_call_output" : {
+      "fields" : {
+        "ordinal" : "int",
+        "payload" : "object",
+        "payload.call_id" : "string",
+        "payload.output" : "string",
+        "payload.type" : "string",
+        "timestamp" : "string",
+        "type" : "string"
+      }
+    },
+    "response_item/message" : {
+      "fields" : {
+        "ordinal" : "int",
+        "payload" : "object",
+        "payload.content" : "array",
+        "payload.content[input_text]" : "object",
+        "payload.content[input_text].text" : "string",
+        "payload.content[input_text].type" : "string",
+        "payload.content[output_text]" : "object",
+        "payload.content[output_text].text" : "string",
+        "payload.content[output_text].type" : "string",
+        "payload.phase" : "string",
+        "payload.role" : "string",
+        "payload.type" : "string",
+        "timestamp" : "string",
+        "type" : "string"
+      },
+      "values" : {
+        "payload.role" : [
+          "assistant",
+          "developer",
+          "user"
+        ]
+      }
+    },
+    "response_item/reasoning" : {
+      "fields" : {
+        "ordinal" : "int",
+        "payload" : "object",
+        "payload.content" : "null",
+        "payload.encrypted_content" : "string",
+        "payload.summary" : "array",
+        "payload.type" : "string",
+        "timestamp" : "string",
+        "type" : "string"
+      }
+    },
+    "response_item/web_search_call" : {
+      "fields" : {
+        "ordinal" : "int",
+        "payload" : "object",
+        "payload.action" : "object",
+        "payload.action.queries" : "array",
+        "payload.action.queries[]" : "string",
+        "payload.action.query" : "string",
+        "payload.action.type" : "string",
+        "payload.status" : "string",
+        "payload.type" : "string",
+        "timestamp" : "string",
+        "type" : "string"
+      }
+    },
+    "session_meta" : {
+      "fields" : {
+        "ordinal" : "int",
+        "payload" : "object",
+        "payload.base_instructions" : "object",
+        "payload.cli_version" : "string",
+        "payload.cwd" : "string",
+        "payload.dynamic_tools" : "array",
+        "payload.dynamic_tools[]" : "object",
+        "payload.dynamic_tools[].description" : "string",
+        "payload.dynamic_tools[].inputSchema" : "object",
+        "payload.dynamic_tools[].name" : "string",
+        "payload.dynamic_tools[].tools" : "array",
+        "payload.dynamic_tools[].type" : "string",
+        "payload.git" : "object",
+        "payload.git.commit_hash" : "string",
+        "payload.git.repository_url" : "string",
+        "payload.history_mode" : "string",
+        "payload.id" : "string",
+        "payload.model_provider" : "string",
+        "payload.originator" : "string",
+        "payload.session_id" : "string",
+        "payload.source" : "string",
+        "payload.timestamp" : "string",
+        "timestamp" : "string",
+        "type" : "string"
+      }
+    },
+    "turn_context" : {
+      "fields" : {
+        "ordinal" : "int",
+        "payload" : "object",
+        "payload.approval_policy" : "string",
+        "payload.collaboration_mode" : "object",
+        "payload.collaboration_mode.mode" : "string",
+        "payload.collaboration_mode.settings" : "object",
+        "payload.collaboration_mode.settings.developer_instructions" : "string",
+        "payload.collaboration_mode.settings.model" : "string",
+        "payload.collaboration_mode.settings.reasoning_effort" : "string",
+        "payload.current_date" : "string",
+        "payload.cwd" : "string",
+        "payload.effort" : "string",
+        "payload.model" : "string",
+        "payload.permission_profile" : "object",
+        "payload.permission_profile.type" : "string",
+        "payload.personality" : "string",
+        "payload.realtime_active" : "bool",
+        "payload.sandbox_policy" : "object",
+        "payload.sandbox_policy.type" : "string",
+        "payload.summary" : "string",
+        "payload.timezone" : "string",
+        "payload.turn_id" : "string",
+        "timestamp" : "string",
+        "type" : "string"
+      }
+    }
+  },
+  "version" : "0.125.0-alpha.3"
+}

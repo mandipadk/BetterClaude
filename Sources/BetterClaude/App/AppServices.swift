@@ -56,6 +56,7 @@ final class AppServices {
     let usage = UsageModel()
     let files = FilesModel()
     let prompts = PromptsModel()
+    let formats = FormatModel()
     let search: SearchModel
     let library = LibraryModel()
     let kept = KeptModel()

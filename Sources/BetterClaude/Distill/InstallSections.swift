@@ -1,3 +1,4 @@
+import AppKit
 import CoworkKit
 import SwiftUI
 
@@ -10,10 +11,12 @@ struct HealthSection: View {
     var body: some View {
         // A real container: a task on an empty Group never runs.
         VStack(alignment: .leading, spacing: 0) {
-            if !issues.isEmpty {
+            let drift = services.formats.breaking(for: install)
+            if !issues.isEmpty || drift != nil {
                 DetailSection(title: "Needs attention",
                               subtitle: "What went wrong around this Claude's Code sessions in the last week, as Claude Code recorded it.") {
                     VStack(alignment: .leading, spacing: Theme.Space.s) {
+                        if let drift { driftRow(drift) }
                         ForEach(issues) { issue in
                             HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
                                 Image(systemName: symbol(issue.kind)).foregroundStyle(Theme.attention).frame(width: 18)
@@ -28,9 +31,31 @@ struct HealthSection: View {
             }
         }
         .task(id: services.index.generation) {
+            services.formats.check(services.snapshot.conversations)
             guard let index = services.index.index else { return }
             issues = (try? await Doctor.issues(index: index, installIDs: [install.id],
                                                since: Date().addingTimeInterval(-7 * 86_400))) ?? []
+        }
+    }
+
+    /// This install's tool now writes its files in a way Better Claude doesn't fully read.
+    private func driftRow(_ report: FormatSurvey.Report) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
+            Image(systemName: "doc.badge.gearshape").foregroundStyle(Theme.attention).frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(report.contract.name) \(report.shape.version) changed how it records \(report.affected)")
+                    .font(Theme.Font.body)
+                Text("Better Claude may miss this in newer conversations until it's updated. The report lists field names only, never what was said.")
+                    .font(Theme.Font.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: Theme.Space.m)
+            Button("Copy Report") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(report.shareable, forType: .string)
+            }
+            .buttonStyle(.secondary)
         }
     }
 

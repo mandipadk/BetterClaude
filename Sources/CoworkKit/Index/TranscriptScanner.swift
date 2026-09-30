@@ -218,6 +218,15 @@ public enum TranscriptScanner {
                     backupTime: entry["backupTime"]?.stringValue.flatMap(Transcript.parseTimestamp),
                     messageID: messageID))
             }
+        case "file-history-delta":
+            // Newer Claude Code writes each new version on its own instead of repeating every
+            // tracked file in a snapshot; these versions appear in no snapshot.
+            guard let path = record["trackingPath"]?.stringValue, let backup = record["backup"],
+                  let version = backup["version"]?.intValue else { return }
+            result.fileVersions.append(.init(
+                path: path, version: Int(version), backupFileName: backup["backupFileName"]?.stringValue,
+                backupTime: backup["backupTime"]?.stringValue.flatMap(Transcript.parseTimestamp),
+                messageID: record["snapshotMessageId"]?.stringValue ?? record["messageId"]?.stringValue))
         case "cost-state":
             result.cost = .init(totalUSD: record["totalCostUSD"]?.doubleValue ?? 0,
                                 linesAdded: record["totalLinesAdded"]?.intValue ?? 0,

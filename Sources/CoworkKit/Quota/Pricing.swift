@@ -39,6 +39,12 @@ public enum Pricing {
         return table.first { id.hasPrefix($0.prefix) }?.rate ?? Rate(input: 5, output: 25, cacheReadFactor: 0.1)
     }
 
+    /// Whether the table has this model's own price, rather than the guess.
+    public static func knows(_ model: String) -> Bool {
+        let id = model.lowercased().split(separator: "[").first.map(String.init) ?? model
+        return table.contains { id.hasPrefix($0.prefix) }
+    }
+
     /// What one reply would cost at list price, in dollars.
     public static func cost(model: String, input: Int64, output: Int64, cacheRead: Int64,
                             cacheWrite5m: Int64, cacheWrite1h: Int64) -> Double {

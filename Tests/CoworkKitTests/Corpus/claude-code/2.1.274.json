@@ -1,0 +1,1018 @@
+{
+  "format" : "claude-code",
+  "kinds" : {
+    "ai-title" : {
+      "fields" : {
+        "aiTitle" : "string",
+        "sessionId" : "string",
+        "type" : "string"
+      }
+    },
+    "assistant" : {
+      "fields" : {
+        "apiBlockIndex" : "int",
+        "apiError" : "string",
+        "apiErrorStatus" : "int",
+        "attributionSkill" : "string",
+        "cwd" : "string",
+        "effort" : "string",
+        "entrypoint" : "string",
+        "error" : "string",
+        "errorDetails" : "string",
+        "gitBranch" : "string",
+        "isApiErrorMessage" : "bool",
+        "isSidechain" : "bool",
+        "message" : "object",
+        "message.container" : "null",
+        "message.content" : "array",
+        "message.content[text]" : "object",
+        "message.content[text].text" : "string",
+        "message.content[text].type" : "string",
+        "message.content[thinking]" : "object",
+        "message.content[thinking].signature" : "string",
+        "message.content[thinking].thinking" : "string",
+        "message.content[thinking].type" : "string",
+        "message.content[tool_use]" : "object",
+        "message.content[tool_use].caller" : "object",
+        "message.content[tool_use].caller.type" : "string",
+        "message.content[tool_use].id" : "string",
+        "message.content[tool_use].input" : "object",
+        "message.content[tool_use].input.command" : "string",
+        "message.content[tool_use].input.file_path" : "string",
+        "message.content[tool_use].name" : "string",
+        "message.content[tool_use].type" : "string",
+        "message.context_management" : "null",
+        "message.diagnostics" : "null object",
+        "message.diagnostics.cache_miss_reason" : "object",
+        "message.diagnostics.cache_miss_reason.type" : "string",
+        "message.id" : "string",
+        "message.model" : "string",
+        "message.role" : "string",
+        "message.stop_details" : "null",
+        "message.stop_reason" : "string",
+        "message.stop_sequence" : "null string",
+        "message.type" : "string",
+        "message.usage" : "object",
+        "message.usage.cache_creation" : "object",
+        "message.usage.cache_creation.ephemeral_1h_input_tokens" : "int",
+        "message.usage.cache_creation.ephemeral_5m_input_tokens" : "int",
+        "message.usage.cache_creation_input_tokens" : "int",
+        "message.usage.cache_read_input_tokens" : "int",
+        "message.usage.inference_geo" : "null string",
+        "message.usage.input_tokens" : "int",
+        "message.usage.iterations" : "array null",
+        "message.usage.iterations[]" : "object",
+        "message.usage.iterations[].cache_creation" : "object",
+        "message.usage.iterations[].cache_creation_input_tokens" : "int",
+        "message.usage.iterations[].cache_read_input_tokens" : "int",
+        "message.usage.iterations[].input_tokens" : "int",
+        "message.usage.iterations[].output_tokens" : "int",
+        "message.usage.iterations[].type" : "string",
+        "message.usage.output_tokens" : "int",
+        "message.usage.output_tokens_details" : "null object",
+        "message.usage.output_tokens_details.thinking_tokens" : "int",
+        "message.usage.server_tool_use" : "object",
+        "message.usage.server_tool_use.web_fetch_requests" : "int",
+        "message.usage.server_tool_use.web_search_requests" : "int",
+        "message.usage.service_tier" : "null string",
+        "message.usage.speed" : "null string",
+        "parentUuid" : "string",
+        "perTurnEffort" : "string",
+        "requestId" : "string",
+        "sessionId" : "string",
+        "session_id" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string",
+        "wireIngestContext" : "object",
+        "wireToolInputs" : "object"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "message.model" : [
+          "<synthetic>",
+          "claude-fable-5-1"
+        ],
+        "message.role" : [
+          "assistant"
+        ],
+        "message.stop_reason" : [
+          "end_turn",
+          "stop_sequence",
+          "tool_use"
+        ],
+        "message.type" : [
+          "message"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "atis-latch" : {
+      "fields" : {
+        "atis" : "string",
+        "sessionId" : "string",
+        "type" : "string"
+      }
+    },
+    "attachment/agent_listing_delta" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.addedLines" : "array",
+        "attachment.addedLines[]" : "string",
+        "attachment.addedTypes" : "array",
+        "attachment.addedTypes[]" : "string",
+        "attachment.isInitial" : "bool",
+        "attachment.removedTypes" : "array",
+        "attachment.showConcurrencyNote" : "bool",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "rendered" : "array",
+        "rendered[]" : "object",
+        "rendered[].content" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/auto_mode" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.autoModeConsentFlow" : "bool",
+        "attachment.bashFirst" : "bool",
+        "attachment.bashFirstSteer" : "string",
+        "attachment.bypass" : "bool",
+        "attachment.steerOnly" : "bool",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "rendered" : "array",
+        "rendered[]" : "object",
+        "rendered[].content" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/bash_output_audience_note" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.toolUseID" : "string",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "rendered" : "array",
+        "rendered[]" : "object",
+        "rendered[].content" : "string",
+        "sessionId" : "string",
+        "session_id" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/batching_reminder_sent" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.clearAt" : "string",
+        "attachment.model" : "string",
+        "attachment.text" : "string",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "sessionId" : "string",
+        "session_id" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/command_permissions" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.allowedTools" : "array",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "sessionId" : "string",
+        "session_id" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/date" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.changed" : "bool",
+        "attachment.date" : "string",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "rendered" : "array",
+        "rendered[]" : "object",
+        "rendered[].content" : "string",
+        "sessionId" : "string",
+        "session_id" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/deferred_tools_delta" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.addedLines" : "array",
+        "attachment.addedLines[]" : "string",
+        "attachment.addedNames" : "array",
+        "attachment.addedNames[]" : "string",
+        "attachment.failedMcpServers" : "array",
+        "attachment.failedMcpServers[]" : "object",
+        "attachment.failedMcpServers[].error" : "string",
+        "attachment.failedMcpServers[].errorCode" : "string",
+        "attachment.failedMcpServers[].name" : "string",
+        "attachment.pendingMcpServers" : "array",
+        "attachment.readdedNames" : "array",
+        "attachment.removedNames" : "array",
+        "attachment.type" : "string",
+        "attachment.wireHiddenNames" : "array",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "rendered" : "array",
+        "rendered[]" : "object",
+        "rendered[].content" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/deferred_tools_record" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.entries" : "array",
+        "attachment.entries[]" : "object",
+        "attachment.entries[].defer_loading" : "bool",
+        "attachment.entries[].description" : "string",
+        "attachment.entries[].eager_input_streaming" : "bool",
+        "attachment.entries[].input_schema" : "object",
+        "attachment.entries[].input_schema.*" : "string",
+        "attachment.entries[].input_schema.additionalProperties" : "bool",
+        "attachment.entries[].input_schema.properties" : "object",
+        "attachment.entries[].input_schema.required" : "array",
+        "attachment.entries[].input_schema.type" : "string",
+        "attachment.entries[].name" : "string",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "sessionId" : "string",
+        "session_id" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/edited_text_file" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.filename" : "string",
+        "attachment.snippet" : "string",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "rendered" : "array",
+        "rendered[]" : "object",
+        "rendered[].content" : "string",
+        "sessionId" : "string",
+        "session_id" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/environment" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.changes" : "array",
+        "attachment.changes[]" : "object",
+        "attachment.changes[].field" : "string",
+        "attachment.changes[].from" : "string",
+        "attachment.snapshot" : "object",
+        "attachment.snapshot.additionalWorkingDirectories" : "array",
+        "attachment.snapshot.isGitRepo" : "bool",
+        "attachment.snapshot.isWorktree" : "bool",
+        "attachment.snapshot.osVersion" : "string",
+        "attachment.snapshot.platform" : "string",
+        "attachment.snapshot.scratchpadDirectory" : "string",
+        "attachment.snapshot.shell" : "string",
+        "attachment.snapshot.workingDirectory" : "string",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "rendered" : "array",
+        "rendered[]" : "object",
+        "rendered[].content" : "string",
+        "sessionId" : "string",
+        "session_id" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/hook_success" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.command" : "string",
+        "attachment.content" : "string",
+        "attachment.durationMs" : "int",
+        "attachment.exitCode" : "int",
+        "attachment.hookEvent" : "string",
+        "attachment.hookName" : "string",
+        "attachment.stderr" : "string",
+        "attachment.stdout" : "string",
+        "attachment.toolUseID" : "string",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "null string",
+        "rendered" : "array",
+        "rendered[]" : "object",
+        "rendered[].content" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/instructions" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.files" : "array",
+        "attachment.files[]" : "object",
+        "attachment.files[].content" : "string",
+        "attachment.files[].path" : "string",
+        "attachment.files[].type" : "string",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "rendered" : "array",
+        "rendered[]" : "object",
+        "rendered[].content" : "string",
+        "sessionId" : "string",
+        "session_id" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/mcp_instructions_delta" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.addedBlocks" : "array",
+        "attachment.addedBlocks[]" : "string",
+        "attachment.addedNames" : "array",
+        "attachment.addedNames[]" : "string",
+        "attachment.removedNames" : "array",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "rendered" : "array",
+        "rendered[]" : "object",
+        "rendered[].content" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/model" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.identity" : "object",
+        "attachment.identity.knowledgeCutoff" : "string",
+        "attachment.identity.marketingName" : "string",
+        "attachment.identity.modelId" : "string",
+        "attachment.text" : "string",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "rendered" : "array",
+        "rendered[]" : "object",
+        "rendered[].content" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/prompt_snapshot" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.cliPrefix" : "string",
+        "attachment.systemPrompt" : "array",
+        "attachment.systemPrompt[]" : "string",
+        "attachment.tools" : "array",
+        "attachment.tools[]" : "object",
+        "attachment.tools[].description" : "string",
+        "attachment.tools[].name" : "string",
+        "attachment.tools[].schema" : "object",
+        "attachment.tools[].schema.description" : "string",
+        "attachment.tools[].schema.eager_input_streaming" : "bool",
+        "attachment.tools[].schema.input_schema" : "object",
+        "attachment.tools[].schema.name" : "string",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "sessionId" : "string",
+        "session_id" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/session_context" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.context" : "object",
+        "attachment.context.userEmail" : "string",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "rendered" : "array",
+        "rendered[]" : "object",
+        "rendered[].content" : "string",
+        "sessionId" : "string",
+        "session_id" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/silent_turn_reminder" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.text" : "string",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "rendered" : "array",
+        "rendered[]" : "object",
+        "rendered[].content" : "string",
+        "sessionId" : "string",
+        "session_id" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/skill_listing" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.content" : "string",
+        "attachment.isInitial" : "bool",
+        "attachment.names" : "array",
+        "attachment.names[]" : "string",
+        "attachment.skillCount" : "int",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "rendered" : "array",
+        "rendered[]" : "object",
+        "rendered[].content" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "attachment/total_tokens_reminder" : {
+      "fields" : {
+        "attachment" : "object",
+        "attachment.text" : "string",
+        "attachment.type" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "rendered" : "array",
+        "rendered[]" : "object",
+        "rendered[].content" : "string",
+        "sessionId" : "string",
+        "session_id" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "cost-state" : {
+      "fields" : {
+        "hasUnknownModelCost" : "bool",
+        "modelUsage" : "object",
+        "modelUsage.*" : "object",
+        "modelUsage.*.cacheCreationInputTokens" : "int",
+        "modelUsage.*.cacheReadInputTokens" : "int",
+        "modelUsage.*.costUSD" : "number",
+        "modelUsage.*.inputTokens" : "int",
+        "modelUsage.*.outputTokens" : "int",
+        "modelUsage.*.thinkingTokens" : "int",
+        "modelUsage.*.webSearchRequests" : "int",
+        "sessionId" : "string",
+        "startTime" : "int",
+        "totalAPIDuration" : "int",
+        "totalAPIDurationWithoutRetries" : "int",
+        "totalCostUSD" : "number",
+        "totalDuration" : "int",
+        "totalLinesAdded" : "int",
+        "totalLinesRemoved" : "int",
+        "totalToolDuration" : "int",
+        "type" : "string"
+      }
+    },
+    "file-history-delta" : {
+      "fields" : {
+        "backup" : "object",
+        "backup.backupFileName" : "null",
+        "backup.backupTime" : "string",
+        "backup.realParentDir" : "string",
+        "backup.version" : "int",
+        "messageId" : "string",
+        "snapshotMessageId" : "string",
+        "timestamp" : "string",
+        "trackingPath" : "string",
+        "type" : "string"
+      }
+    },
+    "file-history-snapshot" : {
+      "fields" : {
+        "isSnapshotUpdate" : "bool",
+        "messageId" : "string",
+        "snapshot" : "object",
+        "snapshot.messageId" : "string",
+        "snapshot.timestamp" : "string",
+        "snapshot.trackedFileBackups" : "object",
+        "type" : "string"
+      }
+    },
+    "last-prompt" : {
+      "fields" : {
+        "lastPrompt" : "string",
+        "leafUuid" : "string",
+        "sessionId" : "string",
+        "type" : "string"
+      }
+    },
+    "mode" : {
+      "fields" : {
+        "mode" : "string",
+        "sessionId" : "string",
+        "type" : "string"
+      }
+    },
+    "permission-mode" : {
+      "fields" : {
+        "permissionMode" : "string",
+        "sessionId" : "string",
+        "type" : "string"
+      }
+    },
+    "queue-operation" : {
+      "fields" : {
+        "content" : "string",
+        "operation" : "string",
+        "reason" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string"
+      }
+    },
+    "system/away_summary" : {
+      "fields" : {
+        "content" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isMeta" : "bool",
+        "isSidechain" : "bool",
+        "parentUuid" : "string",
+        "sessionId" : "string",
+        "subtype" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "system/local_command" : {
+      "fields" : {
+        "commandRun" : "object",
+        "commandRun.args" : "string",
+        "commandRun.command" : "string",
+        "content" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isMeta" : "bool",
+        "isSidechain" : "bool",
+        "level" : "string",
+        "parentUuid" : "string",
+        "sessionId" : "string",
+        "subtype" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "level" : [
+          "info"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "system/stop_hook_summary" : {
+      "fields" : {
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "hasOutput" : "bool",
+        "hookAdditionalContext" : "array",
+        "hookCount" : "int",
+        "hookErrors" : "array",
+        "hookInfos" : "array",
+        "hookInfos[]" : "object",
+        "hookInfos[].command" : "string",
+        "hookInfos[].durationMs" : "int",
+        "isSidechain" : "bool",
+        "level" : "string",
+        "parentUuid" : "string",
+        "preventedContinuation" : "bool",
+        "sessionId" : "string",
+        "session_id" : "string",
+        "stopReason" : "string",
+        "subtype" : "string",
+        "timestamp" : "string",
+        "toolUseID" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "level" : [
+          "suggestion"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "system/turn_duration" : {
+      "fields" : {
+        "cwd" : "string",
+        "durationMs" : "int",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isMeta" : "bool",
+        "isSidechain" : "bool",
+        "messageCount" : "int",
+        "parentUuid" : "string",
+        "pendingWorkflowCount" : "int",
+        "sessionId" : "string",
+        "subtype" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "user" : {
+      "fields" : {
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isMeta" : "bool",
+        "isSidechain" : "bool",
+        "message" : "object",
+        "message.content" : "array string",
+        "message.content[text]" : "object",
+        "message.content[text].text" : "string",
+        "message.content[text].type" : "string",
+        "message.content[tool_result]" : "object",
+        "message.content[tool_result].content" : "array string",
+        "message.content[tool_result].is_error" : "bool",
+        "message.content[tool_result].tool_use_id" : "string",
+        "message.content[tool_result].type" : "string",
+        "message.role" : "string",
+        "origin" : "object",
+        "origin.kind" : "string",
+        "parentUuid" : "string",
+        "permissionMode" : "string",
+        "promptId" : "string",
+        "promptSource" : "string",
+        "queueSkipAttachments" : "bool",
+        "sessionId" : "string",
+        "session_id" : "string",
+        "sourceToolAssistantUUID" : "string",
+        "sourceToolUseID" : "string",
+        "timestamp" : "string",
+        "toolUseResult" : "object string",
+        "turnCompanion" : "bool",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "cli"
+        ],
+        "message.role" : [
+          "user"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    }
+  },
+  "version" : "2.1.274"
+}

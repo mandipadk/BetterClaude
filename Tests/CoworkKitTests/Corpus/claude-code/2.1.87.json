@@ -1,0 +1,202 @@
+{
+  "format" : "claude-code",
+  "kinds" : {
+    "assistant" : {
+      "fields" : {
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "error" : "string",
+        "gitBranch" : "string",
+        "isApiErrorMessage" : "bool",
+        "isSidechain" : "bool",
+        "message" : "object",
+        "message.container" : "null",
+        "message.content" : "array",
+        "message.content[text]" : "object",
+        "message.content[text].text" : "string",
+        "message.content[text].type" : "string",
+        "message.content[thinking]" : "object",
+        "message.content[thinking].signature" : "string",
+        "message.content[thinking].thinking" : "string",
+        "message.content[thinking].type" : "string",
+        "message.content[tool_use]" : "object",
+        "message.content[tool_use].caller" : "object",
+        "message.content[tool_use].caller.type" : "string",
+        "message.content[tool_use].id" : "string",
+        "message.content[tool_use].input" : "object",
+        "message.content[tool_use].input.command" : "string",
+        "message.content[tool_use].input.file_path" : "string",
+        "message.content[tool_use].name" : "string",
+        "message.content[tool_use].type" : "string",
+        "message.context_management" : "null",
+        "message.id" : "string",
+        "message.model" : "string",
+        "message.role" : "string",
+        "message.stop_details" : "null",
+        "message.stop_reason" : "null string",
+        "message.stop_sequence" : "null string",
+        "message.type" : "string",
+        "message.usage" : "object",
+        "message.usage.cache_creation" : "object",
+        "message.usage.cache_creation.ephemeral_1h_input_tokens" : "int",
+        "message.usage.cache_creation.ephemeral_5m_input_tokens" : "int",
+        "message.usage.cache_creation_input_tokens" : "int",
+        "message.usage.cache_read_input_tokens" : "int",
+        "message.usage.inference_geo" : "null string",
+        "message.usage.input_tokens" : "int",
+        "message.usage.iterations" : "array null",
+        "message.usage.output_tokens" : "int",
+        "message.usage.server_tool_use" : "object",
+        "message.usage.server_tool_use.web_fetch_requests" : "int",
+        "message.usage.server_tool_use.web_search_requests" : "int",
+        "message.usage.service_tier" : "null string",
+        "message.usage.speed" : "null string",
+        "parentUuid" : "string",
+        "requestId" : "string",
+        "sessionId" : "string",
+        "slug" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "local-agent"
+        ],
+        "message.model" : [
+          "<synthetic>",
+          "claude-sonnet-4-6"
+        ],
+        "message.role" : [
+          "assistant"
+        ],
+        "message.stop_reason" : [
+          "end_turn",
+          "max_tokens",
+          "stop_sequence",
+          "tool_use"
+        ],
+        "message.type" : [
+          "message"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "last-prompt" : {
+      "fields" : {
+        "lastPrompt" : "string",
+        "sessionId" : "string",
+        "type" : "string"
+      }
+    },
+    "queue-operation" : {
+      "fields" : {
+        "content" : "string",
+        "operation" : "string",
+        "sessionId" : "string",
+        "timestamp" : "string",
+        "type" : "string"
+      }
+    },
+    "system/compact_boundary" : {
+      "fields" : {
+        "compactMetadata" : "object",
+        "compactMetadata.preCompactDiscoveredTools" : "array",
+        "compactMetadata.preCompactDiscoveredTools[]" : "string",
+        "compactMetadata.preTokens" : "int",
+        "compactMetadata.trigger" : "string",
+        "content" : "string",
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isMeta" : "bool",
+        "isSidechain" : "bool",
+        "level" : "string",
+        "logicalParentUuid" : "string",
+        "parentUuid" : "null",
+        "sessionId" : "string",
+        "slug" : "string",
+        "subtype" : "string",
+        "timestamp" : "string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "local-agent"
+        ],
+        "level" : [
+          "info"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    },
+    "user" : {
+      "fields" : {
+        "cwd" : "string",
+        "entrypoint" : "string",
+        "gitBranch" : "string",
+        "isCompactSummary" : "bool",
+        "isMeta" : "bool",
+        "isSidechain" : "bool",
+        "isVisibleInTranscriptOnly" : "bool",
+        "message" : "object",
+        "message.content" : "array string",
+        "message.content[document]" : "object",
+        "message.content[document].source" : "object",
+        "message.content[document].source.data" : "string",
+        "message.content[document].source.media_type" : "string",
+        "message.content[document].source.type" : "string",
+        "message.content[document].type" : "string",
+        "message.content[image]" : "object",
+        "message.content[image].source" : "object",
+        "message.content[image].source.data" : "string",
+        "message.content[image].source.media_type" : "string",
+        "message.content[image].source.type" : "string",
+        "message.content[image].type" : "string",
+        "message.content[text]" : "object",
+        "message.content[text].text" : "string",
+        "message.content[text].type" : "string",
+        "message.content[tool_result]" : "object",
+        "message.content[tool_result].content" : "array string",
+        "message.content[tool_result].is_error" : "bool",
+        "message.content[tool_result].tool_use_id" : "string",
+        "message.content[tool_result].type" : "string",
+        "message.role" : "string",
+        "parentUuid" : "null string",
+        "permissionMode" : "string",
+        "promptId" : "string",
+        "sessionId" : "string",
+        "slug" : "string",
+        "sourceToolAssistantUUID" : "string",
+        "sourceToolUseID" : "string",
+        "timestamp" : "string",
+        "toolUseResult" : "object string",
+        "type" : "string",
+        "userType" : "string",
+        "uuid" : "string",
+        "version" : "string"
+      },
+      "values" : {
+        "entrypoint" : [
+          "local-agent"
+        ],
+        "message.role" : [
+          "user"
+        ],
+        "userType" : [
+          "external"
+        ]
+      }
+    }
+  },
+  "version" : "2.1.87"
+}

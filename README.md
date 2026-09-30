@@ -298,6 +298,7 @@ cowork live                                     # Claude Code sessions running n
 cowork usage                                    # every account's limits and what used them
 cowork file ~/Code/app/src/main.swift           # where a file came from
 cowork distill                                  # repeated prompts, what needs attention, rules to allow
+cowork formats                                  # whether Better Claude still reads what Claude Code writes
 cowork library                                  # every artifact Claude ever produced
 cowork library --kind code --limit 50           # narrowed to one kind
 
@@ -327,13 +328,29 @@ answer on a machine with more than one install.
 session file claims, so ordering the writes the other way round is the one sequence that
 can lose data.
 
+## Keeping up with Claude Code
+
+Claude Code and Codex change how they write their files without notice. Better Claude
+keeps a corpus of their real shapes in `Tests/CoworkKitTests/Corpus`: for each version,
+every kind of record and the name and type of every field, with no text, paths, ids or
+numbers. Every field Better Claude reads is listed with the feature that needs it, and
+every kind of record has been reviewed as read or not needed. The tests check all of it
+against every version, build records from each version's shape, and read them back, so a
+change that would lose your usage or file versions fails a test instead of reaching you.
+
+The app runs the same check on your newest conversations. When a new Claude Code writes
+something differently, the Claude Code page says what may be missing, and **Copy Report**
+copies the shape (field names only) for a bug report. `cowork formats` prints the same
+check; `make corpus` adds your Mac's versions to the corpus.
+
 ## Limitations
 
 - **macOS only.** The layout and the process inspection are both platform-specific.
 - **The on-disk format is undocumented.** It was derived by reading real sessions, and it
   demonstrably changes over time — fields have been added and retired across releases.
   A future update can change it again. Session data is therefore never modelled with
-  fixed structs: unknown fields are preserved untouched rather than dropped.
+  fixed structs: unknown fields are preserved untouched rather than dropped. See
+  [Keeping up with Claude Code](#keeping-up-with-claude-code) for how changes are caught.
 - **Verified against one machine's data.** The path encoder is checked against every
   project directory present there, and transfers are verified by comparing per-message
   checksums, but this has not been tested across many accounts or versions.

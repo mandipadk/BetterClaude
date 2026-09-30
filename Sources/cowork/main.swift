@@ -58,6 +58,11 @@ USAGE
       Prompts you repeat, commands Claude runs that your settings don't allow yet, what's
       failing around Claude Code's turns, and this week in numbers.
 
+  cowork formats [--all] [--write <dir>]
+      Check that Better Claude still understands what this Mac's Claude Code and Codex write.
+      --all surveys every conversation, not just the latest; --write merges each version's
+      shape (fields and kinds of record, never content) into <dir>/<tool>/<version>.json.
+
   cowork usage
       Show each account's five-hour and weekly limits, when they reset, where the week is
       heading, and which projects used the most this week.
@@ -183,6 +188,41 @@ func cmdDistill() throws {
     print("\n\(issues.count) things failing this week:")
     for issue in issues.prefix(10) { print("  \(issue.kind.rawValue)  \(issue.name)  \(issue.times) times  \(issue.detail ?? "")") }
     print("\nThis week: \(digest.conversations) conversations, \(digest.prompts) prompts, \(digest.filesChanged) files changed, \(digest.commands) commands.")
+}
+
+func cmdFormats(_ args: Args) throws {
+    let all = args.flags.contains("all")
+    let writeDir = args.values["write"]
+    let snapshot = runBlocking { await Catalog().snapshot() }
+    guard all || writeDir != nil else {
+        let reports = FormatSurvey.check(snapshot.conversations)
+        for report in reports {
+            print("\(report.contract.name) \(report.shape.version): \(report.shape.kinds.count) kinds of record")
+            if report.findings.isEmpty { print("  Everything Better Claude reads is where it expects.") }
+            for finding in report.findings { print("  \(finding.breaksSomething ? "Breaks" : "New")  \(finding)") }
+        }
+        return
+    }
+    for contract in [FormatContract.claudeCode, FormatContract.codex] {
+        let urls = snapshot.conversations.compactMap { conversation -> URL? in
+            if let external = conversation.external { return external.source == .codex && contract.format == "codex" ? external.fileURL : nil }
+            return contract.format == "claude-code" ? conversation.transcriptURL : nil
+        }
+        let shapes = FormatSurvey.shapes(of: urls, contract: contract)
+        print("\(contract.name): \(shapes.count) versions in \(urls.count) conversations")
+        for version in FormatSurvey.ordered(shapes.keys) {
+            guard var shape = shapes[version] else { continue }
+            if let writeDir {
+                let folder = URL(fileURLWithPath: writeDir).appendingPathComponent(contract.format)
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                let file = folder.appendingPathComponent("\(version).json")
+                if let data = try? Data(contentsOf: file), let existing = try? FormatShape.decode(data) { shape.merge(existing) }
+                try shape.encoded().write(to: file, options: .atomic)
+            }
+            let findings = contract.check(shape)
+            print("  \(version)  \(shape.kinds.count) kinds\(findings.isEmpty ? "" : "  " + findings.map(\.description).joined(separator: "; "))")
+        }
+    }
 }
 
 func cmdUsage() throws {
@@ -644,6 +684,7 @@ do {
     case "live": cmdLive()
     case "usage": try cmdUsage()
     case "distill": try cmdDistill()
+    case "formats": try cmdFormats(args)
     case "file": try cmdFile(args)
     case "search": try cmdSearch(args)
     case "encode":
