@@ -187,6 +187,7 @@ public enum TranscriptScanner {
             if record["isMeta"]?.boolValue == true { return }
             let text = ConversationText.plainText(of: message)
             guard !text.isEmpty else { return }
+            if type == "user", InjectedContext.contains(text) { return }
             let isCompaction = record["isCompactSummary"]?.boolValue == true
             result.messages.append(.init(uuid: uuid, role: type == "user" ? .user : .assistant,
                                          kind: isCompaction ? .compaction : .message,

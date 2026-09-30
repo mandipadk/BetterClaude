@@ -46,6 +46,11 @@ they opened, the files Claude changed, eight weeks of activity, and the `CLAUDE.
 memory Claude is given there. Sessions in Claude Code's worktrees count toward the
 repository they came from.
 
+**What you keep correcting** lists what you've told Claude in more than one of a project's
+conversations ("no, use pnpm", "don't log request bodies"), worded as lines for its
+`CLAUDE.md`. Edit the wording, add the ones you want under their own heading, and undo it
+from History. `cowork corrections` prints the same list.
+
 ### Claude remembers your past work
 
 Better Claude ships an MCP server, `bc-recall`, inside the app. Switch it on from an
@@ -347,6 +352,7 @@ cowork distill                                  # repeated prompts, what needs a
 cowork formats                                  # whether Better Claude still reads what Claude Code writes
 cowork secrets                                  # keys and tokens that ended up in a conversation, masked
 cowork projects                                 # every project folder, with conversations and cost
+cowork corrections                              # what you keep correcting, as lines for CLAUDE.md
 cowork month 2026-09                            # a month with every Claude, in numbers
 cowork library                                  # every artifact Claude ever produced
 cowork library --kind code --limit 50           # narrowed to one kind

@@ -139,12 +139,7 @@ public enum CodexSessions {
         }.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func isInjected(_ text: String) -> Bool {
-        let head = text.prefix(64)
-        return head.hasPrefix("<environment_context>") || head.hasPrefix("<user_instructions>")
-            || head.hasPrefix("# AGENTS.md instructions") || head.hasPrefix("<permissions")
-            || head.hasPrefix("<turn_aborted>")
-    }
+    static func isInjected(_ text: String) -> Bool { InjectedContext.contains(text) }
 
     public static func scan(_ url: URL) throws -> TranscriptScan {
         let data: Data

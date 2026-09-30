@@ -70,6 +70,10 @@ USAGE
       A month with every Claude in numbers: conversations, prompts, active days, models,
       tools and cost.
 
+  cowork corrections [--counts]
+      Corrections you've made in two or more conversations of a project, worded as lines
+      for its CLAUDE.md. --counts prints only how many per project.
+
   cowork secrets [--counts]
       Find API keys and tokens that ended up in a conversation, masked, with where each
       appears. --counts prints only how many of each kind.
@@ -232,6 +236,23 @@ func cmdFormats(_ args: Args) throws {
             }
             let findings = contract.check(shape)
             print("  \(version)  \(shape.kinds.count) kinds\(findings.isEmpty ? "" : "  " + findings.map(\.description).joined(separator: "; "))")
+        }
+    }
+}
+
+func cmdCorrections(_ args: Args) throws {
+    let suggestions = try runBlocking { () -> Result<[CorrectionSuggestion], Error> in
+        do { return .success(try await Corrections.suggestions(index: try HistoryIndex(readingFrom: HistoryIndex.defaultURL()))) }
+        catch { return .failure(error) }
+    }.get()
+    print("\(suggestions.count) corrections you keep making.")
+    let byProject = Dictionary(grouping: suggestions) { $0.project.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "every project" }
+    for (project, items) in byProject.sorted(by: { $0.value.count > $1.value.count }) {
+        if args.flags.contains("counts") {
+            print("  \(items.count) in a project, from \(items.map(\.examples.count).reduce(0, +)) corrections")
+        } else {
+            print("\n\(project)")
+            for item in items { print("  \(item.rule)  (\(item.examples.count) times in \(item.conversations) conversations)") }
         }
     }
 }
@@ -748,6 +769,7 @@ do {
     case "formats": try cmdFormats(args)
     case "secrets": cmdSecrets(args)
     case "projects": try cmdProjects()
+    case "corrections": try cmdCorrections(args)
     case "month": try cmdMonth(args)
     case "file": try cmdFile(args)
     case "search": try cmdSearch(args)

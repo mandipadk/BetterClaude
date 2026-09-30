@@ -12,6 +12,12 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.15.0": [
+            Item(symbol: "text.badge.checkmark", title: "What you keep correcting",
+                 detail: "A project's page shows things you've told Claude in more than one conversation, like which package manager to use, worded as lines for its CLAUDE.md. Edit them, add them, and undo it from History."),
+            Item(symbol: "line.3.horizontal.decrease", title: "Only what you typed",
+                 detail: "Task notifications, command echoes and Codex's session goals no longer count as prompts, so search, Ask, Replay and your month are about what you actually asked."),
+        ],
         "0.14.0": [
             Item(symbol: "gauge.with.needle", title: "Context coach",
                  detail: "A heads-up when a running session has read 75% or 90% of its context window, while compacting or a handoff still saves the most. Clicking it opens the conversation."),

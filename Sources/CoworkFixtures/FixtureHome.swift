@@ -419,6 +419,7 @@ public struct FixtureHome {
         try writeFileHistory()
         try writeLongSession()
         try writeLeakedKeys()
+        try writeCorrections()
         try writePromptHistory()
 
         // Memory, including one for a project folder that has since been deleted.
@@ -507,6 +508,48 @@ public struct FixtureHome {
             time.addTimeInterval(1_800)
         }
         try writeJSON(["samples": samples], to: userData.appendingPathComponent("plan-usage-history.json"))
+    }
+
+    /// The same two corrections in two billing-service conversations: what a project's
+    /// CLAUDE.md should have said.
+    func writeCorrections() throws {
+        let exchanges: [(String, [(String, String)])] = [
+            ("Retry failed webhook deliveries with backoff", [
+                ("I'll add the retry library with npm install.", "No, use pnpm here, not npm."),
+                ("Logged the full request body on each failed attempt.", "Don't log request bodies, they can hold card details."),
+            ]),
+            ("Add a health check endpoint", [
+                ("Installing the health check package with npm.", "no, this repo uses pnpm not npm"),
+                ("Added the request body to the error log for debugging.", "Please don't log request bodies. They can contain card details."),
+            ]),
+        ]
+        for (title, pairs) in exchanges {
+            guard let conversation = Script.claudeCode.first(where: { $0.title == title }) else { continue }
+            let project = paths.home.appendingPathComponent(conversation.project ?? "Code")
+            let transcript = paths.claudeCodeConfigDir.appendingPathComponent("projects", isDirectory: true)
+                .appendingPathComponent(PathEncoder.encode(project.path), isDirectory: true)
+                .appendingPathComponent("\(conversation.cliId).jsonl")
+            var added: [String] = []
+            for (index, pair) in pairs.enumerated() {
+                let time = Transcriber.stamp(now.addingTimeInterval(-conversation.age + 300 + Double(index) * 60))
+                let ask = Transcriber.uuid(seed: conversation.cliId + "correction", index: index * 2)
+                let answer = Transcriber.uuid(seed: conversation.cliId + "correction", index: index * 2 + 1)
+                for record: [String: Any] in [
+                    ["type": "assistant", "uuid": answer, "sessionId": conversation.cliId, "timestamp": time,
+                     "message": ["role": "assistant", "content": [["type": "text", "text": pair.0]]]],
+                    ["type": "user", "uuid": ask, "parentUuid": answer, "sessionId": conversation.cliId, "timestamp": time,
+                     "message": ["role": "user", "content": pair.1]],
+                ] {
+                    added.append(String(decoding: try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]), as: UTF8.self))
+                }
+            }
+            // Before the conversation's last question, so its last exchange stays its own.
+            var lines = try String(contentsOf: transcript, encoding: .utf8).components(separatedBy: "\n")
+            let lastAsk = lines.lastIndex { $0.contains("\"type\":\"user\"") && !$0.contains("tool_result")
+                && !$0.contains("isSidechain") && !$0.contains("correction") }
+            lines.insert(contentsOf: added, at: lastAsk ?? max(0, lines.count - 1))
+            try Data(lines.joined(separator: "\n").utf8).write(to: transcript)
+        }
     }
 
     /// Invented keys that ended up in a conversation: one pasted in, one printed by a command.

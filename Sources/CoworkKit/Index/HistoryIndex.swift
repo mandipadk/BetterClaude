@@ -10,7 +10,7 @@ import Foundation
 public actor HistoryIndex {
 
     /// Bumped whenever the schema or what gets extracted changes; an older file is rebuilt.
-    public static let schemaVersion = 8
+    public static let schemaVersion = 9
 
     /// One file per schema, so an older copy of the app still running during an update
     /// keeps its own index instead of rebuilding this one back and forth.

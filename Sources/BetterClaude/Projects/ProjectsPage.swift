@@ -10,6 +10,12 @@ final class ProjectsModel {
     private(set) var projects: [ProjectSummary] = []
     private(set) var loaded = false
     private(set) var detail: ProjectDetail?
+    /// Corrections made in more than one of the selected project's conversations.
+    private(set) var corrections: [CorrectionSuggestion] = []
+    /// The wording to add, as edited, by suggestion.
+    var wording: [String: String] = [:]
+    var chosen: Set<String> = []
+    private(set) var added: Int?
     var selectedID: String? {
         didSet { if selectedID != oldValue { loadDetail() } }
     }
@@ -29,11 +35,34 @@ final class ProjectsModel {
         }
     }
 
+    func rule(_ suggestion: CorrectionSuggestion) -> String { wording[suggestion.id] ?? suggestion.rule }
+
+    func addChosen() {
+        guard let project = detail?.summary.path else { return }
+        let rules = corrections.filter { chosen.contains($0.id) }.map(rule)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard !rules.isEmpty else { return }
+        do {
+            try Corrections.add(rules, to: Corrections.target(for: project))
+            added = rules.count
+            corrections.removeAll { chosen.contains($0.id) }
+            chosen = []
+            loadDetail()
+        } catch {
+            added = nil
+        }
+    }
+
     private func loadDetail() {
         guard let index, let summary = projects.first(where: { $0.id == selectedID }) else { detail = nil; return }
         Task {
             let found = try? await Projects.detail(of: summary, index: index)
             if found?.summary.id == selectedID { detail = found }
+            let all = (try? await Corrections.suggestions(index: index)) ?? []
+            guard summary.id == selectedID else { return }
+            corrections = all.filter { $0.project == summary.path }
+            chosen = Set(corrections.map(\.id))
+            added = nil
         }
     }
 }
@@ -134,6 +163,8 @@ private struct ProjectDetailView: View {
                         ActivityGrid(days: detail.activity)
                     }
                 }
+
+                CorrectionsSection(project: summary.path)
 
                 DetailSection(title: "Conversations") {
                     VStack(alignment: .leading, spacing: 0) {
@@ -261,5 +292,68 @@ struct ActivityGrid: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(days.filter { $0.conversations > 0 }.count) active days in the last eight weeks")
+    }
+}
+
+/// Things you keep telling Claude in this project, offered as lines for its CLAUDE.md.
+private struct CorrectionsSection: View {
+    @Environment(AppServices.self) private var services
+    let project: String
+    @State private var confirming = false
+
+    var body: some View {
+        let model = services.projectPages
+        if !model.corrections.isEmpty || model.added != nil {
+            DetailSection(title: "What you keep correcting",
+                          subtitle: "Things you've told Claude in more than one conversation here. In CLAUDE.md, the next session starts knowing them.") {
+                VStack(alignment: .leading, spacing: Theme.Space.m) {
+                    if let added = model.added {
+                        Text("Added \(added) line\(added == 1 ? "" : "s") to CLAUDE.md. Undo it from History.")
+                            .font(Theme.Font.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(model.corrections) { suggestion in
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Toggle("", isOn: Binding(
+                                get: { model.chosen.contains(suggestion.id) },
+                                set: { on in if on { model.chosen.insert(suggestion.id) } else { model.chosen.remove(suggestion.id) } }))
+                                .toggleStyle(.checkbox)
+                                .labelsHidden()
+                            VStack(alignment: .leading, spacing: 4) {
+                                TextField("Line for CLAUDE.md", text: Binding(
+                                    get: { model.rule(suggestion) },
+                                    set: { model.wording[suggestion.id] = $0 }))
+                                    .textFieldStyle(.roundedBorder)
+                                    .font(Theme.Font.body)
+                                Text(said(suggestion))
+                                    .font(Theme.Font.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                    }
+                    if !model.corrections.isEmpty {
+                        HStack {
+                            Spacer()
+                            Button("Add \(model.chosen.count) to CLAUDE.md…") { confirming = true }
+                                .buttonStyle(.primary)
+                                .disabled(model.chosen.isEmpty)
+                        }
+                    }
+                }
+            }
+            .confirmationDialog("Add \(model.chosen.count) line\(model.chosen.count == 1 ? "" : "s") to this project's CLAUDE.md?",
+                                isPresented: $confirming) {
+                Button("Add") { model.addChosen() }
+            } message: {
+                Text("They go under their own heading in \(services.snapshot.paths.abbreviating(Corrections.target(for: project).path)). What's there now is kept, and Undo in History takes them out.")
+            }
+        }
+    }
+
+    private func said(_ suggestion: CorrectionSuggestion) -> String {
+        let first = suggestion.examples.first.map { "You said “\($0.text)”" } ?? ""
+        let more = suggestion.examples.count - 1
+        return more > 0 ? "\(first), and \(more) more time\(more == 1 ? "" : "s") in \(suggestion.conversations) conversations." : first
     }
 }
