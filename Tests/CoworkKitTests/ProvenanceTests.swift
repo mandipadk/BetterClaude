@@ -54,6 +54,51 @@ struct ProvenanceTests {
         }
     }
 
+    @Test("A conversation's changes are the files as they were before it, and putting them back is one undoable step")
+    func rewindConversation() async throws {
+        try await HistoryIndexTests.withSample { sample, snapshot, index in
+            try await index.update(from: snapshot)
+            let (deliver, backoff) = Self.files(sample)
+            let conversation = try #require(snapshot.conversations.first { $0.title == "Retry failed webhook deliveries with backoff" })
+
+            let changes = try await ConversationRewind.changes(conversationID: conversation.id, index: index, paths: sample.paths)
+            let edited = try #require(changes.files.first { $0.path == deliver })
+            let created = try #require(changes.files.first { $0.path == backoff })
+            #expect(edited.canPutBack && !edited.created && edited.existsNow)
+            #expect(created.canPutBack && created.created)
+            #expect(changes.puttable.count == 2)
+            let recall = Recall(index: index, accounts: [RecallTests.personal])
+            let described = try await recall.changes(id: conversation.cliSessionId ?? conversation.id)
+            #expect(described.contains("backoff.ts") && described.contains("created by it"))
+
+            let receipt = try ConversationRewind.putBack(changes.puttable, title: changes.title, paths: sample.paths)
+            #expect(try String(contentsOfFile: deliver, encoding: .utf8) == FixtureHome.deliverBefore)
+            #expect(!FileManager.default.fileExists(atPath: backoff))
+            #expect(receipt.title == "Before “Retry failed webhook deliveries with backoff”")
+
+            _ = try Undo.revert(receipt)
+            #expect(try String(contentsOfFile: deliver, encoding: .utf8) == FixtureHome.deliverNow)
+            #expect(try String(contentsOfFile: backoff, encoding: .utf8) == FixtureHome.backoffNow)
+        }
+    }
+
+    @Test("File versions Claude Code keys relative to where the session started are found by their full path")
+    func relativeVersions() async throws {
+        try await HistoryIndexTests.withSample { sample, snapshot, index in
+            let conversation = try #require(snapshot.conversations.first { $0.title == "Retry failed webhook deliveries with backoff" })
+            let url = try #require(conversation.transcriptURL)
+            let record = #"{"type":"file-history-delta","messageId":"a9","snapshotMessageId":"u9","trackingPath":"src/webhooks/queue.ts","backup":{"backupFileName":null,"version":1,"backupTime":"2026-09-01T10:00:00.000Z"},"timestamp":"2026-09-01T10:00:00.000Z"}"#
+            let handle = try FileHandle(forWritingTo: url)
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data((record + "\n").utf8))
+            try handle.close()
+            try await index.update(from: snapshot)
+            let root = sample.paths.home.appendingPathComponent("Code/billing-service").path
+            let history = try await FileProvenance.history(of: root + "/src/webhooks/queue.ts", index: index, paths: sample.paths)
+            #expect(history.createdByClaude)
+        }
+    }
+
     @Test("Saved versions and plans are kept, and still found after Claude Code's cleanup deletes them")
     func keepsVersions() async throws {
         try await HistoryIndexTests.withSample { sample, snapshot, index in

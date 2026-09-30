@@ -58,6 +58,11 @@ let tools: [JSONValue] = [
          properties: [
             ("path", ["type": "string", "description": "An absolute path, or a file name like Package.swift."]),
          ], required: ["path"]),
+    tool("conversation_changes",
+         "List every file a past conversation edited or created, with how many lines differ from the version saved before it started. Use it to see what an earlier session did to the code.",
+         properties: [
+            ("id", ["type": "string", "description": "The conversation's id, from search_history or recent_work."]),
+         ], required: ["id"]),
 ]
 
 func tool(_ name: String, _ description: String, properties: [(String, [String: String])],
@@ -130,6 +135,9 @@ func call(_ name: String, _ input: JSONValue) async -> JSONValue {
         case "file_history":
             guard let path = input["path"]?.stringValue else { return text("file_history needs a path.", isError: true) }
             return text(try await recall.fileHistory(path: path))
+        case "conversation_changes":
+            guard let id = input["id"]?.stringValue else { return text("conversation_changes needs an id.", isError: true) }
+            return text(try await recall.changes(id: id))
         default:
             return text("There's no tool called \(name).", isError: true)
         }

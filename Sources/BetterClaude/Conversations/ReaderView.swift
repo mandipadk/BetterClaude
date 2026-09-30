@@ -119,6 +119,9 @@ struct ReaderHeader: View {
                     }
                     Button("Replay on Another Model…") { services.replaying = ReplayModel(conversation: conversation) }
                         .disabled(conversation.isTranscriptMissing)
+                    if conversation.external == nil {
+                        Button("What It Changed…") { services.rewinding = RewindModel(conversation: conversation) }
+                    }
                     Divider()
                     if let session = conversation.claudeCodeSession, !session.resolvedCwd.isEmpty,
                        !session.transcriptURL.path.hasPrefix(Vault.root.path) {

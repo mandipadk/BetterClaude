@@ -353,7 +353,7 @@ struct DiffView: View {
     @State private var width: CGFloat = 0
 
     var body: some View {
-        ScrollView(.horizontal) {
+        ScrollView([.horizontal, .vertical]) {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(diff.lines.prefix(400)) { line in
                     HStack(spacing: 8) {

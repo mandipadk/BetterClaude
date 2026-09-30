@@ -519,6 +519,10 @@ public struct FixtureHome {
         let backoff = folder.appendingPathComponent("backoff.ts")
         try Data(Self.deliverNow.utf8).write(to: deliver)
         try Data(Self.backoffNow.utf8).write(to: backoff)
+        // Last written by the conversation, as they would be.
+        for file in [deliver, backoff] {
+            try touch(file, at: now.addingTimeInterval(-conversation.age + 30))
+        }
 
         let history = paths.claudeCodeConfigDir.appendingPathComponent("file-history/\(conversation.cliId)", isDirectory: true)
         try FileManager.default.createDirectory(at: history, withIntermediateDirectories: true)

@@ -10,7 +10,7 @@ import Foundation
 public actor HistoryIndex {
 
     /// Bumped whenever the schema or what gets extracted changes; an older file is rebuilt.
-    public static let schemaVersion = 7
+    public static let schemaVersion = 8
 
     /// One file per schema, so an older copy of the app still running during an update
     /// keeps its own index instead of rebuilding this one back and forth.
@@ -356,8 +356,13 @@ public actor HistoryIndex {
             INSERT OR IGNORE INTO file_versions (conversation_id, file_path, version, backup_file, backup_time, message_id)
             VALUES (?, ?, ?, ?, ?, ?)
             """)
+        // Claude Code keys most files relative to the folder the session started in; tool
+        // calls name them absolutely, and the two have to meet.
+        let root = scan.firstCwd ?? conversation.projectPath
         for version in scan.fileVersions {
-            try insertVersion.run([id, .text(version.path), .int(Int64(version.version)), .optional(version.backupFileName),
+            let path = version.path.hasPrefix("/") || root == nil ? version.path
+                : URL(fileURLWithPath: root!).appendingPathComponent(version.path).standardizedFileURL.path
+            try insertVersion.run([id, .text(path), .int(Int64(version.version)), .optional(version.backupFileName),
                                    .date(version.backupTime), .optional(version.messageID)])
         }
         let insertPull = try database.prepare("""

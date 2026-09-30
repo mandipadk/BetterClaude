@@ -12,6 +12,14 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.8.0": [
+            Item(symbol: "clock.arrow.circlepath", title: "What a conversation changed",
+                 detail: "Every file a conversation edited or created, compared with how it was before, from the conversation's ⋯ menu. Put any of them back in one step, and undo that from History."),
+            Item(symbol: "doc.text.magnifyingglass", title: "More of your file history",
+                 detail: "Claude Code names most files relative to where a session started. Better Claude now finds those versions too, so Files shows far more of them."),
+            Item(symbol: "sparkle.magnifyingglass", title: "Claude sees what a session did",
+                 detail: "Claude's history tools can list what an earlier conversation changed in your code."),
+        ],
         "0.7.0": [
             Item(symbol: "clock.arrow.circlepath", title: "Every file version",
                  detail: "Newer Claude Code saves many file versions on their own rather than in its snapshots. Files now has them all; the index rebuilds once to find them."),

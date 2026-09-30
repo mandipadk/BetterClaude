@@ -75,6 +75,15 @@ the conversation each most likely came from. Any version can be put back and the
 undone from History. Saved versions and plans are kept before Claude Code's cleanup deletes
 them. The reader also marks where Claude compacted a conversation and shows what it kept.
 
+### What a conversation changed
+
+**What It Changed…** in a conversation's ⋯ menu lists every file it edited or created,
+each compared with the copy Claude Code saved before the conversation first touched it.
+Put back any or all of them in one step: what's there now is saved first, files the
+conversation created are taken away, and Undo in History reverses the whole thing. It works
+long after the session ended, and after Claude Code's cleanup for versions Better Claude
+kept. Claude's `conversation_changes` tool gives Claude the same list.
+
 ### Ask
 
 A question about your past work, answered by the model built into macOS from passages the

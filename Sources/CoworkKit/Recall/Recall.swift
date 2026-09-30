@@ -229,6 +229,30 @@ public struct Recall: Sendable {
         return out
     }
 
+    // MARK: conversation_changes
+
+    public func changes(id: String) async throws -> String {
+        guard let conversation = try await find(id) else {
+            return "There's no conversation with id \(id) that this Claude may read."
+        }
+        let changes = try await ConversationRewind.changes(conversationID: conversation.id, index: index)
+        guard !changes.files.isEmpty else { return "\"\(conversation.title)\" didn't edit or create any files." }
+        var out = "Files \"\(conversation.title)\" edited or created. The person can compare each with how it was before, and put it back, from Better Claude.\n"
+        for file in changes.files {
+            out += "\n- \(file.path)\n"
+            var facts: [String] = []
+            if file.created { facts.append("created by it") } else if file.before != nil { facts.append("edited") }
+            if !file.existsNow { facts.append("gone now") }
+            if file.changedSince { facts.append("changed again since") }
+            if file.before == nil { facts.append("no copy saved before it changed") }
+            if let diff = ConversationRewind.diff(for: file) {
+                facts.append("\(diff.added) lines added and \(diff.removed) removed since before it")
+            }
+            out += "  " + facts.joined(separator: "; ") + "\n"
+        }
+        return out
+    }
+
     // MARK: Helpers
 
     struct Found {

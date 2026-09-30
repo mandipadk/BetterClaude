@@ -93,6 +93,10 @@ struct MainWindow: View {
             ReplaySheet(model: model) { services.replaying = nil }
                 .environment(services)
         }
+        .sheet(item: $services.rewinding) { model in
+            RewindSheet(model: model) { services.rewinding = nil }
+                .environment(services)
+        }
         .sheet(item: $services.handingOff) { model in
             HandoffSheet(model: model) { services.handingOff = nil }
                 .environment(services)

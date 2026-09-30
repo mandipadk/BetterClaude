@@ -96,6 +96,8 @@ public struct TranscriptScan: Sendable {
     public var gitBranch: String?
     public var entrypoint: String?
     public var cwd: String?
+    /// The folder the session started in: file-history paths are relative to it.
+    public var firstCwd: String?
     public var firstTimestamp: Date?
     public var lastTimestamp: Date?
     /// Where the next pass should start: just past the last complete line read.
@@ -170,7 +172,10 @@ public enum TranscriptScanner {
         }
         if let branch = record["gitBranch"]?.stringValue, !branch.isEmpty { result.gitBranch = branch }
         if let entrypoint = record["entrypoint"]?.stringValue { result.entrypoint = entrypoint }
-        if let cwd = record["cwd"]?.stringValue, !cwd.isEmpty { result.cwd = cwd }
+        if let cwd = record["cwd"]?.stringValue, !cwd.isEmpty {
+            result.cwd = cwd
+            if result.firstCwd == nil { result.firstCwd = cwd }
+        }
 
         switch type {
         case "user", "assistant":
