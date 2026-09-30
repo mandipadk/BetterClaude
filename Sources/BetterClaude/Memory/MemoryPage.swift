@@ -158,6 +158,7 @@ private struct MemoryDetail: View {
                                           }
                                       }))
                     }
+                    MemoryHealthNotices(group: group)
                     ForEach(group.files) { file in
                         MemoryFileView(file: file)
                     }
@@ -234,5 +235,47 @@ private struct MemoryFileView: View {
               let end = text.range(of: "\n---\n", range: text.index(text.startIndex, offsetBy: 4)..<text.endIndex)
         else { return text }
         return String(text[end.upperBound...])
+    }
+}
+
+/// What the memory folder has that Claude doesn't get: lines past the cut, notes nothing
+/// links to, links to notes that are gone.
+private struct MemoryHealthNotices: View {
+    @Environment(AppServices.self) private var services
+    let group: MemoryGroup
+    @State private var health: MemoryHealth?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            if let health {
+                if health.linesPastCut > 0 {
+                    InstallNotice(symbol: "scissors",
+                                  title: "\(health.linesPastCut) line\(health.linesPastCut == 1 ? "" : "s") of MEMORY.md never load",
+                                  detail: "Claude reads only the first \(MemoryHealth.lineLimit) lines, or 25KB, of MEMORY.md when a session starts. Move older entries into notes of their own and keep the index short.")
+                }
+                if !health.unlinked.isEmpty {
+                    InstallNotice(symbol: "link.badge.plus",
+                                  title: "Claude can't find \(health.unlinked.count == 1 ? "one note" : "\(health.unlinked.count) notes")",
+                                  detail: "\(health.unlinked.map(\.lastPathComponent).joined(separator: ", ")) \(health.unlinked.count == 1 ? "is" : "are") in the memory folder, but MEMORY.md doesn't link to \(health.unlinked.count == 1 ? "it" : "them"), and Claude only finds a note through a link. Linking adds a line for each; Undo in History takes them out.",
+                                  action: (health.unlinked.count == 1 ? "Link It" : "Link Them", { link(health) }))
+                }
+                if !health.missing.isEmpty {
+                    InstallNotice(symbol: "link.badge.exclamationmark",
+                                  title: "MEMORY.md links to \(health.missing.count == 1 ? "a note" : "\(health.missing.count) notes") that \(health.missing.count == 1 ? "is" : "are") gone",
+                                  detail: health.missing.joined(separator: ", "))
+                }
+            }
+        }
+        .task(id: group.id) { health = folder.flatMap(MemoryHealth.check) }
+    }
+
+    private var folder: URL? {
+        group.files.first { $0.name == "MEMORY.md" }?.url.deletingLastPathComponent()
+    }
+
+    private func link(_ health: MemoryHealth) {
+        guard (try? health.link(health.unlinked)) != nil else { return }
+        self.health = folder.flatMap(MemoryHealth.check)
+        services.memory.load(services.snapshot)
     }
 }

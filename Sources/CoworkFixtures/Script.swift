@@ -247,6 +247,8 @@ enum Script {
         ("Code/billing-service", [
             ("MEMORY.md", "- [Retry policy](retry-policy.md) — five attempts, ten-minute cap\n"),
             ("retry-policy.md", "---\nname: retry-policy\ndescription: How webhook retries work\n---\n\nFive attempts with jittered backoff, capped at ten minutes in total.\n"),
+            // Saved, but never linked from MEMORY.md, so Claude can't find it.
+            ("dead-letter-queue.md", "---\nname: dead-letter-queue\ndescription: Where failed deliveries go and who is paged\n---\n\nAfter the fifth failure a delivery moves to the dead-letter queue; the on-call gets a page after ten.\n"),
         ]),
         ("Code/journal-app", [
             ("MEMORY.md", "- Uses SwiftData; never add Core Data.\n- Screenshots go in docs/shots.\n"),

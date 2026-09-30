@@ -12,6 +12,10 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.25.0": [
+            Item(symbol: "brain", title: "Memory Claude never sees",
+                 detail: "The Memory page says when a MEMORY.md runs past the 200 lines Claude reads, when notes aren't linked from it so Claude can't find them, and when it links to notes that are gone. Link the missing ones in one step."),
+        ],
         "0.24.1": [
             Item(symbol: "checkmark.seal", title: "Claims, checked, without the false alarms",
                  detail: "A claim is weighed against everything done before it, a script that might have done it counts as \u{201C}couldn't check\u{201D} rather than a miss, and Codex conversations aren't judged by Claude Code's tools."),

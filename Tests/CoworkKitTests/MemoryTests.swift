@@ -14,7 +14,7 @@ struct MemoryTests {
             #expect(groups.contains { $0.kind == .everywhere && $0.files.map(\.name) == ["CLAUDE.md"] })
 
             let billing = try #require(groups.first { $0.title == "billing-service" })
-            #expect(Set(billing.files.map(\.name)) == ["MEMORY.md", "retry-policy.md"])
+            #expect(Set(billing.files.map(\.name)) == ["MEMORY.md", "retry-policy.md", "dead-letter-queue.md"])
             #expect(!billing.isOrphaned)
 
             let journal = try #require(groups.first { $0.title == "journal-app" })

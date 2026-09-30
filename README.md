@@ -255,6 +255,9 @@ same list.
   offered, and everything can be put back.
 - **Memory** shows what Claude is told to remember — global and project `CLAUDE.md` files,
   Claude Code project memory, Cowork project memory — and flags memory whose folder is gone.
+  It also says what Claude never sees: lines of a `MEMORY.md` past the 200 lines (or 25KB)
+  read at the start of a session, notes the index doesn't link to, and links to notes that
+  are gone. Unlinked notes can be linked in one step, undoable from History.
 
 
 ## Works best with Parallex
