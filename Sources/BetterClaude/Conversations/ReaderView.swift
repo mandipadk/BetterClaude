@@ -192,7 +192,10 @@ struct ReaderHeader: View {
                 }
             }
 
-            if conversation.external == nil { FlightRecorderView(conversation: conversation) }
+            if conversation.external == nil {
+                FlightRecorderView(conversation: conversation)
+                SubagentsView(conversation: conversation)
+            }
 
             FindField(text: $reader.findQuery)
                 .frame(maxWidth: 260)

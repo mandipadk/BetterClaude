@@ -420,6 +420,7 @@ public struct FixtureHome {
         try writeLongSession()
         try writeLeakedKeys()
         try writeCorrections()
+        try writeSubagents()
         try writePromptHistory()
 
         // Memory, including one for a project folder that has since been deleted.
@@ -508,6 +509,77 @@ public struct FixtureHome {
             time.addTimeInterval(1_800)
         }
         try writeJSON(["samples": samples], to: userData.appendingPathComponent("plan-usage-history.json"))
+    }
+
+    /// The webhook conversation's sub-agents: one that searched, one that wrote tests and
+    /// spawned a searcher of its own, and an older one that died before it answered.
+    func writeSubagents() throws {
+        guard let conversation = Script.claudeCode.first(where: { $0.title.hasPrefix("Retry failed webhook") }) else { return }
+        let project = paths.home.appendingPathComponent(conversation.project ?? "Code")
+        let transcript = paths.claudeCodeConfigDir.appendingPathComponent("projects", isDirectory: true)
+            .appendingPathComponent(PathEncoder.encode(project.path), isDirectory: true)
+            .appendingPathComponent("\(conversation.cliId).jsonl")
+        let folder = transcript.deletingPathExtension().appendingPathComponent("subagents", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let deliver = project.appendingPathComponent("src/webhooks/deliver.ts").path
+        struct Agent { let id, type, model, description, prompt: String; let result: String?; let parent: String?; let depth: Int
+                       let tools: [(String, [String: Any])]; let start: Double }
+        let agents = [
+            Agent(id: "a1f0search", type: "Explore", model: "claude-sonnet-5", description: "Find every place deliveries are retried",
+                  prompt: "Find every place webhook deliveries are retried or re-queued, and list them with file and line.",
+                  result: "Deliveries are retried in one place, `deliver()` in src/webhooks/deliver.ts. The queue worker calls it once per event and never re-queues.",
+                  parent: nil, depth: 1, tools: [("Grep", ["pattern": "deliver\\("]), ("Read", ["file_path": deliver])], start: 40),
+            Agent(id: "b2e1tests", type: "general-purpose", model: "claude-opus-5-5", description: "Write tests for the backoff curve",
+                  prompt: "Write tests for nextDelay in src/webhooks/backoff.ts: the curve, the jitter bounds, and the cap.",
+                  result: "Added 6 tests in backoff.test.ts covering the doubling curve, jitter staying within half the base, and the ten minute cap. All pass.",
+                  parent: nil, depth: 1, tools: [("Read", ["file_path": deliver]), ("Write", ["file_path": project.appendingPathComponent("src/webhooks/backoff.test.ts").path]),
+                                                 ("Bash", ["command": "pnpm test backoff"])], start: 90),
+            Agent(id: "c3d2helper", type: "Explore", model: "claude-sonnet-5", description: "Find the test helpers for timers",
+                  prompt: "Find how existing tests fake timers.", result: "They use vi.useFakeTimers() from test/setup.ts.",
+                  parent: "b2e1tests", depth: 2, tools: [("Grep", ["pattern": "useFakeTimers"])], start: 100),
+        ]
+        func line(_ record: [String: Any]) throws -> String {
+            String(decoding: try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys, .withoutEscapingSlashes]), as: UTF8.self)
+        }
+        for agent in agents {
+            var lines: [String] = []
+            var clock = now.addingTimeInterval(-conversation.age + agent.start)
+            lines.append(try line(["type": "user", "isSidechain": true, "agentId": agent.id, "timestamp": Transcriber.stamp(clock),
+                                   "message": ["role": "user", "content": agent.prompt]]))
+            var context = 9_000
+            for (step, tool) in agent.tools.enumerated() {
+                clock.addTimeInterval(12)
+                context += 2_500
+                lines.append(try line(["type": "assistant", "isSidechain": true, "agentId": agent.id, "timestamp": Transcriber.stamp(clock),
+                                       "message": ["role": "assistant", "model": agent.model, "id": "msg_\(agent.id)_\(step)",
+                                                   "usage": ["input_tokens": 3, "output_tokens": 120, "cache_read_input_tokens": context,
+                                                             "cache_creation_input_tokens": 900],
+                                                   "content": [["type": "tool_use", "id": "toolu_\(agent.id)_\(step)", "name": tool.0, "input": tool.1]]]]))
+                lines.append(try line(["type": "user", "isSidechain": true, "agentId": agent.id, "timestamp": Transcriber.stamp(clock),
+                                       "message": ["role": "user", "content": [["type": "tool_result", "tool_use_id": "toolu_\(agent.id)_\(step)", "content": "ok"]]]]))
+            }
+            if let result = agent.result {
+                clock.addTimeInterval(10)
+                lines.append(try line(["type": "assistant", "isSidechain": true, "agentId": agent.id, "timestamp": Transcriber.stamp(clock),
+                                       "message": ["role": "assistant", "model": agent.model, "id": "msg_\(agent.id)_final",
+                                                   "usage": ["input_tokens": 3, "output_tokens": 220, "cache_read_input_tokens": context + 1_500,
+                                                             "cache_creation_input_tokens": 600],
+                                                   "content": [["type": "text", "text": result]]]]))
+            }
+            try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: folder.appendingPathComponent("agent-\(agent.id).jsonl"))
+            var meta: [String: Any] = ["agentType": agent.type, "description": agent.description,
+                                       "toolUseId": "toolu_spawn_\(agent.id)", "spawnDepth": agent.depth]
+            if let parent = agent.parent { meta["parentAgentId"] = parent }
+            try Data(try JSONSerialization.data(withJSONObject: meta, options: [.sortedKeys])).write(to: folder.appendingPathComponent("agent-\(agent.id).meta.json"))
+        }
+        // An older sub-agent, from before Claude Code wrote a meta file, that stopped mid-task.
+        let old = [try line(["type": "user", "isSidechain": true, "timestamp": Transcriber.stamp(now.addingTimeInterval(-conversation.age + 150)),
+                             "message": ["role": "user", "content": "Check whether the dead-letter queue has an alert on it."]]),
+                   try line(["type": "assistant", "isSidechain": true, "timestamp": Transcriber.stamp(now.addingTimeInterval(-conversation.age + 160)),
+                             "message": ["role": "assistant", "model": "claude-sonnet-5", "id": "msg_d4old_0",
+                                         "usage": ["input_tokens": 3, "output_tokens": 80, "cache_read_input_tokens": 8_000, "cache_creation_input_tokens": 500],
+                                         "content": [["type": "tool_use", "id": "toolu_d4old_0", "name": "Grep", "input": ["pattern": "deadLetter"]]]]])]
+        try Data((old.joined(separator: "\n") + "\n").utf8).write(to: folder.appendingPathComponent("agent-d4e3older.jsonl"))
     }
 
     /// The same two corrections in two billing-service conversations: what a project's

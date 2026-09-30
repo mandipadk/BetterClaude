@@ -45,7 +45,9 @@ struct FlightRecorderView: View {
     }
 
     private func summary(_ record: FlightRecord) -> String {
-        "\(dollars(record.totalCost)) at list prices over \(record.replies.count) replies. Context peaked at \(tokens(record.peakContext)) of \(tokens(record.window))."
+        let agents = record.agents > 0
+            ? ", \(dollars(record.agentCost)) of it by \(record.agents) sub-agent\(record.agents == 1 ? "" : "s")" : ""
+        return "\(dollars(record.totalCost)) at list prices over \(record.replies.count) replies\(agents). Context peaked at \(tokens(record.peakContext)) of \(tokens(record.window))."
     }
 
     private func detail(_ record: FlightRecord) -> some View {

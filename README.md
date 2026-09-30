@@ -105,6 +105,11 @@ active and the longest run of them, the hours you work, models, the tools Claude
 projects (names hidden unless you choose), and what it came to. Copy it or save it as an
 image.
 
+Every sub-agent a Claude Code conversation spawned is listed under its title: what kind it
+was, the task it was given, its model, replies, tools and cost, what it came back with, and
+the sub-agents it spawned in turn. Runs that ended without replying are marked. Their usage
+counts in every total: Usage, cost attribution, Projects and Your Month.
+
 Every Claude Code conversation has **Cost and context** under its title: how much of the
 conversation each reply had to read, against the context window, where Claude compacted,
 what each reply cost at list prices, and the costliest replies.

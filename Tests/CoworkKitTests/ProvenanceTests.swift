@@ -20,7 +20,7 @@ struct ProvenanceTests {
 
             let recent = try await FileProvenance.recentFiles(index: index)
             #expect(recent.contains { $0.path == deliver })
-            #expect(try await FileProvenance.recentFiles(index: index, matching: "backoff").map(\.path) == [backoff])
+            #expect(try await FileProvenance.recentFiles(index: index, matching: "backoff").map(\.path).contains(backoff))
 
             let history = try await FileProvenance.history(of: deliver, index: index, paths: sample.paths)
             #expect(history.versions.count == 2)

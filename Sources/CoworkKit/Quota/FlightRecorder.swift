@@ -16,24 +16,29 @@ public struct FlightRecord: Sendable, Equatable {
 
     public let replies: [Reply]
     public let compactions: [Date]
+    /// What the conversation's sub-agents cost, and how many there were; their replies read
+    /// their own context, so they're not in `replies`.
+    public var agentCost: Double = 0
+    public var agents: Int = 0
 
-    public var totalCost: Double { replies.reduce(0) { $0 + $1.cost } }
+    public var totalCost: Double { replies.reduce(0) { $0 + $1.cost } + agentCost }
     public var peakContext: Int { replies.map(\.context).max() ?? 0 }
     /// The model's context window: 200K, or a million once a conversation went past that.
     public var window: Int { peakContext > 200_000 ? 1_000_000 : 200_000 }
     /// The most expensive replies, most expensive first.
     public var expensive: [Reply] { Array(replies.sorted { $0.cost > $1.cost }.prefix(3)) }
-    /// Share of the total the most expensive tenth of replies cost.
+    /// Share of the conversation's own replies' cost the most expensive tenth of them made.
     public var topTenthShare: Double {
-        guard totalCost > 0, !replies.isEmpty else { return 0 }
+        let own = replies.reduce(0) { $0 + $1.cost }
+        guard own > 0, !replies.isEmpty else { return 0 }
         let count = max(1, replies.count / 10)
-        return replies.map(\.cost).sorted(by: >).prefix(count).reduce(0, +) / totalCost
+        return replies.map(\.cost).sorted(by: >).prefix(count).reduce(0, +) / own
     }
 
     public static func load(conversationID: String, index: HistoryIndex) async throws -> FlightRecord {
         let rows = try await index.rows("""
             SELECT model, timestamp, input, output, cache_read, cache_write_5m, cache_write_1h FROM usage
-            WHERE conversation_id = ? AND timestamp IS NOT NULL ORDER BY timestamp
+            WHERE conversation_id = ? AND agent_id IS NULL AND timestamp IS NOT NULL ORDER BY timestamp
             """, [.text(conversationID)])
         let replies = rows.enumerated().compactMap { offset, row -> Reply? in
             guard let model = row.text(0), let time = row.date(1) else { return nil }
@@ -47,7 +52,18 @@ public struct FlightRecord: Sendable, Equatable {
             SELECT timestamp FROM messages WHERE conversation_id = ? AND kind = 'compaction' AND timestamp IS NOT NULL
             ORDER BY timestamp
             """, [.text(conversationID)]).compactMap { $0.date(0) }
-        return FlightRecord(replies: replies, compactions: compactions)
+        var record = FlightRecord(replies: replies, compactions: compactions)
+        for row in try await index.rows("""
+            SELECT model, SUM(input), SUM(output), SUM(cache_read), SUM(cache_write_5m), SUM(cache_write_1h), COUNT(DISTINCT agent_id)
+            FROM usage WHERE conversation_id = ? AND agent_id IS NOT NULL GROUP BY model
+            """, [.text(conversationID)]) {
+            guard let model = row.text(0) else { continue }
+            record.agentCost += Pricing.cost(model: model, input: row.int(1), output: row.int(2), cacheRead: row.int(3),
+                                             cacheWrite5m: row.int(4), cacheWrite1h: row.int(5))
+        }
+        record.agents = Int(try await index.rows("SELECT COUNT(*) FROM subagents WHERE conversation_id = ?",
+                                                 [.text(conversationID)]).first?.int(0) ?? 0)
+        return record
     }
 }
 

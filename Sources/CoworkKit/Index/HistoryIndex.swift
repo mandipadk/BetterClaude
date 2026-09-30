@@ -10,7 +10,7 @@ import Foundation
 public actor HistoryIndex {
 
     /// Bumped whenever the schema or what gets extracted changes; an older file is rebuilt.
-    public static let schemaVersion = 9
+    public static let schemaVersion = 10
 
     /// One file per schema, so an older copy of the app still running during an update
     /// keeps its own index instead of rebuilding this one back and forth.
@@ -138,6 +138,7 @@ public actor HistoryIndex {
             cache_read INTEGER NOT NULL,
             cache_write_5m INTEGER NOT NULL,
             cache_write_1h INTEGER NOT NULL,
+            agent_id TEXT,
             PRIMARY KEY (conversation_id, message_id)
         );
         CREATE INDEX IF NOT EXISTS usage_time ON usage(timestamp);
@@ -147,7 +148,8 @@ public actor HistoryIndex {
             timestamp REAL,
             name TEXT NOT NULL,
             file_path TEXT,
-            detail TEXT
+            detail TEXT,
+            agent_id TEXT
         );
         CREATE INDEX IF NOT EXISTS tool_calls_conversation ON tool_calls(conversation_id);
         CREATE INDEX IF NOT EXISTS tool_calls_file ON tool_calls(file_path) WHERE file_path IS NOT NULL;
@@ -178,6 +180,26 @@ public actor HistoryIndex {
             PRIMARY KEY (conversation_id, url)
         );
         CREATE INDEX IF NOT EXISTS pull_requests_number ON pull_requests(number);
+        CREATE TABLE IF NOT EXISTS subagents (
+            conversation_id TEXT NOT NULL,
+            agent_id TEXT NOT NULL,
+            agent_type TEXT,
+            description TEXT,
+            tool_use_id TEXT,
+            parent_agent_id TEXT,
+            depth INTEGER,
+            model TEXT,
+            first_activity REAL,
+            last_activity REAL,
+            replies INTEGER NOT NULL DEFAULT 0,
+            tools INTEGER NOT NULL DEFAULT 0,
+            prompt TEXT,
+            result TEXT,
+            source_path TEXT NOT NULL,
+            source_size INTEGER NOT NULL,
+            source_mtime REAL NOT NULL,
+            PRIMARY KEY (conversation_id, agent_id)
+        );
         PRAGMA user_version = \(schemaVersion);
         """)
     }
@@ -242,7 +264,8 @@ public actor HistoryIndex {
                                 offset: offset, ordinalStart: ordinal))
             }
         }
-        guard !jobs.isEmpty else { return 0 }
+        let agentsChanged = try await updateSubagents(snapshot)
+        guard !jobs.isEmpty else { return agentsChanged }
 
         // Parse in parallel off the actor, write back in batches.
         var done = 0
@@ -279,6 +302,79 @@ public actor HistoryIndex {
         return done
     }
 
+    // MARK: Sub-agents
+
+    /// Sub-agents' transcripts sit beside their conversation's, in `<session>/subagents/`. Each
+    /// is read whole when it changes; its usage and tool calls join the conversation's, marked
+    /// with the agent, so every total counts them.
+    private func updateSubagents(_ snapshot: CatalogSnapshot) async throws -> Int {
+        var stored: [String: (Int64, Double)] = [:]
+        for row in try database.rows("SELECT source_path, source_size, source_mtime FROM subagents") {
+            if let path = row.text(0) { stored[path] = (row.int(1), row.double(2)) }
+        }
+        struct Job: Sendable { let conversationID: String; let file: Subagents.File; let size: Int64; let mtime: Double }
+        var jobs: [Job] = []
+        for conversation in snapshot.conversations where conversation.external == nil {
+            guard let transcript = conversation.transcriptURL else { continue }
+            for file in Subagents.files(beside: transcript) {
+                let attributes = try? FileManager.default.attributesOfItem(atPath: file.url.path)
+                let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+                let mtime = (attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+                if let previous = stored[file.url.path], previous == (size, mtime) { continue }
+                jobs.append(Job(conversationID: conversation.id, file: file, size: size, mtime: mtime))
+            }
+        }
+        guard !jobs.isEmpty else { return 0 }
+        let scanned = await withTaskGroup(of: (Job, TranscriptScan?).self) { group in
+            for job in jobs { group.addTask(priority: .utility) { (job, try? TranscriptScanner.scan(job.file.url)) } }
+            var all: [(Job, TranscriptScan?)] = []
+            for await result in group { all.append(result) }
+            return all
+        }
+        try database.transaction {
+            for (job, scan) in scanned {
+                guard let scan else { continue }
+                let id = SQLiteValue.text(job.conversationID)
+                let agent = SQLiteValue.text(job.file.agentID)
+                try database.run("DELETE FROM usage WHERE conversation_id = ? AND agent_id = ?", [id, agent])
+                try database.run("DELETE FROM tool_calls WHERE conversation_id = ? AND agent_id = ?", [id, agent])
+                let insertUsage = try database.prepare("""
+                    INSERT OR REPLACE INTO usage (conversation_id, message_id, model, timestamp, input, output,
+                                                  cache_read, cache_write_5m, cache_write_1h, agent_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """)
+                for usage in scan.usage {
+                    try insertUsage.run([id, .text(usage.messageID), .text(usage.model), .date(usage.timestamp),
+                                         .int(usage.input), .int(usage.output), .int(usage.cacheRead),
+                                         .int(usage.cacheWrite5m), .int(usage.cacheWrite1h), agent])
+                }
+                let insertTool = try database.prepare("""
+                    INSERT INTO tool_calls (conversation_id, message_uuid, timestamp, name, file_path, detail, agent_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """)
+                for call in scan.toolCalls {
+                    try insertTool.run([id, .optional(call.messageUUID), .date(call.timestamp), .text(call.name),
+                                        .optional(call.filePath), .optional(call.detail), agent])
+                }
+                let prompt = scan.messages.first { $0.role == .user }?.text
+                let result = scan.messages.last { $0.role == .assistant }?.text
+                let meta = job.file.meta
+                try database.run("""
+                    INSERT OR REPLACE INTO subagents (conversation_id, agent_id, agent_type, description, tool_use_id,
+                        parent_agent_id, depth, model, first_activity, last_activity, replies, tools, prompt, result,
+                        source_path, source_size, source_mtime)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, [id, agent, .optional(meta?.agentType), .optional(meta?.description), .optional(meta?.toolUseID),
+                          .optional(meta?.parentAgentID), meta?.depth.map { .int(Int64($0)) } ?? .null,
+                          .optional(scan.usage.last?.model), .date(scan.firstTimestamp), .date(scan.lastTimestamp),
+                          .int(Int64(scan.usage.count)), .int(Int64(scan.toolCalls.count)),
+                          .optional(prompt.map { String($0.prefix(4_000)) }), .optional(result.map { String($0.prefix(8_000)) }),
+                          .text(job.file.url.path), .int(job.size), .double(job.mtime)])
+            }
+        }
+        return scanned.count
+    }
+
     private func writeBatch(_ batch: [(ConversationRef, URL, Int64, Double, Int64, Int64, TranscriptScan)]) throws {
         guard !batch.isEmpty else { return }
         try database.transaction {
@@ -310,8 +406,9 @@ public actor HistoryIndex {
         let id = SQLiteValue.text(conversation.id)
         if replacing {
             try database.run("DELETE FROM messages WHERE conversation_id = ?", [id])
-            try database.run("DELETE FROM usage WHERE conversation_id = ?", [id])
-            try database.run("DELETE FROM tool_calls WHERE conversation_id = ?", [id])
+            // A sub-agent's rows are its own, rewritten when its transcript changes.
+            try database.run("DELETE FROM usage WHERE conversation_id = ? AND agent_id IS NULL", [id])
+            try database.run("DELETE FROM tool_calls WHERE conversation_id = ? AND agent_id IS NULL", [id])
             try database.run("DELETE FROM file_versions WHERE conversation_id = ?", [id])
             try database.run("DELETE FROM health WHERE conversation_id = ?", [id])
             try database.run("DELETE FROM pull_requests WHERE conversation_id = ?", [id])

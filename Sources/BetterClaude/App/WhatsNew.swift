@@ -12,6 +12,12 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.20.0": [
+            Item(symbol: "person.2.wave.2", title: "Sub-agents",
+                 detail: "Every sub-agent a Claude Code conversation spawned, under its title: what it was asked, what it came back with, what it cost, and the ones it spawned in turn."),
+            Item(symbol: "sum", title: "Every total counts them",
+                 detail: "Sub-agents' replies were missing from Usage, costs, projects and your month. They're counted now; on busy Macs that's about a third of all replies. The index rebuilds once."),
+        ],
         "0.19.1": [
             Item(symbol: "menubar.rectangle", title: "⌘Q keeps it in the menu bar",
                  detail: "With the menu bar icon on, ⌘Q closes the window and Better Claude stays in the menu bar, still keeping conversations and sending alerts. ⌥⌘Q, or Quit in the menu bar, quits completely."),

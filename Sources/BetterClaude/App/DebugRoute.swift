@@ -63,6 +63,13 @@ enum DebugRoute {
                     while !services.projectPages.loaded { try? await Task.sleep(for: .milliseconds(50)) }
                     services.projectPages.selectedID = services.projectPages.projects.first { $0.name == argument }?.id
                 }
+            case "subagents":
+                UserDefaults.standard.set(true, forKey: "subagentsOpen")
+                UserDefaults.standard.set(false, forKey: "flightRecorderOpen")
+                services.destination = .conversations
+                if let match = services.snapshot.conversations.first(where: { $0.title.localizedCaseInsensitiveContains(argument) }) {
+                    services.selectedConversationID = match.id
+                }
             case "flight":
                 // The reader with its cost and context chart open.
                 UserDefaults.standard.set(true, forKey: "flightRecorderOpen")
