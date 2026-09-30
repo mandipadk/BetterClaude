@@ -5,7 +5,8 @@ Your Claude conversations are already on your disk. Better Claude is a macOS app
 Code — so you can read any conversation, continue it somewhere else, keep it before Claude
 Code deletes it, and see what each install is set up with and how much space it takes.
 
-A macOS app plus a command line tool sharing one engine. Nothing leaves the machine.
+A macOS app plus a command line tool sharing one engine. Nothing leaves the machine unless
+you replay a conversation with your own API key.
 
 ---
 
@@ -94,6 +95,32 @@ their session files and titles are read, never their credentials.
 **Backups.** Everything Better Claude keeps — kept conversations, saved file versions and
 plans, imports, receipts — goes into one Apple Encrypted Archive locked with a password
 that's never stored, in iCloud Drive or anywhere. Restoring only adds what's missing.
+
+### Prompts, and what needs attention
+
+**Prompts** finds what you type into Claude Code again and again, from its own prompt
+history, counting near-identical wordings as one. Copy one, or make it a skill in a click:
+Better Claude writes the `SKILL.md`, and Undo in History takes it out again.
+
+Each install's page says **what needs attention**: MCP servers that failed to start or need
+you to sign in, and hooks that failed, as Claude Code recorded them. Only the name, the
+error code and the exit status are read, never a hook's output. Claude Code's page also
+lists **commands you could allow**: narrow, harmless commands you approved over and
+over (`swift test`, `grep`), never `git push`, `rm` or an interpreter. Allowing them backs
+up `settings.json`, and removing them takes out only the rules Better Claude added.
+
+**Usage** gets a **This week** summary: conversations, projects and files changed.
+**Compare** can copy an MCP server from one Claude Desktop install to another, and History
+undoes it. Better Claude's own history server is never copied, because it carries whose
+history it reads.
+
+### Replay
+
+Ask a newer model the same things a past conversation asked, with the conversation as it
+really was at each point, and read its answers beside the ones you got. It uses your own
+Anthropic API key, kept in the Keychain and off until you add one in Settings, and it shows
+roughly what it will cost before anything is sent. It's the only feature that sends a
+conversation off your Mac, and only the turns you choose, only when you press Replay.
 
 ### Continue anywhere, and undo it
 
@@ -270,6 +297,7 @@ cowork search retry cap webhook                 # search every message, from the
 cowork live                                     # Claude Code sessions running now
 cowork usage                                    # every account's limits and what used them
 cowork file ~/Code/app/src/main.swift           # where a file came from
+cowork distill                                  # repeated prompts, what needs attention, rules to allow
 cowork library                                  # every artifact Claude ever produced
 cowork library --kind code --limit 50           # narrowed to one kind
 
