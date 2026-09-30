@@ -131,6 +131,7 @@ struct ReaderHeader: View {
                         Divider()
                     }
                     Button("Export as Markdown…") { services.reader.exportMarkdown() }
+                    Button("Export as Web Page…") { services.reader.exportWebPage() }
                     Button("Show in Finder") { services.revealInFinder(conversation) }
                     if let install, install.appURL != nil {
                         Divider()

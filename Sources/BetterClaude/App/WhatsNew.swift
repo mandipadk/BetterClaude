@@ -12,6 +12,10 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.13.0": [
+            Item(symbol: "safari", title: "Send a conversation as a page",
+                 detail: "Export as Web Page… in a conversation's ⋯ menu saves it as one page that opens in any browser, with keys and tokens hidden and your home folder shortened to ~."),
+        ],
         "0.12.0": [
             Item(symbol: "calendar", title: "Your month with Claude",
                  detail: "Every Claude on your Mac over a month on one card: days and hours you worked, models, tools, projects and what it all came to. Save it as an image from Usage."),

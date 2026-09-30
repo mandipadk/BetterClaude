@@ -137,6 +137,20 @@ final class ReaderModel {
         }.value
     }
 
+    /// Saves the conversation as one self-contained web page, to send to someone.
+    func exportWebPage() {
+        guard let readable, let conversation else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = MarkdownExport.suggestedFileName(for: conversation.title)
+            .replacingOccurrences(of: ".md", with: "") + ".html"
+        panel.allowedContentTypes = [.html]
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let page = ConversationPage.render(readable, title: conversation.title, model: readable.model.map(humanModelName),
+                                           home: HostPaths.current.home.path)
+        try? Data(page.utf8).write(to: url, options: .atomic)
+    }
+
     /// Saves the conversation as Markdown where the person chooses.
     func exportMarkdown() {
         guard let transcript, let conversation else { return }
