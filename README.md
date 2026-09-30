@@ -33,7 +33,8 @@ search inside every message as you type: every conversation is read once into a 
 full-text index in `~/Library/Application Support/BetterClaude/Index`, then only what Claude
 appends, and the index keeps conversations Claude Code has since deleted. Read any conversation without opening
 Claude — Markdown, code, tables and tool use included — and it updates live while Claude
-writes to it. A menu bar panel finds any conversation from anywhere.
+writes to it. The reader links the pull request a conversation opened and the conversation
+it was forked from or continued in. A menu bar panel finds any conversation from anywhere.
 
 ### Claude remembers your past work
 

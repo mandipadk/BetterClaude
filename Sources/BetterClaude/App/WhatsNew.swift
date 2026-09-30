@@ -12,6 +12,14 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.7.0": [
+            Item(symbol: "clock.arrow.circlepath", title: "Every file version",
+                 detail: "Newer Claude Code saves many file versions on their own rather than in its snapshots. Files now has them all; the index rebuilds once to find them."),
+            Item(symbol: "arrow.triangle.pull", title: "Pull requests and forks",
+                 detail: "A conversation shows the pull request it opened and the conversation it was forked from or continued in, and Claude's history tools know them too."),
+            Item(symbol: "checkmark.shield", title: "Ready for Claude Code's next change",
+                 detail: "Better Claude checks what every version of Claude Code and Codex writes, and says on Claude Code's page if a new one records something differently."),
+        ],
         "0.6.0": [
             Item(symbol: "text.quote", title: "Prompts",
                  detail: "The prompts you type again and again, from Claude Code's own history, and any of them made into a skill in a click."),
