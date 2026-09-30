@@ -16,6 +16,7 @@ final class ProjectsModel {
     var wording: [String: String] = [:]
     var chosen: Set<String> = []
     private(set) var added: Int?
+    private(set) var decisions: [Decision] = []
     var selectedID: String? {
         didSet { if selectedID != oldValue { loadDetail() } }
     }
@@ -33,6 +34,11 @@ final class ProjectsModel {
                 loadDetail()
             }
         }
+    }
+
+    func dismiss(_ decision: Decision) {
+        try? DismissedDecisions.dismiss(decision.id)
+        decisions.removeAll { $0.id == decision.id }
     }
 
     func rule(_ suggestion: CorrectionSuggestion) -> String { wording[suggestion.id] ?? suggestion.rule }
@@ -59,7 +65,9 @@ final class ProjectsModel {
             let found = try? await Projects.detail(of: summary, index: index)
             if found?.summary.id == selectedID { detail = found }
             let all = (try? await Corrections.suggestions(index: index)) ?? []
+            let decided = (try? await Decisions.list(index: index, project: summary.path)) ?? []
             guard summary.id == selectedID else { return }
+            decisions = decided
             corrections = all.filter { $0.project == summary.path }
             chosen = Set(corrections.map(\.id))
             added = nil
@@ -166,6 +174,16 @@ private struct ProjectDetailView: View {
 
                 CorrectionsSection(project: summary.path)
 
+                if !services.projectPages.decisions.isEmpty {
+                    DetailSection(title: "Decisions", subtitle: "What was settled in this project's conversations, newest first. Claude can check these too, before deciding again.") {
+                        VStack(alignment: .leading, spacing: Theme.Space.m) {
+                            ForEach(services.projectPages.decisions.prefix(12)) { decision in
+                                DecisionRow(decision: decision)
+                            }
+                        }
+                    }
+                }
+
                 DetailSection(title: "Conversations") {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(detail.conversations.prefix(40)) { conversation in
@@ -243,7 +261,8 @@ private struct ProjectDetailView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(detail.memory, id: \.self) { url in
                                 HStack {
-                                    Text(relative(url.path)).font(Theme.Font.body).lineLimit(1).truncationMode(.middle)
+                                    Text(url.lastPathComponent == "memory" ? "Claude Code's memory for this project" : relative(url.path))
+                                        .font(Theme.Font.body).lineLimit(1).truncationMode(.middle)
                                     Spacer()
                                     Button("Open") { NSWorkspace.shared.open(url) }.buttonStyle(.secondary)
                                 }
@@ -258,6 +277,8 @@ private struct ProjectDetailView: View {
             .frame(maxWidth: 760, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // Each project opens at its top.
+        .id(detail.summary.id)
     }
 
     private func relative(_ path: String) -> String {
@@ -355,5 +376,45 @@ private struct CorrectionsSection: View {
         let first = suggestion.examples.first.map { "You said “\($0.text)”" } ?? ""
         let more = suggestion.examples.count - 1
         return more > 0 ? "\(first), and \(more) more time\(more == 1 ? "" : "s") in \(suggestion.conversations) conversations." : first
+    }
+}
+
+private struct DecisionRow: View {
+    @Environment(AppServices.self) private var services
+    let decision: Decision
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(decision.text).font(Theme.Font.body).fixedSize(horizontal: false, vertical: true)
+                Button {
+                    services.filter = .all
+                    services.destination = .conversations
+                    services.selectedConversationID = decision.conversationID
+                } label: {
+                    (Text("\(who), in ").foregroundStyle(.secondary) + Text(decision.conversationTitle).foregroundStyle(Theme.accent)
+                     + Text(decision.date.map { ", \($0.listStamp.lowercasedIfWordLocal)" } ?? "").foregroundStyle(.secondary))
+                        .font(Theme.Font.caption)
+                        .lineLimit(1)
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+            Button("Not a Decision") { services.projectPages.dismiss(decision) }
+                .buttonStyle(.plain)
+                .font(Theme.Font.caption)
+                .foregroundStyle(.secondary)
+                .opacity(hovering ? 1 : 0)
+        }
+        .onHover { hovering = $0 }
+    }
+
+    private var who: String {
+        switch decision.source {
+        case .you: return "You said it"
+        case .summary: return "Claude's summary"
+        case .claude: return "Claude noted it"
+        }
     }
 }

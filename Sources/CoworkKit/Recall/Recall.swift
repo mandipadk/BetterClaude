@@ -229,6 +229,23 @@ public struct Recall: Sendable {
         return out
     }
 
+    // MARK: decisions
+
+    public func decisions(project: String?, topic: String?) async throws -> String {
+        guard !accounts.isEmpty else { return "No history is shared with this Claude." }
+        let found = try await Decisions.list(index: index, project: project.map { ($0 as NSString).expandingTildeInPath },
+                                             topic: topic, accounts: accounts)
+        guard !found.isEmpty else {
+            return "No decisions found\(topic.map { " about \($0)" } ?? "")\(project.map { " in \($0)" } ?? "")."
+        }
+        var out = "Decisions from past conversations, most recent first. Check these before deciding the same thing again, and read the conversation for the reasons.\n"
+        for decision in found.prefix(30) {
+            let who = decision.source == .you ? "the person said" : decision.source == .summary ? "from Claude's summary" : "Claude recorded"
+            out += "\n- \(decision.text)\n  \(who), in \"\(decision.conversationTitle)\" (id: \(decision.sessionID ?? decision.conversationID)), \(Self.stamp(decision.date))\n"
+        }
+        return out
+    }
+
     // MARK: conversation_changes
 
     public func changes(id: String) async throws -> String {

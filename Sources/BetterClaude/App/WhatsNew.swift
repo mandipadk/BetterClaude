@@ -12,6 +12,10 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.16.0": [
+            Item(symbol: "signpost.right.and.left", title: "Decisions",
+                 detail: "A project's page lists what was settled in its conversations, from what you said and Claude's summaries, each linked to where. Claude's history tools can check them before deciding the same thing again."),
+        ],
         "0.15.0": [
             Item(symbol: "text.badge.checkmark", title: "What you keep correcting",
                  detail: "A project's page shows things you've told Claude in more than one conversation, like which package manager to use, worded as lines for its CLAUDE.md. Edit them, add them, and undo it from History."),

@@ -58,6 +58,12 @@ let tools: [JSONValue] = [
          properties: [
             ("path", ["type": "string", "description": "An absolute path, or a file name like Package.swift."]),
          ], required: ["path"]),
+    tool("decisions",
+         "List what was decided in past conversations, newest first, each with the conversation it came from. Check it before re-deciding something, like a library, a limit, or an approach.",
+         properties: [
+            ("project", ["type": "string", "description": "Only this project folder, as a full path."]),
+            ("topic", ["type": "string", "description": "Only decisions mentioning these words, like \"retry cap\"."]),
+         ], required: []),
     tool("conversation_changes",
          "List every file a past conversation edited or created, with how many lines differ from the version saved before it started. Use it to see what an earlier session did to the code.",
          properties: [
@@ -136,6 +142,8 @@ func call(_ name: String, _ input: JSONValue) async -> JSONValue {
         case "file_history":
             guard let path = input["path"]?.stringValue else { return text("file_history needs a path.", isError: true) }
             return text(try await recall.fileHistory(path: path))
+        case "decisions":
+            return text(try await recall.decisions(project: input["project"]?.stringValue, topic: input["topic"]?.stringValue))
         case "conversation_changes":
             guard let id = input["id"]?.stringValue else { return text("conversation_changes needs an id.", isError: true) }
             return text(try await recall.changes(id: id))

@@ -517,6 +517,7 @@ public struct FixtureHome {
             ("Retry failed webhook deliveries with backoff", [
                 ("I'll add the retry library with npm install.", "No, use pnpm here, not npm."),
                 ("Logged the full request body on each failed attempt.", "Don't log request bodies, they can hold card details."),
+                ("Should the total wait be capped at five or ten minutes?", "Let's go with a ten minute cap on the total wait."),
             ]),
             ("Add a health check endpoint", [
                 ("Installing the health check package with npm.", "no, this repo uses pnpm not npm"),
@@ -599,7 +600,7 @@ public struct FixtureHome {
             if step == 44 {
                 lines.append(try JSONSerialization.data(withJSONObject: [
                     "type": "user", "isSidechain": true, "isCompactSummary": true, "timestamp": Transcriber.stamp(time),
-                    "message": ["role": "user", "content": "Summary of the migration so far: DatePicker call sites moved to the new API in 14 of 22 files; the locale fallback still needs a test."],
+                    "message": ["role": "user", "content": "Summary of the migration so far: DatePicker call sites moved to the new API in 14 of 22 files. Decided to keep the old picker behind a flag until the locale fallback has a test."],
                 ] as [String: Any], options: [.sortedKeys]))
                 context = 31_000
             }

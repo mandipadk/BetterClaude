@@ -51,6 +51,12 @@ conversations ("no, use pnpm", "don't log request bodies"), worded as lines for 
 `CLAUDE.md`. Edit the wording, add the ones you want under their own heading, and undo it
 from History. `cowork corrections` prints the same list.
 
+**Decisions** lists what was settled in a project's conversations, newest first: what you
+said ("let's go with a ten minute cap"), and what Claude's compaction summaries recorded as
+decided, each linked to its conversation. Anything that isn't really a decision can be
+dismissed. Claude's `decisions` tool gives Claude the same list, so it checks before
+deciding again.
+
 ### Claude remembers your past work
 
 Better Claude ships an MCP server, `bc-recall`, inside the app. Switch it on from an
