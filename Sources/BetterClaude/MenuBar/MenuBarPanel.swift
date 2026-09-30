@@ -192,7 +192,7 @@ struct MenuBarPanel: View {
             }
             .buttonStyle(PanelRowStyle())
             .keyboardShortcut("o", modifiers: .command)
-            Button { NSApp.terminate(nil) } label: {
+            Button { AppDelegate.quit() } label: {
                 HStack {
                     Text("Quit")
                     Spacer()

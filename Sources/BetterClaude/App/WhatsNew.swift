@@ -78,7 +78,13 @@ enum ReleaseHighlights {
         ],
     ]
 
-    static func items(for version: String) -> [Item]? { byVersion[version] }
+    /// A fix release shows its release's highlights: 0.7.1 shows 0.7.0's.
+    static func items(for version: String) -> [Item]? { byVersion[version] ?? byVersion[series(of: version) + ".0"] }
+
+    /// "0.7" for "0.7.1".
+    static func series(of version: String) -> String {
+        version.split(separator: ".").prefix(2).joined(separator: ".")
+    }
 }
 
 struct WhatsNewSheet: View {

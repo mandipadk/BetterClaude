@@ -256,6 +256,9 @@ public enum Updater {
           kill -0 "$WAIT_PID" 2>/dev/null || break
           sleep 0.2
         done
+        # Still running: replacing a bundle under a live app breaks it. Leave both as they
+        # are; the update is offered again next time.
+        kill -0 "$WAIT_PID" 2>/dev/null && exit 1
 
         rm -rf "$BACKUP"
         if [ -d "$CURRENT" ]; then mv "$CURRENT" "$BACKUP" || exit 1; fi

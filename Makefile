@@ -32,7 +32,9 @@ app:
 	Scripts/make-app.sh release
 
 app-install: app
-	@if pgrep -xq BetterClaude; then osascript -e 'quit app "Better Claude"' >/dev/null 2>&1 || true; sleep 1; fi
+	@if pgrep -xq BetterClaude; then osascript -e 'quit app "Better Claude"' >/dev/null 2>&1 || true; \
+	  for i in 1 2 3 4 5 6 7 8 9 10; do pgrep -xq BetterClaude || break; sleep 0.5; done; \
+	  if pgrep -xq BetterClaude; then echo "Better Claude didn't quit; ending it so the new version opens."; pkill -TERM -x BetterClaude; sleep 1; fi; fi
 	rm -rf /Applications/BetterClaude.app
 	ditto "$(APP)" /Applications/BetterClaude.app
 	xattr -dr com.apple.quarantine /Applications/BetterClaude.app 2>/dev/null || true

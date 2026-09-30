@@ -118,7 +118,7 @@ final class UpdateModel {
             state = .readyToRestart
             // The swap script waits for this process to exit before touching the bundle.
             try? await Task.sleep(for: .milliseconds(400))
-            NSApplication.shared.terminate(nil)
+            AppDelegate.quit()
         } catch {
             state = .failed("\(error)")
         }
