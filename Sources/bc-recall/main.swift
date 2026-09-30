@@ -100,7 +100,8 @@ func fail(_ id: JSONValue, code: Int64, _ message: String) {
 
 func text(_ body: String, isError: Bool = false) -> JSONValue {
     .object(JSONObject([
-        ("content", .array([.object(JSONObject([("type", .string("text")), ("text", .string(body))]))])),
+        // Keys and tokens that were pasted into a conversation stay out of what Claude reads back.
+        ("content", .array([.object(JSONObject([("type", .string("text")), ("text", .string(SecretSweep.redact(body)))]))])),
         ("isError", .bool(isError)),
     ]))
 }

@@ -32,7 +32,7 @@ final class HandoffModel: Identifiable {
                 return
             }
             self.material = material
-            brief = Handoff.draft(material, home: paths)
+            brief = SecretSweep.redact(Handoff.draft(material, home: paths))
             await polish(material, paths: paths)
             isWriting = false
         }
@@ -61,7 +61,7 @@ final class HandoffModel: Identifiable {
                 if let ask = material.lastAsk ?? material.firstAsk {
                     out += "## The last thing asked\n\n\(ask.count > 1_200 ? String(ask.prefix(1_200)) + "…" : ask)\n"
                 }
-                brief = out
+                brief = SecretSweep.redact(out)
                 polished = true
             } catch {
                 // The plain brief stays.

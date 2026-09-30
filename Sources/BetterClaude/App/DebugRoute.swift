@@ -31,6 +31,8 @@ enum DebugRoute {
             switch parts[0] {
             case "conversations":
                 services.destination = .conversations
+            case "secrets":
+                services.destination = .secrets
             case "projects":
                 services.destination = .projects
                 if !argument.isEmpty {

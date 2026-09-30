@@ -12,6 +12,12 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.11.0": [
+            Item(symbol: "key", title: "Secrets",
+                 detail: "API keys and tokens that ended up in a conversation, with who put them there and where to rotate them. A key is never shown or kept whole."),
+            Item(symbol: "eye.slash", title: "Keys stay out of sight",
+                 detail: "Keys in your history are hidden from what Claude reads through its history tools, from Markdown exports, and from handoffs."),
+        ],
         "0.10.0": [
             Item(symbol: "folder", title: "Projects",
                  detail: "Everything about a project in one place: its conversations from every Claude and account, pull requests, the files Claude changed, what it cost, when you worked on it, and its memory."),

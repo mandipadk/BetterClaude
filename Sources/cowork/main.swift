@@ -63,6 +63,10 @@ USAGE
       --all surveys every conversation, not just the latest; --write merges each version's
       shape (fields and kinds of record, never content) into <dir>/<tool>/<version>.json.
 
+  cowork secrets [--counts]
+      Find API keys and tokens that ended up in a conversation, masked, with where each
+      appears. --counts prints only how many of each kind.
+
   cowork usage
       Show each account's five-hour and weekly limits, when they reset, where the week is
       heading, and which projects used the most this week.
@@ -221,6 +225,29 @@ func cmdFormats(_ args: Args) throws {
             }
             let findings = contract.check(shape)
             print("  \(version)  \(shape.kinds.count) kinds\(findings.isEmpty ? "" : "  " + findings.map(\.description).joined(separator: "; "))")
+        }
+    }
+}
+
+func cmdSecrets(_ args: Args) {
+    let snapshot = runBlocking { await Catalog().snapshot() }
+    let files = SecretSweep.files(in: snapshot)
+    let started = Date()
+    let findings = SecretSweep.sweep(files)
+    let handled = HandledSecrets.load()
+    let open = findings.filter { !handled.contains($0.fingerprint) }
+    print("\(open.count) keys in \(Set(open.flatMap(\.conversations)).count) conversations (\(files.count) read in \(String(format: "%.1f", Date().timeIntervalSince(started)))s).")
+    if args.flags.contains("counts") {
+        for (name, group) in Dictionary(grouping: open, by: \.kind.name).sorted(by: { $0.key < $1.key }) {
+            print("  \(name): \(group.count)")
+        }
+        return
+    }
+    let titles = Dictionary(snapshot.conversations.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a })
+    for finding in open {
+        print("\n\(finding.kind.name)  \(finding.masked)")
+        for sighting in finding.sightings.prefix(5) {
+            print("  \(sighting.source.description): \(titles[sighting.conversationID] ?? sighting.conversationID)")
         }
     }
 }
@@ -685,6 +712,7 @@ do {
     case "usage": try cmdUsage()
     case "distill": try cmdDistill()
     case "formats": try cmdFormats(args)
+    case "secrets": cmdSecrets(args)
     case "file": try cmdFile(args)
     case "search": try cmdSearch(args)
     case "encode":

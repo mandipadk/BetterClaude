@@ -151,6 +151,8 @@ struct MainWindow: View {
             PromptsPage()
         case .projects:
             ProjectsPage()
+        case .secrets:
+            SecretsPage()
         case .library:
             LibraryPage()
         case .history:
@@ -220,6 +222,8 @@ struct Sidebar: View {
                     .tag(SidebarDestination.storage)
                 Label("Memory", systemImage: "brain")
                     .tag(SidebarDestination.memory)
+                Label("Secrets", systemImage: "key")
+                    .tag(SidebarDestination.secrets)
                 Label("History", systemImage: "clock.arrow.circlepath")
                     .tag(SidebarDestination.history)
             }

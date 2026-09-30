@@ -147,6 +147,6 @@ final class ReaderModel {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let markdown = MarkdownExport.render(transcript: transcript, title: conversation.title,
                                              model: readable?.model.map(humanModelName) ?? "")
-        try? Data(markdown.utf8).write(to: url, options: .atomic)
+        try? Data(SecretSweep.redact(markdown).utf8).write(to: url, options: .atomic)
     }
 }

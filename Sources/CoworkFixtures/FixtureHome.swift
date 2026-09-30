@@ -418,6 +418,7 @@ public struct FixtureHome {
 
         try writeFileHistory()
         try writeLongSession()
+        try writeLeakedKeys()
         try writePromptHistory()
 
         // Memory, including one for a project folder that has since been deleted.
@@ -506,6 +507,36 @@ public struct FixtureHome {
             time.addTimeInterval(1_800)
         }
         try writeJSON(["samples": samples], to: userData.appendingPathComponent("plan-usage-history.json"))
+    }
+
+    /// Invented keys that ended up in a conversation: one pasted in, one printed by a command.
+    /// Built at run time, so nothing key-shaped sits in the source.
+    public static var sampleKeys: (anthropic: String, aws: String) {
+        ("sk-" + "ant-" + "api03-" + String(repeating: "Zq7vN2sample", count: 8) + "AA",
+         "AK" + "IA" + "SAMPLE7Q3XN4BZ2P")
+    }
+
+    func writeLeakedKeys() throws {
+        guard let conversation = Script.claudeCode.first(where: { $0.title.hasPrefix("Add a health check") }) else { return }
+        let project = paths.home.appendingPathComponent(conversation.project ?? "Code")
+        let transcript = paths.claudeCodeConfigDir.appendingPathComponent("projects", isDirectory: true)
+            .appendingPathComponent(PathEncoder.encode(project.path), isDirectory: true)
+            .appendingPathComponent("\(conversation.cliId).jsonl")
+        let time = Transcriber.stamp(now.addingTimeInterval(-conversation.age + 200))
+        let keys = Self.sampleKeys
+        let records: [[String: Any]] = [
+            ["type": "user", "isSidechain": true, "timestamp": time,
+             "message": ["role": "user", "content": "The staging check needs this key: \(keys.anthropic)"]],
+            ["type": "user", "isSidechain": true, "timestamp": time, "toolUseResult": ["stdout": "…"],
+             "message": ["role": "user", "content": [["type": "tool_result", "tool_use_id": "toolu_env",
+                                                      "content": "AWS_ACCESS_KEY_ID=\(keys.aws)\nAWS_REGION=eu-west-1"]]]],
+        ]
+        let handle = try FileHandle(forWritingTo: transcript)
+        try handle.seekToEnd()
+        for record in records {
+            try handle.write(contentsOf: try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) + Data("\n".utf8))
+        }
+        try handle.close()
     }
 
     /// The date picker migration as a long working session: a sub-agent's replies reading

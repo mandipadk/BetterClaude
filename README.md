@@ -175,6 +175,17 @@ set up with — skills, MCP servers, plugins (including Cowork plugins kept per 
 hooks, memory and settings. **Compare** puts two installs side by side. A notice points out
 API keys saved in plain text in settings, by name only.
 
+### Secrets
+
+**Secrets** sweeps every conversation, Codex session and imported claude.ai chat for API
+keys and tokens: Anthropic, OpenAI, GitHub, AWS, Slack, Stripe, Google, Hugging Face, npm,
+and private keys. Each shows who put it there (you pasted it, a command printed it, or
+Claude wrote it), the conversations it's in, and a link to rotate it. A key is never shown
+or kept whole: only its first few and last four characters, and a SHA-256 fingerprint to
+remember that you've rotated it. The same keys are hidden from what Claude reads through
+its history tools, from Markdown exports and from handoffs. `cowork secrets` prints the
+same list.
+
 ### Library, Storage and Memory
 
 - **Library** gathers what Claude made in every conversation — files, images, code, and what
@@ -323,6 +334,7 @@ cowork usage                                    # every account's limits and wha
 cowork file ~/Code/app/src/main.swift           # where a file came from
 cowork distill                                  # repeated prompts, what needs attention, rules to allow
 cowork formats                                  # whether Better Claude still reads what Claude Code writes
+cowork secrets                                  # keys and tokens that ended up in a conversation, masked
 cowork library                                  # every artifact Claude ever produced
 cowork library --kind code --limit 50           # narrowed to one kind
 

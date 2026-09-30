@@ -18,6 +18,7 @@ enum SidebarDestination: Hashable {
     case kept
     case storage
     case memory
+    case secrets
 }
 
 /// Narrows the conversation timeline to one install or one project folder.
@@ -58,6 +59,7 @@ final class AppServices {
     let files = FilesModel()
     let prompts = PromptsModel()
     let projectPages = ProjectsModel()
+    let secrets = SecretsModel()
     let formats = FormatModel()
     let search: SearchModel
     let library = LibraryModel()
