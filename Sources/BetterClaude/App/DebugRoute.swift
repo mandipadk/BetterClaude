@@ -31,6 +31,13 @@ enum DebugRoute {
             switch parts[0] {
             case "conversations":
                 services.destination = .conversations
+            case "flight":
+                // The reader with its cost and context chart open.
+                UserDefaults.standard.set(true, forKey: "flightRecorderOpen")
+                services.destination = .conversations
+                if let match = services.snapshot.conversations.first(where: { $0.title.localizedCaseInsensitiveContains(argument) }) {
+                    services.selectedConversationID = match.id
+                }
             case "reader":
                 services.destination = .conversations
                 if let match = services.snapshot.conversations.first(where: {

@@ -190,6 +190,8 @@ struct ReaderHeader: View {
                 }
             }
 
+            if conversation.external == nil { FlightRecorderView(conversation: conversation) }
+
             FindField(text: $reader.findQuery)
                 .frame(maxWidth: 260)
         }

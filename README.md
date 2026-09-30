@@ -65,7 +65,13 @@ Code's cached limits and the usage history each Desktop install keeps, merged pe
 When Claude hasn't said when the week resets, it's worked out from the history and marked
 as an estimate. A forecast carries the week's pace to the reset, and what used it is shown
 by project and conversation, from the tokens every reply used weighed at list prices.
-**Continue in…** shows how much room each destination account has left.
+**Continue in…** shows how much room each destination account has left. A notification
+arrives when an account passes 80% or 95% of a limit, once per window, naming the account
+with the most room left.
+
+Every Claude Code conversation has **Cost and context** under its title: how much of the
+conversation each reply had to read, against the context window, where Claude compacted,
+what each reply cost at list prices, and the costliest replies.
 
 ### Files
 

@@ -85,6 +85,11 @@ final class AppServices {
             spotlight.update(snapshot: snapshot, index: index.index)
             usage.refresh(snapshot: snapshot, index: index.index)
         }
+        usage.notifier = pulse.notifier
+        pulse.notifier.onOpenUsage = { [weak self] in
+            NSApp.activate()
+            self?.destination = .usage
+        }
         pulse.notifier.onOpen = { [weak self] sessionID in
             guard let self else { return }
             if let session = pulse.sessions.first(where: { $0.sessionID == sessionID }), pulse.host(of: session) != nil {

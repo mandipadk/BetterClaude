@@ -83,3 +83,51 @@ struct QuotaTests {
         }
     }
 }
+
+@Suite("Flight recorder and limit alerts")
+struct FlightRecorderTests {
+
+    @Test("A long session reads back reply by reply, with its compaction and costliest replies")
+    func flightRecord() async throws {
+        try await HistoryIndexTests.withSample { _, snapshot, index in
+            try await index.update(from: snapshot)
+            let conversation = try #require(snapshot.conversations.first { $0.title == "Migrate the date picker to the new API" })
+            let record = try await FlightRecord.load(conversationID: conversation.id, index: index)
+            #expect(record.replies.count >= 72)
+            #expect(record.compactions.count == 1)
+            #expect(record.peakContext > 150_000 && record.window == 200_000)
+            #expect(record.totalCost > 0)
+            #expect(record.expensive.count == 3 && record.expensive[0].cost >= record.expensive[2].cost)
+            #expect(record.replies.map(\.timestamp) == record.replies.map(\.timestamp).sorted())
+        }
+    }
+
+    static func quota(_ id: String, fiveHour: Double, weekly: Double, asOf: Date, resets: Date?) -> AccountQuota {
+        AccountQuota(account: ClaudeAccount(id: id, email: "\(id)@example.com", label: id.capitalized), installIDs: [],
+                     asOf: asOf,
+                     windows: [QuotaWindow(kind: .fiveHour, percent: fiveHour, resetsAt: resets, resetIsEstimate: false),
+                               QuotaWindow(kind: .weekly, percent: weekly, resetsAt: resets.map { $0.addingTimeInterval(86_400 * 3) }, resetIsEstimate: false)],
+                     history: [], forecast: nil)
+    }
+
+    @Test("An alert goes out once per threshold per window, only from a fresh reading, naming a roomier account")
+    func limitAlerts() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let reset = now.addingTimeInterval(3_600)
+        let work = Self.quota("work", fiveHour: 86, weekly: 40, asOf: now.addingTimeInterval(-600), resets: reset)
+        let personal = Self.quota("personal", fiveHour: 10, weekly: 30, asOf: now, resets: reset)
+        let first = LimitAlerts.due([work, personal], alreadySent: [], now: now)
+        #expect(first.count == 1)
+        #expect(first[0].threshold == 80 && first[0].window == .fiveHour)
+        #expect(first[0].alternative?.name == "Personal" && first[0].alternative?.left == 70)
+        #expect(LimitAlerts.due([work, personal], alreadySent: Set(first.map(\.key)), now: now).isEmpty)
+
+        // Past 95% is a new alert; after the reset the window is a new one.
+        let worse = Self.quota("work", fiveHour: 96, weekly: 40, asOf: now, resets: reset)
+        #expect(LimitAlerts.due([worse], alreadySent: Set(first.map(\.key)), now: now).first?.threshold == 95)
+        let stale = Self.quota("work", fiveHour: 96, weekly: 40, asOf: now.addingTimeInterval(-3 * 3_600), resets: reset)
+        #expect(LimitAlerts.due([stale], alreadySent: [], now: now).isEmpty)
+        let over = Self.quota("work", fiveHour: 96, weekly: 40, asOf: now, resets: now.addingTimeInterval(-60))
+        #expect(LimitAlerts.due([over], alreadySent: [], now: now).isEmpty)
+    }
+}

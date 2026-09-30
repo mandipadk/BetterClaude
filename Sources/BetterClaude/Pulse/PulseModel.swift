@@ -164,6 +164,9 @@ final class PulseNotifier: NSObject, UNUserNotificationCenterDelegate {
 
     /// Brings a session's app forward when its notification is clicked, by session id.
     var onOpen: ((String) -> Void)?
+    /// Shows Usage when a limit notification is clicked.
+    var onOpenUsage: (() -> Void)?
+    static let limitsKey = "notifyLimits"
     private var authorized: Bool?
 
     static var available: Bool {
@@ -202,6 +205,29 @@ final class PulseNotifier: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// Close to a limit, before hitting it.
+    func post(_ alert: LimitAlerts.Alert) {
+        guard Self.available, UserDefaults.standard.object(forKey: Self.limitsKey) as? Bool ?? true else { return }
+        let content = UNMutableNotificationContent()
+        let window = alert.window == .fiveHour ? "five-hour limit" : "weekly limit"
+        content.title = "\(alert.account) has used \(Int(alert.percent))% of its \(window)"
+        var body: [String] = []
+        if let reset = alert.resetsAt {
+            let format = alert.window == .fiveHour ? Date.FormatStyle(date: .omitted, time: .shortened)
+                                                   : Date.FormatStyle().weekday(.wide).hour().minute()
+            body.append("It resets \(alert.window == .fiveHour ? "at" : "on") \(reset.formatted(format)).")
+        }
+        if let other = alert.alternative { body.append("\(other.name) has \(Int(other.left))% left.") }
+        content.body = body.isEmpty ? "Better Claude's Usage page shows what used it." : body.joined(separator: " ")
+        content.userInfo = ["usage": true]
+        content.threadIdentifier = "limits"
+        let request = UNNotificationRequest(identifier: "limit.\(alert.key)", content: content, trigger: nil)
+        Task {
+            guard await ensureAuthorized() else { return }
+            try? await UNUserNotificationCenter.current().add(request)
+        }
+    }
+
     private func isEnabled(_ kind: Kind) -> Bool {
         let defaults = UserDefaults.standard
         switch kind {
@@ -231,9 +257,12 @@ final class PulseNotifier: NSObject, UNUserNotificationCenterDelegate {
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse) async {
-        let session = response.notification.request.content.userInfo["session"] as? String
+        let info = response.notification.request.content.userInfo
+        let session = info["session"] as? String
+        let usage = info["usage"] as? Bool ?? false
         await MainActor.run {
             if let session { onOpen?(session) }
+            if usage { onOpenUsage?() }
         }
     }
 }

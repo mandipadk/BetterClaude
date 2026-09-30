@@ -5,6 +5,7 @@ import SwiftUI
 /// Every account's plan limits, where the week is heading, and what used it.
 struct UsagePage: View {
     @Environment(AppServices.self) private var services
+    @AppStorage(PulseNotifier.limitsKey) private var notifyLimits = true
 
     var body: some View {
         let usage = services.usage
@@ -31,6 +32,11 @@ struct UsagePage: View {
                     AccountUsageSection(quota: quota, items: usage.spend[quota.account.id] ?? [])
                 }
                 if !usage.quotas.isEmpty {
+                    DetailSection(title: "Alerts") {
+                        ExplainedToggle(title: "Before you hit a limit",
+                                        detail: "A notification when an account passes 80% and 95% of its five-hour or weekly limit, once each time, naming the account with the most room left.",
+                                        isOn: $notifyLimits)
+                    }
                     Text("The percentages are Claude's own. Which projects and conversations used them is estimated from the tokens each reply used, weighed at API list prices, since plan limits aren't published as a formula.")
                         .font(Theme.Font.caption)
                         .foregroundStyle(.secondary)

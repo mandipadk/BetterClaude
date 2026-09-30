@@ -417,6 +417,7 @@ public struct FixtureHome {
         }
 
         try writeFileHistory()
+        try writeLongSession()
         try writePromptHistory()
 
         // Memory, including one for a project folder that has since been deleted.
@@ -505,6 +506,46 @@ public struct FixtureHome {
             time.addTimeInterval(1_800)
         }
         try writeJSON(["samples": samples], to: userData.appendingPathComponent("plan-usage-history.json"))
+    }
+
+    /// The date picker migration as a long working session: a sub-agent's replies reading
+    /// more and more of the conversation, a compaction, then more work — what a heavy session
+    /// looks like reply by reply.
+    func writeLongSession() throws {
+        guard let conversation = Script.claudeCode.first(where: { $0.title.hasPrefix("Migrate the date picker") }) else { return }
+        let project = paths.home.appendingPathComponent(conversation.project ?? "Code")
+        let transcript = paths.claudeCodeConfigDir.appendingPathComponent("projects", isDirectory: true)
+            .appendingPathComponent(PathEncoder.encode(project.path), isDirectory: true)
+            .appendingPathComponent("\(conversation.cliId).jsonl")
+        let start = now.addingTimeInterval(-conversation.age - 3 * 3_600)
+        var lines: [Data] = []
+        var context = 24_000
+        for step in 0..<72 {
+            let time = start.addingTimeInterval(Double(step) * 140)
+            if step == 44 {
+                lines.append(try JSONSerialization.data(withJSONObject: [
+                    "type": "user", "isSidechain": true, "isCompactSummary": true, "timestamp": Transcriber.stamp(time),
+                    "message": ["role": "user", "content": "Summary of the migration so far: DatePicker call sites moved to the new API in 14 of 22 files; the locale fallback still needs a test."],
+                ] as [String: Any], options: [.sortedKeys]))
+                context = 31_000
+            }
+            // Deterministic growth with a little texture.
+            context += 3_100 + (step * 37) % 1_900
+            let id = "msg_long\(step)"
+            lines.append(try JSONSerialization.data(withJSONObject: [
+                "type": "assistant", "isSidechain": true, "timestamp": Transcriber.stamp(time),
+                "message": ["role": "assistant", "model": conversation.model, "id": id,
+                            "usage": ["input_tokens": 4, "output_tokens": 180 + (step * 53) % 900,
+                                      "cache_read_input_tokens": context,
+                                      "cache_creation_input_tokens": 2_000 + (step * 71) % 3_000],
+                            "content": [["type": "tool_use", "id": "toolu_long\(step)", "name": step % 3 == 0 ? "Edit" : "Read",
+                                         "input": ["file_path": project.appendingPathComponent("src/DatePicker.tsx").path]]]],
+            ] as [String: Any], options: [.sortedKeys]))
+        }
+        let handle = try FileHandle(forWritingTo: transcript)
+        try handle.seekToEnd()
+        for line in lines { try handle.write(contentsOf: line + Data("\n".utf8)) }
+        try handle.close()
     }
 
     /// The webhook conversation's files, as Claude Code leaves them: `deliver.ts` as it is

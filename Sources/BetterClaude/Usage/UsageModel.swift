@@ -43,7 +43,23 @@ final class UsageModel {
             self.quotas = quotas
             self.spend = spend
             loaded = true
+            alert(quotas)
         }
+    }
+
+    /// Called with each fresh reading; posts what's newly close to a limit.
+    var notifier: PulseNotifier?
+    private static let sentKey = "limitAlertsSent"
+
+    private func alert(_ quotas: [AccountQuota]) {
+        guard let notifier else { return }
+        let defaults = UserDefaults.standard
+        var sent = defaults.stringArray(forKey: Self.sentKey) ?? []
+        for alert in LimitAlerts.due(quotas, alreadySent: Set(sent)) {
+            notifier.post(alert)
+            sent.append(alert.key)
+        }
+        defaults.set(Array(sent.suffix(200)), forKey: Self.sentKey)
     }
 
     func quota(for accountID: String?) -> AccountQuota? {

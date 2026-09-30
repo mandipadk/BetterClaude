@@ -12,6 +12,12 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.9.0": [
+            Item(symbol: "chart.xyaxis.line", title: "Cost and context",
+                 detail: "Every Claude Code conversation shows how full its context was at each reply, where it compacted, and which replies cost the most."),
+            Item(symbol: "bell.badge", title: "Before you hit a limit",
+                 detail: "A notification when an account passes 80% or 95% of its five-hour or weekly limit, naming the account with the most room left. Turn it off on Usage."),
+        ],
         "0.8.0": [
             Item(symbol: "clock.arrow.circlepath", title: "What a conversation changed",
                  detail: "Every file a conversation edited or created, compared with how it was before, from the conversation's ⋯ menu. Put any of them back in one step, and undo that from History."),
