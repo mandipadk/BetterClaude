@@ -131,3 +131,29 @@ struct FlightRecorderTests {
         #expect(LimitAlerts.due([over], alreadySent: [], now: now).isEmpty)
     }
 }
+
+@Suite("Your month")
+struct MonthStatsTests {
+    @Test("A month counts conversations, prompts, days, hours, models and tools from the index")
+    func month() async throws {
+        try await HistoryIndexTests.withSample { sample, snapshot, index in
+            try await index.update(from: snapshot)
+            let stats = try await MonthStats.build(index: index, month: sample.now)
+            #expect(stats.conversations > 5 && stats.prompts >= stats.conversations)
+            #expect(stats.days.count >= 28 && stats.activeDays > 3)
+            #expect(stats.hours.count == 24 && stats.hours.reduce(0, +) == stats.prompts)
+            #expect(stats.longestStreak >= 1 && stats.longestStreak <= stats.activeDays)
+            #expect(stats.models.first?.name == "Sonnet 5")
+            #expect(stats.tools.contains { $0.name == "Edit" })
+            #expect(stats.pullRequests == 1 && stats.compactions == 1 && stats.cost > 0)
+        }
+    }
+
+    @Test("Model ids read as names")
+    func names() {
+        #expect(MonthStats.modelName("claude-opus-5-5") == "Opus 5.5")
+        #expect(MonthStats.modelName("claude-sonnet-4-6-20260101") == "Sonnet 4.6")
+        #expect(MonthStats.modelName("claude-fable-5-1") == "Fable 5.1")
+        #expect(MonthStats.toolName("mcp__linear__create_issue") == "create_issue")
+    }
+}

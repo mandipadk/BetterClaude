@@ -11,11 +11,17 @@ struct UsagePage: View {
         let usage = services.usage
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Usage").font(Theme.Font.display)
-                    Text("Your plan limits in every account, where this week is heading, and what used it.")
-                        .font(Theme.Font.callout)
-                        .foregroundStyle(.secondary)
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Usage").font(Theme.Font.display)
+                        Text("Your plan limits in every account, where this week is heading, and what used it.")
+                            .font(Theme.Font.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Your Month…") { services.lookingBack = MonthModel() }
+                        .buttonStyle(.secondary)
+                        .help("A month with Claude on one card, to look back on or save as an image")
                 }
                 .padding(.bottom, Theme.Space.xl)
 

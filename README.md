@@ -77,6 +77,11 @@ by project and conversation, from the tokens every reply used weighed at list pr
 arrives when an account passes 80% or 95% of a limit, once per window, naming the account
 with the most room left.
 
+**Your Month…** puts a month with every Claude on one card: conversations, prompts, days
+active and the longest run of them, the hours you work, models, the tools Claude used most,
+projects (names hidden unless you choose), and what it came to. Copy it or save it as an
+image.
+
 Every Claude Code conversation has **Cost and context** under its title: how much of the
 conversation each reply had to read, against the context window, where Claude compacted,
 what each reply cost at list prices, and the costliest replies.

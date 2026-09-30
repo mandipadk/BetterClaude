@@ -12,6 +12,10 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.12.0": [
+            Item(symbol: "calendar", title: "Your month with Claude",
+                 detail: "Every Claude on your Mac over a month on one card: days and hours you worked, models, tools, projects and what it all came to. Save it as an image from Usage."),
+        ],
         "0.11.0": [
             Item(symbol: "key", title: "Secrets",
                  detail: "API keys and tokens that ended up in a conversation, with who put them there and where to rotate them. A key is never shown or kept whole."),

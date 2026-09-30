@@ -31,6 +31,10 @@ enum DebugRoute {
             switch parts[0] {
             case "conversations":
                 services.destination = .conversations
+            case "month":
+                services.destination = .usage
+                while !services.index.isReady { try? await Task.sleep(for: .milliseconds(50)) }
+                services.lookingBack = MonthModel()
             case "secrets":
                 services.destination = .secrets
             case "projects":
