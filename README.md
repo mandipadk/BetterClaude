@@ -110,6 +110,12 @@ after the prompt cache expired (five minutes or an hour after the last reply), a
 projects; the cost chart marks those replies. A running session waiting on you with a big
 conversation gets a notification two minutes before its cache goes cold.
 
+**Claims, checked.** When Claude or one of its sub-agents says the tests pass, a named file
+was updated or created, work was committed or pushed, or the build succeeds, the reader
+checks the transcript: the test run and whether it failed, the edits to that file, the git
+command. Each claim is backed, contradicted, or has nothing to back it; the doubtful ones are
+always shown. Claims the transcript can't settle aren't guessed at.
+
 When a conversation's replies switched model partway, the reader says when, to what, and
 whether anyone asked for it: you with `/model`, Claude Code with a fallback after a refusal,
 or nothing on record. Usage lists every change nobody asked for in the last month, and a

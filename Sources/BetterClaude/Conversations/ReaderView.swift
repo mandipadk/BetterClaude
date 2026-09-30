@@ -200,6 +200,7 @@ struct ReaderHeader: View {
                 ModelSwitchesView(conversation: conversation)
                 FlightRecorderView(conversation: conversation)
                 SubagentsView(conversation: conversation)
+                ClaimsView(conversation: conversation)
             }
 
             FindField(text: $reader.findQuery)

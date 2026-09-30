@@ -10,7 +10,7 @@ import Foundation
 public actor HistoryIndex {
 
     /// Bumped whenever the schema or what gets extracted changes; an older file is rebuilt.
-    public static let schemaVersion = 11
+    public static let schemaVersion = 12
 
     /// One file per schema, so an older copy of the app still running during an update
     /// keeps its own index instead of rebuilding this one back and forth.
@@ -149,7 +149,8 @@ public actor HistoryIndex {
             name TEXT NOT NULL,
             file_path TEXT,
             detail TEXT,
-            agent_id TEXT
+            agent_id TEXT,
+            failed INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS tool_calls_conversation ON tool_calls(conversation_id);
         CREATE INDEX IF NOT EXISTS tool_calls_file ON tool_calls(file_path) WHERE file_path IS NOT NULL;
@@ -356,12 +357,12 @@ public actor HistoryIndex {
                                          .int(usage.cacheWrite5m), .int(usage.cacheWrite1h), agent])
                 }
                 let insertTool = try database.prepare("""
-                    INSERT INTO tool_calls (conversation_id, message_uuid, timestamp, name, file_path, detail, agent_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO tool_calls (conversation_id, message_uuid, timestamp, name, file_path, detail, agent_id, failed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """)
                 for call in scan.toolCalls {
                     try insertTool.run([id, .optional(call.messageUUID), .date(call.timestamp), .text(call.name),
-                                        .optional(call.filePath), .optional(call.detail), agent])
+                                        .optional(call.filePath), .optional(call.detail), agent, .int(call.failed ? 1 : 0)])
                 }
                 let prompt = scan.messages.first { $0.role == .user }?.text
                 let result = scan.messages.last { $0.role == .assistant }?.text
@@ -442,12 +443,12 @@ public actor HistoryIndex {
                                  .int(usage.cacheWrite5m), .int(usage.cacheWrite1h)])
         }
         let insertTool = try database.prepare("""
-            INSERT INTO tool_calls (conversation_id, message_uuid, timestamp, name, file_path, detail)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO tool_calls (conversation_id, message_uuid, timestamp, name, file_path, detail, failed)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """)
         for call in scan.toolCalls {
             try insertTool.run([id, .optional(call.messageUUID), .date(call.timestamp), .text(call.name),
-                                .optional(call.filePath), .optional(call.detail)])
+                                .optional(call.filePath), .optional(call.detail), .int(call.failed ? 1 : 0)])
         }
         let insertHealth = try database.prepare("""
             INSERT INTO health (conversation_id, kind, name, detail, timestamp) VALUES (?, ?, ?, ?, ?)

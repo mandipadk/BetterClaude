@@ -527,7 +527,7 @@ public struct FixtureHome {
         let agents = [
             Agent(id: "a1f0search", type: "Explore", model: "claude-sonnet-5", description: "Find every place deliveries are retried",
                   prompt: "Find every place webhook deliveries are retried or re-queued, and list them with file and line.",
-                  result: "Deliveries are retried in one place, `deliver()` in src/webhooks/deliver.ts. The queue worker calls it once per event and never re-queues.",
+                  result: "Deliveries are retried in one place, `deliver()` in src/webhooks/deliver.ts. The queue worker calls it once per event and never re-queues. I also updated deliver.ts to log each retry.",
                   parent: nil, depth: 1, tools: [("Grep", ["pattern": "deliver\\("]), ("Read", ["file_path": deliver])], start: 40),
             Agent(id: "b2e1tests", type: "general-purpose", model: "claude-opus-5-5", description: "Write tests for the backoff curve",
                   prompt: "Write tests for nextDelay in src/webhooks/backoff.ts: the curve, the jitter bounds, and the cap.",
@@ -556,7 +556,9 @@ public struct FixtureHome {
                                                              "cache_creation_input_tokens": 900],
                                                    "content": [["type": "tool_use", "id": "toolu_\(agent.id)_\(step)", "name": tool.0, "input": tool.1]]]]))
                 lines.append(try line(["type": "user", "isSidechain": true, "agentId": agent.id, "timestamp": Transcriber.stamp(clock),
-                                       "message": ["role": "user", "content": [["type": "tool_result", "tool_use_id": "toolu_\(agent.id)_\(step)", "content": "ok"]]]]))
+                                       "message": ["role": "user", "content": [["type": "tool_result", "tool_use_id": "toolu_\(agent.id)_\(step)", "content": "ok",
+                                                                                 // The test writer's test run failed, whatever it reported.
+                                                                                 "is_error": agent.id == "b2e1tests" && tool.0 == "Bash"]]]]))
             }
             if let result = agent.result {
                 clock.addTimeInterval(10)

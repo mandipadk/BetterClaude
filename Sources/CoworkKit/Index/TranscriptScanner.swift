@@ -44,6 +44,10 @@ public struct TranscriptScan: Sendable {
         public let filePath: String?
         /// The command, for a shell call: its first line, trimmed.
         public var detail: String? = nil
+        public var toolUseID: String? = nil
+        /// Its result came back as an error: a command that exited non-zero, an edit that
+        /// didn't apply.
+        public var failed = false
     }
 
     /// Something that went wrong around a turn: an MCP server that failed to start or needs
@@ -189,6 +193,15 @@ public enum TranscriptScanner {
         switch type {
         case "user", "assistant":
             guard let message = record["message"] else { return }
+            if type == "user" {
+                for block in message["content"]?.arrayValue ?? [] where block["type"]?.stringValue == "tool_result"
+                    && block["is_error"]?.boolValue == true {
+                    if let id = block["tool_use_id"]?.stringValue,
+                       let at = result.toolCalls.lastIndex(where: { $0.toolUseID == id }) {
+                        result.toolCalls[at].failed = true
+                    }
+                }
+            }
             let uuid = record["uuid"]?.stringValue
             if type == "assistant" {
                 absorbReply(message, uuid: uuid, timestamp: timestamp, into: &result)
@@ -300,6 +313,7 @@ public enum TranscriptScanner {
             guard let name = block["name"]?.stringValue else { continue }
             let path = fileTools[name].flatMap { block["input"]?[$0]?.stringValue }
             var call = TranscriptScan.ToolCall(messageUUID: uuid, timestamp: timestamp, name: name, filePath: path)
+            call.toolUseID = block["id"]?.stringValue
             if name == "Bash", let command = block["input"]?["command"]?.stringValue {
                 let first = command.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? command
                 call.detail = String(first.trimmingCharacters(in: .whitespaces).prefix(300))
