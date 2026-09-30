@@ -31,6 +31,14 @@ enum DebugRoute {
             switch parts[0] {
             case "conversations":
                 services.destination = .conversations
+            case "projects":
+                services.destination = .projects
+                if !argument.isEmpty {
+                    while !services.index.isReady { try? await Task.sleep(for: .milliseconds(50)) }
+                    services.projectPages.load(index: services.index.index)
+                    while !services.projectPages.loaded { try? await Task.sleep(for: .milliseconds(50)) }
+                    services.projectPages.selectedID = services.projectPages.projects.first { $0.name == argument }?.id
+                }
             case "flight":
                 // The reader with its cost and context chart open.
                 UserDefaults.standard.set(true, forKey: "flightRecorderOpen")

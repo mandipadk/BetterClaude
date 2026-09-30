@@ -6,6 +6,7 @@ import SwiftUI
 /// Where the main window is.
 enum SidebarDestination: Hashable {
     case conversations
+    case projects
     case running
     case ask
     case usage
@@ -56,6 +57,7 @@ final class AppServices {
     let usage = UsageModel()
     let files = FilesModel()
     let prompts = PromptsModel()
+    let projectPages = ProjectsModel()
     let formats = FormatModel()
     let search: SearchModel
     let library = LibraryModel()

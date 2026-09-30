@@ -12,6 +12,10 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.10.0": [
+            Item(symbol: "folder", title: "Projects",
+                 detail: "Everything about a project in one place: its conversations from every Claude and account, pull requests, the files Claude changed, what it cost, when you worked on it, and its memory."),
+        ],
         "0.9.0": [
             Item(symbol: "chart.xyaxis.line", title: "Cost and context",
                  detail: "Every Claude Code conversation shows how full its context was at each reply, where it compacted, and which replies cost the most."),

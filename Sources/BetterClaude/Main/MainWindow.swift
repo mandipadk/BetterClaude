@@ -149,6 +149,8 @@ struct MainWindow: View {
             FilesPage()
         case .prompts:
             PromptsPage()
+        case .projects:
+            ProjectsPage()
         case .library:
             LibraryPage()
         case .history:
@@ -182,6 +184,8 @@ struct Sidebar: View {
             Section {
                 Label("Conversations", systemImage: "bubble.left.and.bubble.right")
                     .tag(SidebarDestination.conversations)
+                Label("Projects", systemImage: "folder")
+                    .tag(SidebarDestination.projects)
                 Label("Running", systemImage: "waveform.path.ecg")
                     .badge(services.pulse.needingYou.count)
                     .tag(SidebarDestination.running)

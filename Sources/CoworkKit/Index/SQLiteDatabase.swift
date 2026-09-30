@@ -206,6 +206,15 @@ public struct SQLiteRow: Sendable {
         }
     }
 
+    /// The integer, or `nil` when the column is empty.
+    public func intOrNil(_ column: Int) -> Int64? {
+        switch values[column] {
+        case .int(let int): return int
+        case .double(let double): return Int64(double)
+        default: return nil
+        }
+    }
+
     public func double(_ column: Int) -> Double {
         switch values[column] {
         case .int(let int): return Double(int)

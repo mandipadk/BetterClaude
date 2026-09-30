@@ -36,6 +36,14 @@ Claude — Markdown, code, tables and tool use included — and it updates live 
 writes to it. The reader links the pull request a conversation opened and the conversation
 it was forked from or continued in. A menu bar panel finds any conversation from anywhere.
 
+### Projects
+
+One page per project folder, joining everything about it no matter which Claude or account
+it happened in: its conversations (with their branch and what each cost), the pull requests
+they opened, the files Claude changed, eight weeks of activity, and the `CLAUDE.md` and
+memory Claude is given there. Sessions in Claude Code's worktrees count toward the
+repository they came from.
+
 ### Claude remembers your past work
 
 Better Claude ships an MCP server, `bc-recall`, inside the app. Switch it on from an
