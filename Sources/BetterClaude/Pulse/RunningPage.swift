@@ -29,6 +29,7 @@ struct RunningPage: View {
                       pulse.sessions.filter { $0.state == .needsYou })
                 group("Working", subtitle: nil, pulse.sessions.filter { $0.state == .working })
                 group("Waiting for your next message", subtitle: nil, pulse.sessions.filter { $0.state == .idle })
+                UnattendedSection()
 
                 DetailSection(title: "Alerts") {
                     VStack(alignment: .leading, spacing: Theme.Space.l) {
@@ -195,5 +196,96 @@ struct LiveSessionRow: View {
         }
         if let title = conversation?.title, !title.isEmpty { return title }
         return session.cwd.isEmpty ? "" : HostPaths.current.abbreviating(session.cwd)
+    }
+}
+
+/// Background jobs and self-running loops: what each is doing, how it ended, and the ones that
+/// stopped without saying.
+private struct UnattendedSection: View {
+    @Environment(AppServices.self) private var services
+    @State private var jobs: [Unattended.Job] = []
+    @State private var loops: [Unattended.Loop] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !jobs.isEmpty || !loops.isEmpty {
+                DetailSection(title: "Unattended", subtitle: "Background jobs and conversations that keep themselves going, in the last week.") {
+                    VStack(alignment: .leading, spacing: Theme.Space.m) {
+                        ForEach(jobs.prefix(10)) { job in jobRow(job) }
+                        ForEach(loops.prefix(6)) { loop in
+                            Button {
+                                services.filter = .all
+                                services.destination = .conversations
+                                services.selectedConversationID = loop.conversationID
+                            } label: {
+                                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                    Image(systemName: "arrow.clockwise").foregroundStyle(.secondary).frame(width: 16)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(loop.title).font(Theme.Font.body).foregroundStyle(Theme.accent).lineLimit(1)
+                                        Text("Looped \(loop.wakeups) time\(loop.wakeups == 1 ? "" : "s")\(loop.last.map { ", last \($0.listStamp.lowercasedIfWordLocal)" } ?? "")")
+                                            .font(Theme.Font.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: "\(services.index.generation)#\(services.pulse.sessions.count)") {
+            let paths = services.snapshot.paths
+            jobs = await Task.detached { Unattended.jobs(configDirs: LiveSessions.configDirs(paths: paths)) }.value
+                .filter { ($0.updated ?? .distantPast) > Date().addingTimeInterval(-7 * 86_400) || $0.outcome == .running }
+            if let index = services.index.index {
+                loops = (try? await Unattended.loops(index: index, since: Date().addingTimeInterval(-7 * 86_400))) ?? []
+            }
+        }
+    }
+
+    private func jobRow(_ job: Unattended.Job) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: symbol(job.outcome))
+                .foregroundStyle(job.outcome == .failed || job.outcome == .stalled ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.secondary))
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(job.name).font(Theme.Font.body).lineLimit(1)
+                Text(status(job)).font(Theme.Font.caption).foregroundStyle(.secondary).lineLimit(2)
+                if let text = job.result ?? job.lastUpdate {
+                    Text(text.replacingOccurrences(of: "\n", with: " "))
+                        .font(Theme.Font.callout).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+            Spacer(minLength: Theme.Space.m)
+            if let session = job.sessionID, let conversation = services.conversation(forSession: session) {
+                Button("Open") {
+                    services.filter = .all
+                    services.destination = .conversations
+                    services.selectedConversationID = conversation.id
+                }
+                .buttonStyle(.secondary)
+            }
+        }
+    }
+
+    private func symbol(_ outcome: Unattended.Job.Outcome) -> String {
+        switch outcome {
+        case .running: return "play.circle"
+        case .finished: return "checkmark.circle"
+        case .failed: return "xmark.octagon"
+        case .stalled: return "pause.circle"
+        }
+    }
+
+    private func status(_ job: Unattended.Job) -> String {
+        let when = job.updated.map { $0.listStamp.lowercasedIfWordLocal } ?? "at some point"
+        let project = job.cwd.map { " in \(URL(fileURLWithPath: $0).lastPathComponent)" } ?? ""
+        switch job.outcome {
+        case .running: return "Working\(project), last heard from \(when)"
+        case .finished: return job.result == nil ? "Finished\(project), \(when), without a final message" : "Finished\(project), \(when)"
+        case .failed: return "Failed\(project), \(when)"
+        case .stalled: return "Stopped\(project) without finishing, last heard from \(when)"
+        }
     }
 }

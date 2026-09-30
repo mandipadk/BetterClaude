@@ -421,6 +421,7 @@ public struct FixtureHome {
         try writeLeakedKeys()
         try writeCorrections()
         try writeSubagents()
+        try writeUnattended()
         try writePromptHistory()
 
         // Memory, including one for a project folder that has since been deleted.
@@ -584,6 +585,57 @@ public struct FixtureHome {
                                          "usage": ["input_tokens": 3, "output_tokens": 80, "cache_read_input_tokens": 8_000, "cache_creation_input_tokens": 500],
                                          "content": [["type": "tool_use", "id": "toolu_d4old_0", "name": "Grep", "input": ["pattern": "deadLetter"]]]]])]
         try Data((old.joined(separator: "\n") + "\n").utf8).write(to: folder.appendingPathComponent("agent-d4e3older.jsonl"))
+    }
+
+    /// Background jobs as Claude Code keeps them in `jobs/<id>/`: one that finished, one that
+    /// failed, and one whose record still says it's working though nothing has moved in hours.
+    /// And a conversation that kept itself going with scheduled wake-ups.
+    func writeUnattended() throws {
+        let jobs = paths.claudeCodeConfigDir.appendingPathComponent("jobs", isDirectory: true)
+        let billing = paths.home.appendingPathComponent("Code/billing-service").path
+        let journal = paths.home.appendingPathComponent("Code/journal-app").path
+        let entries: [(String, String, String, String?, TimeInterval, [String])] = [
+            ("7f3a91c2", "Nightly dependency audit", "done",
+             "No vulnerable versions. Two minor updates available: vitest 3.4 and zod 4.2.", 40 * 60, ["Reading the lockfile", "Checking advisories"]),
+            ("2b8e04d1", "Refresh the fixtures", "failed", nil, 3 * 3_600, ["Regenerating fixtures", "The seed script exited with an error"]),
+            ("c91d5e77", "Translate settings strings", "working", nil, 2 * 3_600, ["Translating 42 strings into German"]),
+        ]
+        for (id, name, state, result, age, timeline) in entries {
+            let folder = jobs.appendingPathComponent(id, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            var record: [String: Any] = [
+                "name": name, "state": state, "backend": "daemon", "tempo": state == "working" ? "working" : "idle",
+                "cwd": id == "c91d5e77" ? journal : billing, "sessionId": UUID().uuidString.lowercased(),
+                "createdAt": Transcriber.stamp(now.addingTimeInterval(-age - 600)), "updatedAt": Transcriber.stamp(now.addingTimeInterval(-age)),
+                "tokens": 48_000, "providerEnv": ["NOT_READ": "x"], "output": [:] as [String: Any],
+            ]
+            if let result { record["output"] = ["result": result] }
+            try writeJSON(record, to: folder.appendingPathComponent("state.json"))
+            let lines = try timeline.enumerated().map { offset, text in
+                String(decoding: try JSONSerialization.data(withJSONObject: [
+                    "at": Transcriber.stamp(now.addingTimeInterval(-age - Double(timeline.count - offset) * 60)), "state": "working", "text": text,
+                ], options: [.sortedKeys]), as: UTF8.self)
+            }
+            try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: folder.appendingPathComponent("timeline.jsonl"))
+        }
+
+        guard let conversation = Script.claudeCode.first(where: { $0.title.hasPrefix("Add a health check") }) else { return }
+        let project = paths.home.appendingPathComponent(conversation.project ?? "Code")
+        let transcript = paths.claudeCodeConfigDir.appendingPathComponent("projects", isDirectory: true)
+            .appendingPathComponent(PathEncoder.encode(project.path), isDirectory: true)
+            .appendingPathComponent("\(conversation.cliId).jsonl")
+        let handle = try FileHandle(forWritingTo: transcript)
+        try handle.seekToEnd()
+        for step in 0..<6 {
+            let record: [String: Any] = [
+                "type": "assistant", "isSidechain": true,
+                "timestamp": Transcriber.stamp(now.addingTimeInterval(-26 * 3_600 + Double(step) * 1_800)),
+                "message": ["role": "assistant", "content": [["type": "tool_use", "id": "toolu_wake\(step)", "name": "ScheduleWakeup",
+                                                              "input": ["delaySeconds": 1_800, "reason": "check the deploy"]]]],
+            ]
+            try handle.write(contentsOf: try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) + Data("\n".utf8))
+        }
+        try handle.close()
     }
 
     /// The same two corrections in two billing-service conversations: what a project's

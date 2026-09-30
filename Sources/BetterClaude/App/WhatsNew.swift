@@ -12,6 +12,10 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.26.0": [
+            Item(symbol: "moon.zzz", title: "Unattended",
+                 detail: "Running shows background jobs and conversations that loop on their own: how each ended, what it came back with, and the ones that stopped without finishing. A job that finishes, fails or stalls sends a notification."),
+        ],
         "0.25.0": [
             Item(symbol: "brain", title: "Memory Claude never sees",
                  detail: "The Memory page says when a MEMORY.md runs past the 200 lines Claude reads, when notes aren't linked from it so Claude can't find them, and when it links to notes that are gone. Link the missing ones in one step."),

@@ -188,7 +188,25 @@ final class AppServices {
         }
     }
 
+    /// Background jobs that ended, failed or stalled in the last two hours, told once each.
+    private func checkJobs() {
+        let paths = snapshot.paths
+        Task {
+            let jobs = await Task.detached { Unattended.jobs(configDirs: LiveSessions.configDirs(paths: paths)) }.value
+            var sent = UserDefaults.standard.stringArray(forKey: Self.coachedKey) ?? []
+            for job in jobs where job.outcome != .running {
+                guard let updated = job.updated, Date().timeIntervalSince(updated) < 2 * 3_600 else { continue }
+                let key = "job|\(job.id)|\(job.outcome.rawValue)"
+                guard !sent.contains(key) else { continue }
+                pulse.notifier.post(job: job)
+                sent.append(key)
+            }
+            UserDefaults.standard.set(Array(sent.suffix(300)), forKey: Self.coachedKey)
+        }
+    }
+
     private func checkCaches() {
+        checkJobs()
         guard let history = index.index else { return }
         let waiting = pulse.sessions.filter { $0.state != .working }.compactMap { session -> (LiveSession, ConversationRef)? in
             conversation(forSession: session.sessionID).map { (session, $0) }

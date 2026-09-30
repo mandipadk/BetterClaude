@@ -172,6 +172,26 @@ final class PulseNotifier: NSObject, UNUserNotificationCenterDelegate {
     static let contextKey = "notifyContext"
     static let cacheKey = "notifyCache"
 
+    /// A background job finished, failed, or stopped without finishing.
+    func post(job: Unattended.Job) {
+        guard Self.available, isEnabled(.finished) else { return }
+        let content = UNMutableNotificationContent()
+        switch job.outcome {
+        case .finished: content.title = "\(job.name) finished"
+        case .failed: content.title = "\(job.name) failed"
+        case .stalled: content.title = "\(job.name) stopped without finishing"
+        case .running: return
+        }
+        content.body = job.result.map { String($0.prefix(180)) }
+            ?? (job.outcome == .finished ? "It ended without a final message." : "It hasn't been heard from in half an hour.")
+        if let session = job.sessionID { content.userInfo = ["session": session] }
+        let request = UNNotificationRequest(identifier: "job.\(job.id).\(job.outcome.rawValue)", content: content, trigger: nil)
+        Task {
+            guard await ensureAuthorized() else { return }
+            try? await UNUserNotificationCenter.current().add(request)
+        }
+    }
+
     /// A session waiting on you whose cache is about to go cold.
     func post(cacheExpiring session: String, conversationID: String, minutes: Int, context: Int64, extra: Double, key: String) {
         guard Self.available, UserDefaults.standard.object(forKey: Self.cacheKey) as? Bool ?? true else { return }
