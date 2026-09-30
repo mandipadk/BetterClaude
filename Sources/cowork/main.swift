@@ -74,6 +74,10 @@ USAGE
       Corrections you've made in two or more conversations of a project, worded as lines
       for its CLAUDE.md. --counts prints only how many per project.
 
+  cowork claims
+      How many things Claude and its sub-agents said they did are backed by their
+      transcripts, contradicted by them, or have nothing to back them.
+
   cowork secrets [--counts]
       Find API keys and tokens that ended up in a conversation, masked, with where each
       appears. --counts prints only how many of each kind.
@@ -255,6 +259,30 @@ func cmdCorrections(_ args: Args) throws {
             for item in items { print("  \(item.rule)  (\(item.examples.count) times in \(item.conversations) conversations)") }
         }
     }
+}
+
+func cmdClaims() throws {
+    let counts = try runBlocking { () -> Result<[String: Int], Error> in
+        do {
+            let index = try HistoryIndex(readingFrom: HistoryIndex.defaultURL())
+            var counts: [String: Int] = [:]
+            for row in try await index.rows("SELECT id FROM conversations WHERE kind != 'claudeWeb'") {
+                guard let id = row.text(0) else { continue }
+                for claim in try await Claims.check(conversationID: id, index: index) {
+                    let verdict: String
+                    switch claim.verdict {
+                    case .backed: verdict = "backed"
+                    case .contradicted: verdict = "contradicted"
+                    case .noEvidence: verdict = "nothing to back it"
+                    case .unclear: verdict = "couldn't check"
+                    }
+                    counts["\(claim.agentID == nil ? "Claude" : "sub-agents"), \(claim.kind.rawValue): \(verdict)", default: 0] += 1
+                }
+            }
+            return .success(counts)
+        } catch { return .failure(error) }
+    }.get()
+    for (key, count) in counts.sorted(by: { $0.key < $1.key }) { print("\(count)  \(key)") }
 }
 
 func cmdProjects() throws {
@@ -777,6 +805,7 @@ do {
     case "formats": try cmdFormats(args)
     case "secrets": cmdSecrets(args)
     case "projects": try cmdProjects()
+    case "claims": try cmdClaims()
     case "corrections": try cmdCorrections(args)
     case "month": try cmdMonth(args)
     case "file": try cmdFile(args)

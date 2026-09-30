@@ -12,6 +12,10 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.24.1": [
+            Item(symbol: "checkmark.seal", title: "Claims, checked, without the false alarms",
+                 detail: "A claim is weighed against everything done before it, a script that might have done it counts as \u{201C}couldn't check\u{201D} rather than a miss, and Codex conversations aren't judged by Claude Code's tools."),
+        ],
         "0.24.0": [
             Item(symbol: "checkmark.seal", title: "Claims, checked",
                  detail: "When Claude or a sub-agent says the tests pass, a file was updated, or work was committed, the conversation shows whether the transcript backs it up, and flags the ones it contradicts."),

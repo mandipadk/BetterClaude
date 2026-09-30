@@ -14,6 +14,8 @@ public enum Claims {
             case contradicted(String)
             /// Nothing in the transcript does what it says.
             case noEvidence
+            /// A script or command that might have done it ran, and can't be seen into.
+            case unclear
         }
         public var id: String { "\(agentID ?? "main")#\(timestamp?.timeIntervalSince1970 ?? 0)#\(sentence)" }
         public let sentence: String
@@ -68,7 +70,27 @@ public enum Claims {
         return found
     }
 
+    /// Commands that only look: they can't have run tests, edited a file or committed.
+    static let lookingOnly = ["ls", "cat", "head", "tail", "grep", "rg", "find", "echo", "pwd", "wc", "which", "tree",
+                              "git status", "git diff", "git log", "git show", "git branch", "sed -n", "stat", "file", "du", "open"]
+
+    /// A command that could have done anything: a script, make, an interpreter.
+    static func isOpaque(_ call: Call) -> Bool {
+        let name = call.name.lowercased()
+        guard name == "bash" || name.hasSuffix("__bash") || name.contains("shell") else { return false }
+        // A shell whose command wasn't recorded could have done anything.
+        guard let command = call.detail?.trimmingCharacters(in: .whitespaces) else { return true }
+        return !lookingOnly.contains { command == $0 || command.hasPrefix($0 + " ") }
+    }
+
     static func judge(_ kind: Claim.Kind, file: String?, calls: [Call]) -> Claim.Verdict {
+        let verdict = strictJudge(kind, file: file, calls: calls)
+        // Nothing visible did it, but something ran that could have: say so, not "no evidence".
+        if verdict == .noEvidence, calls.contains(where: isOpaque) { return .unclear }
+        return verdict
+    }
+
+    static func strictJudge(_ kind: Claim.Kind, file: String?, calls: [Call]) -> Claim.Verdict {
         let shell = calls.filter { $0.name == "Bash" }
         switch kind {
         case .testsPass, .builds:
@@ -96,6 +118,9 @@ public enum Claims {
 
     /// Every checkable claim in a conversation and its sub-agents, oldest first.
     public static func check(conversationID: String, index: HistoryIndex) async throws -> [Claim] {
+        // Only where the tools are Claude Code's own; Codex's and claude.ai's can't be read this way.
+        let kind = try await index.rows("SELECT kind FROM conversations WHERE id = ?", [.text(conversationID)]).first?.text(0)
+        guard kind != "codex", kind != "claudeWeb" else { return [] }
         let calls = try await index.rows("""
             SELECT agent_id, name, file_path, detail, failed, timestamp FROM tool_calls WHERE conversation_id = ? ORDER BY timestamp
             """, [.text(conversationID)])
@@ -115,23 +140,18 @@ public enum Claims {
                                     agentID: agent, timestamp: row.date(2)))
             }
         }
-        // The conversation: each reply against what was done since the prompt before it.
+        // The conversation: each reply against everything done before it, since a summary
+        // often reports work from earlier turns.
         let messages = try await index.rows("""
             SELECT role, text, timestamp FROM messages WHERE conversation_id = ? AND kind = 'message' ORDER BY ordinal
             """, [.text(conversationID)])
-        var turnStart: Date?
         let own = byAgent[""] ?? []
         for row in messages {
-            guard let role = row.text(0), let text = row.text(1) else { continue }
-            if role == "user" { turnStart = row.date(2); continue }
-            guard role == "assistant" else { continue }
+            guard row.text(0) == "assistant", let text = row.text(1) else { continue }
             let found = Self.claims(in: text)
             guard !found.isEmpty else { continue }
             let end = row.date(2) ?? .distantFuture
-            let turn = own.filter { call in
-                guard let at = call.at else { return false }
-                return at >= (turnStart ?? .distantPast) && at <= end
-            }
+            let turn = own.filter { call in call.at.map { $0 <= end } ?? false }
             for (sentence, kind, file) in found {
                 checked.append(Claim(sentence: sentence, kind: kind, verdict: judge(kind, file: file, calls: turn),
                                     agentID: nil, timestamp: row.date(2)))

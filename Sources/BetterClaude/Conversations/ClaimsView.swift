@@ -52,7 +52,7 @@ struct ClaimsView: View {
     }
 
     private var doubtful: [Claims.Claim] {
-        claims.filter { if case .backed = $0.verdict { return false }; return true }
+        claims.filter { if case .contradicted = $0.verdict { return true }; return $0.verdict == .noEvidence }
     }
 
     private var summary: String {
@@ -67,7 +67,7 @@ struct ClaimsView: View {
     private func row(_ claim: Claims.Claim) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: icon(claim.verdict))
-                .foregroundStyle(isBacked(claim.verdict) ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.attention))
+                .foregroundStyle(isBacked(claim.verdict) || claim.verdict == .unclear ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.attention))
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 2) {
                 Text("“\(claim.sentence)”").font(Theme.Font.callout).fixedSize(horizontal: false, vertical: true)
@@ -89,6 +89,7 @@ struct ClaimsView: View {
         case .backed: return "checkmark.circle"
         case .contradicted: return "xmark.octagon"
         case .noEvidence: return "questionmark.circle"
+        case .unclear: return "circle.dashed"
         }
     }
 
@@ -102,6 +103,7 @@ struct ClaimsView: View {
         case .backed(let evidence): return "backed, \(evidence)"
         case .contradicted(let evidence): return "contradicted, \(evidence)"
         case .noEvidence: return "nothing in the transcript does this"
+        case .unclear: return "couldn't check, a script or command ran that might have"
         }
     }
 }
