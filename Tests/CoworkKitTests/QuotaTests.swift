@@ -157,3 +157,29 @@ struct MonthStatsTests {
         #expect(MonthStats.toolName("mcp__linear__create_issue") == "create_issue")
     }
 }
+
+@Suite("Context coach")
+struct ContextCoachTests {
+    @Test("A live session past 75% of its window gets one heads-up per stretch, and a quiet one gets none")
+    func nudge() async throws {
+        try await HistoryIndexTests.withSample { sample, snapshot, index in
+            let conversation = try #require(snapshot.conversations.first { $0.title == "Retry failed webhook deliveries with backoff" })
+            let url = try #require(conversation.transcriptURL)
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let record = #"{"type":"assistant","isSidechain":true,"timestamp":"\#(formatter.string(from: sample.now.addingTimeInterval(-60)))","message":{"role":"assistant","model":"claude-opus-5","id":"msg_full","usage":{"input_tokens":5,"output_tokens":300,"cache_read_input_tokens":170000,"cache_creation_input_tokens":1000},"content":[]}}"#
+            let handle = try FileHandle(forWritingTo: url)
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data((record + "\n").utf8))
+            try handle.close()
+            try await index.update(from: snapshot)
+
+            let live = [ContextCoach.Live(sessionID: "s1", conversationID: conversation.id, project: "billing-service")]
+            let nudges = try await ContextCoach.due(live, index: index, alreadySent: [], now: sample.now)
+            #expect(nudges.count == 1 && nudges[0].percent == 86 && nudges[0].key == "s1|75|0")
+            #expect(try await ContextCoach.due(live, index: index, alreadySent: Set(nudges.map(\.key)), now: sample.now).isEmpty)
+            // An hour later with nothing new, it's not running hot any more.
+            #expect(try await ContextCoach.due(live, index: index, alreadySent: [], now: sample.now.addingTimeInterval(3_600)).isEmpty)
+        }
+    }
+}

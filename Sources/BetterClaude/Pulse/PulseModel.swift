@@ -166,7 +166,25 @@ final class PulseNotifier: NSObject, UNUserNotificationCenterDelegate {
     var onOpen: ((String) -> Void)?
     /// Shows Usage when a limit notification is clicked.
     var onOpenUsage: (() -> Void)?
+    /// Opens a conversation in Better Claude, by its id.
+    var onOpenConversation: ((String) -> Void)?
     static let limitsKey = "notifyLimits"
+    static let contextKey = "notifyContext"
+
+    /// A running session has read most of its context window.
+    func post(_ nudge: ContextCoach.Nudge) {
+        guard Self.available, UserDefaults.standard.object(forKey: Self.contextKey) as? Bool ?? true else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "\(nudge.project) has read \(nudge.percent)% of its context"
+        content.body = "Each reply now rereads about \(nudge.context / 1_000)K tokens. Compacting now, or a handoff to a fresh session, keeps it fast and cheaper."
+        content.userInfo = ["conversation": nudge.conversationID]
+        content.threadIdentifier = nudge.sessionID
+        let request = UNNotificationRequest(identifier: "context.\(nudge.key)", content: content, trigger: nil)
+        Task {
+            guard await ensureAuthorized() else { return }
+            try? await UNUserNotificationCenter.current().add(request)
+        }
+    }
     private var authorized: Bool?
 
     static var available: Bool {
@@ -260,9 +278,11 @@ final class PulseNotifier: NSObject, UNUserNotificationCenterDelegate {
         let info = response.notification.request.content.userInfo
         let session = info["session"] as? String
         let usage = info["usage"] as? Bool ?? false
+        let conversation = info["conversation"] as? String
         await MainActor.run {
             if let session { onOpen?(session) }
             if usage { onOpenUsage?() }
+            if let conversation { onOpenConversation?(conversation) }
         }
     }
 }

@@ -7,6 +7,7 @@ struct RunningPage: View {
     @Environment(AppServices.self) private var services
     @AppStorage(PulseNotifier.needsYouKey) private var notifyNeedsYou = true
     @AppStorage(PulseNotifier.finishedKey) private var notifyFinished = true
+    @AppStorage(PulseNotifier.contextKey) private var notifyContext = true
     @State private var hookError: String?
 
     var body: some View {
@@ -36,6 +37,9 @@ struct RunningPage: View {
                         ExplainedToggle(title: "When a long turn finishes",
                                         detail: "After Claude has been working for a minute or more.",
                                         isOn: $notifyFinished)
+                        ExplainedToggle(title: "When a session's context is filling up",
+                                        detail: "At 75% and 90% of the context window, once each until it compacts. Every reply rereads the whole conversation, so this is when compacting or a handoff saves the most.",
+                                        isOn: $notifyContext)
                         ExplainedToggle(title: "Say what Claude asked",
                                         detail: hookError ?? "Adds three small hooks to Claude Code's settings so an alert can include Claude's question and any error. Turning this off takes out exactly those hooks. Your settings are backed up first.",
                                         isOn: Binding(get: { pulse.hooksInstalled }, set: { setHooks($0) }))

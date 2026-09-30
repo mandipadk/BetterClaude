@@ -88,8 +88,14 @@ final class AppServices {
             search.refresh()
             spotlight.update(snapshot: snapshot, index: index.index)
             usage.refresh(snapshot: snapshot, index: index.index)
+            coachLiveSessions()
         }
         usage.notifier = pulse.notifier
+        pulse.notifier.onOpenConversation = { [weak self] id in
+            guard let self, let conversation = snapshot.conversations.first(where: { $0.id == id }) else { return }
+            NSApp.activate()
+            show(conversation)
+        }
         pulse.notifier.onOpenUsage = { [weak self] in
             NSApp.activate()
             self?.destination = .usage
@@ -167,6 +173,30 @@ final class AppServices {
               let current = snapshot.conversations.first(where: { $0.id == open.id }),
               current.lastActivity != open.lastActivity || current.bytes != open.bytes else { return }
         reader.open(current, in: install(for: current), force: true)
+    }
+
+    private static let coachedKey = "contextNudgesSent"
+
+    /// After each index pass: any running session that has read most of its context gets one
+    /// heads-up per stretch.
+    private func coachLiveSessions() {
+        guard let history = index.index else { return }
+        let live = pulse.sessions.compactMap { session -> ContextCoach.Live? in
+            conversation(forSession: session.sessionID).map {
+                ContextCoach.Live(sessionID: session.sessionID, conversationID: $0.id, project: session.projectName)
+            }
+        }
+        guard !live.isEmpty else { return }
+        let defaults = UserDefaults.standard
+        Task {
+            var sent = defaults.stringArray(forKey: Self.coachedKey) ?? []
+            let nudges = (try? await ContextCoach.due(live, index: history, alreadySent: Set(sent))) ?? []
+            for nudge in nudges {
+                pulse.notifier.post(nudge)
+                sent.append(nudge.key)
+            }
+            defaults.set(Array(sent.suffix(300)), forKey: Self.coachedKey)
+        }
     }
 
     func updateRunning() {

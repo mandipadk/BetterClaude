@@ -12,6 +12,10 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.14.0": [
+            Item(symbol: "gauge.with.needle", title: "Context coach",
+                 detail: "A heads-up when a running session has read 75% or 90% of its context window, while compacting or a handoff still saves the most. Clicking it opens the conversation."),
+        ],
         "0.13.0": [
             Item(symbol: "safari", title: "Send a conversation as a page",
                  detail: "Export as Web Page… in a conversation's ⋯ menu saves it as one page that opens in any browser, with keys and tokens hidden and your home folder shortened to ~."),

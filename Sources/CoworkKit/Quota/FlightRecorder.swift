@@ -97,3 +97,48 @@ public enum LimitAlerts {
         return alerts
     }
 }
+
+/// A heads-up while a running session still has room: once it has read most of its context
+/// window, each further reply costs more, and compacting or handing off costs least now.
+public enum ContextCoach {
+
+    public struct Nudge: Sendable, Equatable {
+        /// Identifies this threshold in this stretch of the session, so it's posted once.
+        public let key: String
+        public let sessionID: String
+        public let conversationID: String
+        public let project: String
+        public let percent: Int
+        public let context: Int
+        public let window: Int
+    }
+
+    public struct Live: Sendable {
+        public let sessionID: String
+        public let conversationID: String
+        public let project: String
+        public init(sessionID: String, conversationID: String, project: String) {
+            self.sessionID = sessionID
+            self.conversationID = conversationID
+            self.project = project
+        }
+    }
+
+    public static func due(_ live: [Live], index: HistoryIndex, thresholds: [Double] = [0.75, 0.9],
+                           alreadySent: Set<String>, now: Date = Date()) async throws -> [Nudge] {
+        var nudges: [Nudge] = []
+        for session in live {
+            let record = try await FlightRecord.load(conversationID: session.conversationID, index: index)
+            guard let last = record.replies.last, now.timeIntervalSince(last.timestamp) < 20 * 60 else { continue }
+            let share = Double(last.context) / Double(record.window)
+            guard let threshold = thresholds.sorted(by: >).first(where: { share >= $0 }) else { continue }
+            // A compaction starts a new stretch: crossing again after it is worth saying again.
+            let key = "\(session.sessionID)|\(Int(threshold * 100))|\(record.compactions.count)"
+            guard !alreadySent.contains(key) else { continue }
+            nudges.append(Nudge(key: key, sessionID: session.sessionID, conversationID: session.conversationID,
+                                project: session.project, percent: Int((share * 100).rounded()),
+                                context: last.context, window: record.window))
+        }
+        return nudges
+    }
+}

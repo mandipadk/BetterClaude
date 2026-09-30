@@ -68,6 +68,10 @@ clicking it brings the right app forward. An optional switch adds three hooks to
 Code's settings so notifications can say what Claude asked; switching it off removes
 exactly those hooks.
 
+A running session that has read 75% or 90% of its context window gets a heads-up, once
+each until it compacts: every reply rereads the whole conversation, so that's when
+compacting or a handoff to a fresh session saves the most.
+
 ### Usage
 
 Every account's five-hour and weekly limits, as Claude itself last reported them: Claude
