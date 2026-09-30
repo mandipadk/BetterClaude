@@ -131,7 +131,9 @@ Every file Claude wrote or edited: the conversations that read or changed it, ev
 Claude Code saved before a change with a diff against the file now, and its commits with
 the conversation each most likely came from. Any version can be put back and the restore
 undone from History. Saved versions and plans are kept before Claude Code's cleanup deletes
-them. The reader also marks where Claude compacted a conversation and shows what it kept.
+them. The reader also marks where Claude compacted a conversation and shows what it kept,
+and what it forgot: the instructions, corrections and decisions you gave before it that its
+summary no longer mentions, with a button to add them to the project's `CLAUDE.md`.
 
 ### What a conversation changed
 

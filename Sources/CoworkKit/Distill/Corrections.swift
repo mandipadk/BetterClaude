@@ -55,7 +55,7 @@ public enum Corrections {
     }
 
     /// "no, use pnpm here not npm" → "Use pnpm here not npm."
-    static func rule(from text: String) -> String {
+    public static func rule(from text: String) -> String {
         var rule = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let leads = ["no,", "no.", "no —", "no -", "no:", "nope,", "nope.", "actually,", "again,", "i said", "i told you",
                      "i meant", "please", "remember", "wrong,", "wrong."]

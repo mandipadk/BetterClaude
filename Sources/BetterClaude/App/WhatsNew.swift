@@ -12,6 +12,10 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.23.0": [
+            Item(symbol: "exclamationmark.bubble", title: "What compaction forgot",
+                 detail: "Where Claude compacted a conversation, the reader lists what you'd told it before that its summary no longer mentions, like \u{201C}don't change the CSV date format\u{201D}, with one click to add them to the project's CLAUDE.md."),
+        ],
         "0.22.0": [
             Item(symbol: "clock.badge.exclamationmark", title: "Coming back after a break",
                  detail: "Usage shows what re-reading conversations after the prompt cache expired cost this month, and where. The cost chart marks those replies."),

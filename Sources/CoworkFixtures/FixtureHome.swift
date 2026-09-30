@@ -672,6 +672,13 @@ public struct FixtureHome {
         for step in 0..<72 {
             // A long break at step 30: the cache expired, and the next reply wrote it all again.
             let time = start.addingTimeInterval(Double(step) * 140 + (step >= 30 ? 5_400 : 0))
+            if step == 20 {
+                // Two instructions: the summary keeps the second and drops the first.
+                lines.append(try JSONSerialization.data(withJSONObject: [
+                    "type": "user", "isSidechain": true, "timestamp": Transcriber.stamp(time),
+                    "message": ["role": "user", "content": "Don't change the date format in exported CSVs, finance parses them. Keep the old picker behind a flag until the locale test passes."],
+                ] as [String: Any], options: [.sortedKeys]))
+            }
             if step == 44 {
                 lines.append(try JSONSerialization.data(withJSONObject: [
                     "type": "user", "isSidechain": true, "isCompactSummary": true, "timestamp": Transcriber.stamp(time),

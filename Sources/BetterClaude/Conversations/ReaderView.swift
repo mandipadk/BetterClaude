@@ -61,7 +61,11 @@ struct ReaderView: View {
                         case .tools(_, let names):
                             ToolsLine(names: names)
                         case .compaction(let compaction):
-                            CompactionMarker(compaction: compaction)
+                            CompactionMarker(compaction: compaction, conversation: reader.conversation,
+                                             number: reader.visibleEntries.compactMap { entry -> String? in
+                                                 if case .compaction(let other) = entry, other.summary != nil { return other.id }
+                                                 return nil
+                                             }.firstIndex(of: compaction.id))
                         case .recap(_, let text, _):
                             RecapLine(text: text)
                         }
@@ -350,8 +354,15 @@ struct ToolsLine: View {
 
 /// Where Claude compacted the conversation, and what it kept.
 struct CompactionMarker: View {
+    @Environment(AppServices.self) private var services
     let compaction: ReadableConversation.Compaction
+    var conversation: ConversationRef? = nil
+    /// Which summary of the conversation this is, to match what it forgot.
+    var number: Int? = nil
     @State private var expanded = false
+    @State private var forgotten: [CompactionGaps.Item] = []
+    @State private var confirming = false
+    @State private var added = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
@@ -376,8 +387,55 @@ struct CompactionMarker: View {
                 }
                 .tint(Theme.accent)
             }
+            if !forgotten.isEmpty { forgottenList }
         }
         .accessibilityElement(children: .contain)
+        .task(id: "\(conversation?.id ?? "")#\(number ?? -1)#\(services.index.generation)") {
+            guard let conversation, let number, let index = services.index.index else { return }
+            let gaps = (try? await CompactionGaps.gaps(conversationID: conversation.id, index: index)) ?? []
+            forgotten = gaps.indices.contains(number) ? gaps[number].forgotten : []
+        }
+    }
+
+    private var forgottenList: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "exclamationmark.bubble").foregroundStyle(Theme.attention)
+                Text("The summary doesn't mention \(forgotten.count == 1 ? "one thing" : "\(forgotten.count) things") you said before it, so Claude no longer knows \(forgotten.count == 1 ? "it" : "them"):")
+                    .font(Theme.Font.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(forgotten.prefix(8)) { item in
+                Text("“\(item.text)”")
+                    .font(Theme.Font.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 24)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: Theme.Space.s) {
+                Spacer().frame(width: 16)
+                if let project = conversation?.projectPath {
+                    Button(added ? "Added to CLAUDE.md" : "Add to CLAUDE.md…") { confirming = true }
+                        .buttonStyle(.secondary)
+                        .disabled(added)
+                        .confirmationDialog("Add \(forgotten.count == 1 ? "this" : "these \(forgotten.count)") to this project's CLAUDE.md?", isPresented: $confirming) {
+                            Button("Add") {
+                                let lines = forgotten.map { Corrections.rule(from: $0.text) }
+                                added = (try? Corrections.add(lines, to: Corrections.target(for: Projects.root(of: project)))) != nil
+                            }
+                        } message: {
+                            Text("Every session in the project then starts knowing them. Undo it from History.")
+                        }
+                }
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(forgotten.map { "- \($0.text)" }.joined(separator: "\n"), forType: .string)
+                }
+                .buttonStyle(.secondary)
+            }
+        }
+        .padding(Theme.Space.m)
+        .background(Theme.subtleFill, in: .rect(cornerRadius: Theme.Radius.tile))
     }
 
     private var explanation: String {
