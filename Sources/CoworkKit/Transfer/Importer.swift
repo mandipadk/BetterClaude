@@ -274,7 +274,11 @@ public enum Importer {
             .filter { StoreLayout.isTranscriptFileName($0) }
             .map { String($0.dropLast(6)) } ?? [])
 
+        let sidecars = sidecarNames(manifest)
+        var existingSidecars: [String] = []
         for entry in manifest.sessions {
+            let sidecar = importSidecarDir(in: projectDir, name: sidecars[entry.slot] ?? entry.slot)
+            if fm.fileExists(atPath: sidecar.path) { existingSidecars.append(sidecar.lastPathComponent) }
             var sessionId = entry.origin.cliSessionId ?? UUID().uuidString.lowercased()
             if options.regenerateCliSessionId || used.contains(sessionId) || !StoreLayout.isFullUUID(sessionId) {
                 sessionId = UUID().uuidString.lowercased()
@@ -283,7 +287,7 @@ public enum Importer {
 
             let transcriptURL = encodedDir.appendingPathComponent("\(sessionId).jsonl")
             let map = RewriteMap(orderedRules: [
-                (from: entry.pathMap.workspaceRoot ?? "", to: importSidecarDir(in: projectDir, slot: entry.slot).path),
+                (from: entry.pathMap.workspaceRoot ?? "", to: importSidecarDir(in: projectDir, name: sidecars[entry.slot] ?? entry.slot).path),
                 (from: entry.pathMap.vmSessionPath ?? "", to: realProjectPath),
             ].filter { !$0.from.isEmpty })
 
@@ -295,6 +299,11 @@ public enum Importer {
             willCreate.append(transcriptURL)
         }
 
+        // Undo removes what it created, so a folder that's already there is never adopted.
+        checks.append(PreconditionResult(
+            id: "PC14", title: "The folders for each conversation's files don't exist yet",
+            passed: existingSidecars.isEmpty,
+            detail: existingSidecars.isEmpty ? nil : existingSidecars.joined(separator: ", ")))
         checks.append(PreconditionResult(
             id: "PC11", title: "Encoded project directory name is within filesystem limits",
             passed: encoded.utf8.count <= 255, detail: nil))
@@ -535,7 +544,7 @@ public enum Importer {
             }
 
             var transcript = try Transcript(contentsOf: slotDir.appendingPathComponent("transcript.jsonl"))
-            let sidecar = importSidecarDir(in: projectDir, slot: computation.slot)
+            let sidecar = importSidecarDir(in: projectDir, name: sidecarNames(plan.manifest)[computation.slot] ?? computation.slot)
             let rewritten = RewriteEngine.apply(computation.rewriteMap, to: transcript.records)
             transcript = Transcript(records: rewritten.0)
 
@@ -571,12 +580,18 @@ public enum Importer {
 
             let extras = (try? fm.contentsOfDirectory(atPath: slotDir.path)) ?? []
             if extras.contains(where: { ["uploads", "outputs", "subagents", "memory"].contains($0) }) {
+                let sidecarRoot = sidecar.deletingLastPathComponent()
+                if !fm.fileExists(atPath: sidecarRoot.path) {
+                    try fm.createDirectory(at: sidecarRoot, withIntermediateDirectories: true)
+                    receipt.created.append(.init(path: sidecarRoot.path, isDirectory: true, sha256: nil))
+                }
                 try fm.createDirectory(at: sidecar, withIntermediateDirectories: true)
                 receipt.created.append(.init(path: sidecar.path, isDirectory: true, sha256: nil))
                 for name in ["uploads", "outputs", "memory"] where extras.contains(name) {
                     try? fm.copyItem(at: slotDir.appendingPathComponent(name),
                                      to: sidecar.appendingPathComponent(name))
                 }
+                recordTree(under: sidecar, into: &receipt)
                 if extras.contains("subagents") {
                     let dest = encodedDir.appendingPathComponent(computation.cliSessionId)
                         .appendingPathComponent("subagents")
@@ -584,6 +599,7 @@ public enum Importer {
                     try? fm.copyItem(at: slotDir.appendingPathComponent("subagents"), to: dest)
                     receipt.created.append(.init(path: dest.deletingLastPathComponent().path,
                                                  isDirectory: true, sha256: nil))
+                    recordTree(under: dest.deletingLastPathComponent(), into: &receipt)
                 }
             }
             try Undo.save(receipt)
@@ -601,9 +617,45 @@ public enum Importer {
         "file-history-snapshot", "file-history-delta", "frame-link", "pr-link",
     ]
 
-    static func importSidecarDir(in projectDir: URL, slot: String) -> URL {
-        projectDir.appendingPathComponent(".better-claude-import", isDirectory: true)
-            .appendingPathComponent(slot, isDirectory: true)
+    /// Records everything under `root` that was just copied in, so Undo can take each piece
+    /// back: it removes a folder only once it's empty and a file only while it's unchanged.
+    static func recordTree(under root: URL, into receipt: inout ImportReceipt) {
+        guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
+        let known = Set(receipt.created.map(\.path))
+        for case let url as URL in walker {
+            let path = url.standardizedFileURL.path
+            guard !known.contains(path) else { continue }
+            let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+            receipt.created.append(.init(path: path, isDirectory: isDirectory,
+                                         sha256: isDirectory ? nil : try? FileDigest.hex(contentsOf: url)))
+        }
+    }
+
+    /// Where a conversation's files land in the folder it's brought into: `From Cowork/<title>`,
+    /// where the person can find them, and where the conversation's own paths are rewritten to.
+    static func importSidecarDir(in projectDir: URL, name: String) -> URL {
+        projectDir.appendingPathComponent(sidecarRootName, isDirectory: true)
+            .appendingPathComponent(name, isDirectory: true)
+    }
+
+    public static let sidecarRootName = "From Cowork"
+
+    /// Slot → folder name: the conversation's title, made safe for a file name, with the slot
+    /// added when two conversations in one bundle share a title.
+    static func sidecarNames(_ manifest: Manifest) -> [String: String] {
+        func clean(_ title: String) -> String {
+            let replaced = title.map { "/:\\\n\r\t".contains($0) ? " " : $0 }
+            let collapsed = String(replaced).split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
+            var name = String(collapsed.prefix(80)).trimmingCharacters(in: .whitespaces)
+            while name.hasPrefix(".") { name.removeFirst() }
+            return name.isEmpty ? "Conversation" : name
+        }
+        let titles = manifest.sessions.map { ($0.slot, clean($0.chat.title)) }
+        var counts: [String: Int] = [:]
+        for (_, title) in titles { counts[title, default: 0] += 1 }
+        return Dictionary(uniqueKeysWithValues: titles.map { slot, title in
+            (slot, counts[title, default: 0] > 1 ? "\(title) (\(slot))" : title)
+        })
     }
 
     static func copyExtras(from slotDir: URL, into workspace: URL, projectDir: URL,

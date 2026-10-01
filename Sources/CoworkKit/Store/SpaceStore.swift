@@ -18,14 +18,31 @@ public struct SpaceRef: Codable, Sendable, Hashable, Identifiable {
     public var folders: [String]
     public var createdAt: Date?
     public var updatedAt: Date?
+    /// What the person wrote about the project, when they did. Older bundles have none.
+    public var summary: String?
+    public var instructions: String?
+    public var links: [Link]?
+
+    public struct Link: Codable, Sendable, Hashable {
+        public var url: String
+        public var title: String?
+        public init(url: String, title: String? = nil) {
+            self.url = url
+            self.title = title
+        }
+    }
 
     public init(id: String, name: String, folders: [String],
-                createdAt: Date? = nil, updatedAt: Date? = nil) {
+                createdAt: Date? = nil, updatedAt: Date? = nil,
+                summary: String? = nil, instructions: String? = nil, links: [Link]? = nil) {
         self.id = id
         self.name = name
         self.folders = folders
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.summary = summary
+        self.instructions = instructions
+        self.links = links
     }
 }
 
@@ -61,7 +78,12 @@ public enum SpaceStore {
                         name: value["name"]?.stringValue ?? "",
                         folders: folders,
                         createdAt: value["createdAt"]?.intValue.map { Date(timeIntervalSince1970: Double($0) / 1000) },
-                        updatedAt: value["updatedAt"]?.intValue.map { Date(timeIntervalSince1970: Double($0) / 1000) })
+                        updatedAt: value["updatedAt"]?.intValue.map { Date(timeIntervalSince1970: Double($0) / 1000) },
+                        summary: value["description"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 },
+                        instructions: value["instructions"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 },
+                        links: (value["links"]?.arrayValue ?? []).compactMap { link in
+                            link["url"]?.stringValue.map { SpaceRef.Link(url: $0, title: link["title"]?.stringValue) }
+                        })
     }
 
     /// How an incoming space resolves against the destination's existing ones.

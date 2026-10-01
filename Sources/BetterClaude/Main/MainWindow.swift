@@ -139,6 +139,10 @@ struct MainWindow: View {
         .sheet(item: $services.forking) { request in
             ForkSheet(request: request).environment(services)
         }
+        .sheet(item: $services.porting) { model in
+            PortSheet(model: model) { services.endPort() }
+                .environment(services)
+        }
         .sheet(item: $services.continuing) { model in
             ContinueSheet(model: model) { services.endContinue() }
                 .environment(services)

@@ -144,22 +144,12 @@ final class ContinueModel: Identifiable {
         case .account(_, let account):
             endpoint = .cowork(account)
         case .project(let path):
-            endpoint = .claudeCode(projectDir: projectDirectory(for: path),
+            endpoint = .claudeCode(projectDir: URL(fileURLWithPath: path),
                                    configDir: HostPaths.current.claudeCodeConfigDir)
         }
         var importOptions = ImportOptions()
         importOptions.quitRunningVariant = quit
         return (try Importer.plan(bundle: bundle, to: endpoint, options: importOptions), staging)
-    }
-
-    /// The folder under `~/.claude/projects` that Claude Code reads for `path`: the existing
-    /// one when there is one, otherwise the one it would create.
-    nonisolated static func projectDirectory(for path: String) -> URL {
-        let projects = HostPaths.current.claudeCodeConfigDir.appendingPathComponent("projects", isDirectory: true)
-        if let existing = (try? PathEncoder.candidateDirectories(for: path, in: projects))?.first {
-            return existing
-        }
-        return projects.appendingPathComponent(PathEncoder.encode(resolving: path), isDirectory: true)
     }
 
     // MARK: Apply

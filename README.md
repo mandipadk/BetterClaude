@@ -230,6 +230,12 @@ with the chat intact: user turns, assistant turns, tool calls, and inline images
 documents byte for byte. You see where it's going and what will happen before anything is
 written, and afterwards you can open it there directly — or resume it in Terminal.
 
+**Move to Claude Code…** on a Cowork project in **Projects** brings it into Claude Code, now
+that Cowork tasks on a Mac are going away: every conversation resumable in the project's folder
+with its full history, its files in `From Cowork/`, a CLAUDE.md saying what came before, and a
+brief to start a new project with. The tasks stay as they are and one Undo takes it all back.
+From the command line, `cowork port --project "<name>" [--code-tab "<Claude>"] --dry-run`.
+
 **Copy to…** on a Cowork project in **Projects** carries the whole project into another
 install: its folder, what Claude remembers about it, and every conversation in it. The
 project is created there once and each conversation is filed in it; the original stays where

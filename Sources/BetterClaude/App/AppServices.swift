@@ -597,6 +597,38 @@ final class AppServices {
         continuing = ContinueModel(project: project, conversations: conversations, source: install(for: first))
     }
 
+    /// A Cowork project being moved into Claude Code, as a sheet.
+    var porting: PortModel?
+
+    func beginPort(_ project: CoworkProject) {
+        // The Code tab of the Claude the project came from, when it has one.
+        let source = installs.first { install in
+            (snapshot.accounts[install.id] ?? []).contains { $0.id == project.account.id }
+        }
+        porting = PortModel(project: project,
+                            codeTabInstallID: source.flatMap { $0.codeTabRoot == nil ? nil : $0.id })
+    }
+
+    func endPort() {
+        porting = nil
+        refresh()
+    }
+
+    /// Terminal in `folder`, showing Claude Code's list of conversations to resume there.
+    func resumePicker(in folder: String) {
+        let support = snapshot.paths.betterClaudeSupport
+        let script = support.appendingPathComponent("Resume/resume-\(Int(Date().timeIntervalSince1970)).command")
+        let quoted = "'" + folder.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        do {
+            try FileManager.default.createDirectory(at: script.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("#!/bin/zsh -l\ncd \(quoted) && exec claude --resume\n".utf8).write(to: script, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+            NSWorkspace.shared.open(script)
+        } catch {
+            errorMessage = "Couldn't open Terminal: \(error.localizedDescription)"
+        }
+    }
+
     func beginContinue(_ conversation: ConversationRef) {
         guard !conversation.isTranscriptMissing, conversation.external == nil else { return }
         continuing = ContinueModel(conversation: conversation, source: install(for: conversation))

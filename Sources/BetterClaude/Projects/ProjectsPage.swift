@@ -147,11 +147,15 @@ struct ProjectsPage: View {
                         Row(title: project.name, detail: coworkLine(project)) {
                             RowSymbol(name: "rectangle.stack")
                         } trailing: {
-                            Button("Copy to…") { services.beginProjectCopy(project) }
+                            Button("Move to Claude Code…") { services.beginPort(project) }
                                 .buttonStyle(.secondary)
-                                .help("Copy this project and its conversations into another Claude")
+                                .help("Bring this project's conversations into Claude Code, where they keep going")
+                            MoreMenu {
+                                Button("Copy to Another Claude…") { services.beginProjectCopy(project) }
+                            }
                         }
                         .contextMenu {
+                            Button("Move to Claude Code…") { services.beginPort(project) }
                             Button("Copy to Another Claude…") { services.beginProjectCopy(project) }
                             if let folder = project.space.folders.first {
                                 Divider()

@@ -25,6 +25,10 @@ USAGE
   cowork list --code [--config <dir>] [--project <path>]
       List sessions.
 
+  cowork port --project <name> [--store <variant>] [--folder <path>] [--code-tab <install>] [--dry-run]
+      Move a Cowork project into Claude Code: every conversation resumable in its folder, its
+      files in From Cowork/, a CLAUDE.md, and a brief for a new project. The tasks stay as they are.
+
   cowork export --project <name> [--store <variant>] --out <file.coworkbundle>
       Export every conversation in a Cowork project, which carries the project with it.
 
@@ -595,6 +599,52 @@ func cmdList(_ args: Args) throws {
     print("\n\(sessions.count) session(s)")
 }
 
+func cmdPort(_ args: Args) throws {
+    guard let name = args.values["project"] else { fail("--project <name> is required") }
+    var sessions: [SessionRef] = []
+    for store in try Discovery.stores() where args.values["store"].map({ $0 == store.variantDirName }) ?? true {
+        for account in try Discovery.accounts(in: store) { sessions += try Discovery.sessions(in: account) }
+    }
+    let matches = CoworkProjects.projects(in: sessions).filter { $0.name == name }
+    guard let project = matches.first else { fail("no Cowork project named \(name) holds a conversation") }
+    if matches.count > 1 { fail("more than one Cowork project is named \(name); pick one with --store") }
+
+    let folderPath = args.values["folder"].map { ($0 as NSString).expandingTildeInPath } ?? project.space.folders.first
+    guard let folderPath else { fail("the project has no folder; pass --folder <path>") }
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: folderPath, isDirectory: &isDirectory), isDirectory.boolValue else {
+        fail("\(folderPath) isn't a folder on this Mac")
+    }
+    var codeTabRoot: URL?
+    if let installName = args.values["code-tab"] {
+        guard let install = InstallDiscovery.all().first(where: { $0.name == installName }),
+              let root = install.codeTabRoot else { fail("no Claude named \(installName) has a Code tab") }
+        codeTabRoot = root
+    }
+
+    let index = try? HistoryIndex(readingFrom: HistoryIndex.defaultURL())
+    let conversations = runBlocking { await CoworkPort.conversations(project.sessions, index: index) }
+    let staging = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("cowork-port-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: staging) }
+
+    let plan = try CoworkPort.plan(name: project.name, space: project.space, conversations: conversations,
+                                   folder: URL(fileURLWithPath: folderPath), codeTabRoot: codeTabRoot, staging: staging)
+    print("\(project.name): \(project.sessions.count) conversation(s) from \(project.account.store.variantDirName) into \(folderPath)")
+    for check in plan.importPlan.preconditions where !check.passed || check.isNotice {
+        print("  \(check.passed ? "note" : "FAIL") [\(check.id)] \(check.title)\(check.detail.map { ": \($0)" } ?? "")")
+    }
+    print("  CLAUDE.md: \(plan.claudeMD == nil ? "already there, left alone" : "will be written")")
+    print("  Briefs: \(conversations.filter { $0.brief != nil }.count) of \(conversations.count) from the history index")
+    print("  Code tab: \(plan.codeTab.map { _ in args.values["code-tab"] ?? "" } ?? "not listed")")
+    guard plan.isExecutable else { fail("nothing was written") }
+    if args.flags.contains("dry-run") { print("--dry-run: nothing written."); return }
+
+    let receipt = try CoworkPort.apply(plan) { print("  \($0)") }
+    print("Moved. Receipt \(receipt.id) (\(receipt.created.count) path(s) created)")
+    print("Resume with `claude --resume` in \(folderPath). Undo with: cowork undo \(receipt.id)")
+}
+
 func cmdExport(_ args: Args) throws {
     guard let out = args.values["out"] else { fail("--out <file.coworkbundle> is required") }
     var ids = Set(args.positional)
@@ -808,6 +858,7 @@ do {
     case "stores": try cmdStores()
     case "list": try cmdList(args)
     case "export": try cmdExport(args)
+    case "port": try cmdPort(args)
     case "inspect": try cmdInspect(args)
     case "import": try cmdImport(args)
     case "receipts": try cmdReceipts()

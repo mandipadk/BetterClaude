@@ -12,6 +12,12 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "1.3.0": [
+            Item(symbol: "terminal", title: "Move a Cowork project to Claude Code",
+                 detail: "Cowork tasks on this Mac are going away. Move to Claude Code, in Projects, brings a project's conversations into its folder with their full history, ready for claude --resume and listed in the Code tab. Their files land in From Cowork, and a CLAUDE.md and a brief say what came before."),
+            Item(symbol: "arrow.uturn.backward", title: "Undo takes back every file",
+                 detail: "Continuing into Claude Code now puts a conversation's files where you can see them, and Undo removes each one it copied rather than leaving them behind."),
+        ],
         "1.2.1": [
             Item(symbol: "lock", title: "Sees every Claude that's open",
                  detail: "A copy of Claude opened through Parallex could be missed when checking whether it was open, so a conversation could be written while it ran. Better Claude now checks every process, and quits that Claude first or waits for you to."),
