@@ -25,6 +25,39 @@ final class ReaderModel {
     /// forked in place.
     private(set) var forkPoints: [String: BranchPoint] = [:]
     var findQuery = ""
+    /// What happened during the conversation, placed between its messages.
+    private(set) var markers: [TimelineMarker] = []
+    /// Claims Claude itself made that the transcript doesn't back, by the time they were made.
+    private(set) var doubtfulClaims: [Date: [Claims.Claim]] = [:]
+    private var annotationsFor: String?
+
+    /// Loads the markers and claim checks for the open conversation from the index.
+    func loadAnnotations(index: HistoryIndex?, generation: Int) async {
+        guard let conversation, let index, conversation.external == nil else {
+            markers = []
+            doubtfulClaims = [:]
+            return
+        }
+        let key = "\(conversation.id)#\(generation)"
+        guard annotationsFor != key else { return }
+        let id = conversation.id
+        let record = try? await FlightRecord.load(conversationID: id, index: index)
+        let switches = (try? await ModelDrift.switches(conversationID: id, index: index)) ?? []
+        let runs = (try? await Subagents.runs(conversationID: id, index: index)) ?? []
+        let claims = (try? await Claims.check(conversationID: id, index: index)) ?? []
+        guard self.conversation?.id == id else { return }
+        markers = TimelineMarkers.markers(record: record, switches: switches, runs: runs)
+        var doubtful: [Date: [Claims.Claim]] = [:]
+        for claim in claims where claim.agentID == nil {
+            guard let time = claim.timestamp else { continue }
+            switch claim.verdict {
+            case .contradicted, .noEvidence: doubtful[time, default: []].append(claim)
+            default: break
+            }
+        }
+        doubtfulClaims = doubtful
+        annotationsFor = key
+    }
 
     private var loadTask: Task<Void, Never>?
 
@@ -40,6 +73,11 @@ final class ReaderModel {
         }
         forkPoints = [:]
         findQuery = keepFind
+        if !force {
+            markers = []
+            doubtfulClaims = [:]
+            annotationsFor = nil
+        }
         if let external = conversation.external {
             if !force || readable == nil { state = .loading }
             loadTask = Task {

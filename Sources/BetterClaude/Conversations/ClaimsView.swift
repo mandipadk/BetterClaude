@@ -7,6 +7,8 @@ struct ClaimsView: View {
     @Environment(AppServices.self) private var services
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let conversation: ConversationRef
+    /// In the inspector: no disclosure, the detail straight away.
+    var alwaysOpen = false
     @AppStorage("claimsOpen") private var open = false
     @State private var claims: [Claims.Claim] = []
     @State private var agents: [String: String] = [:]
@@ -14,7 +16,7 @@ struct ClaimsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             if !claims.isEmpty {
-                Button {
+                if !alwaysOpen { Button {
                     withAnimation(reduceMotion ? nil : Theme.Motion.snappy) { open.toggle() }
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -30,10 +32,10 @@ struct ClaimsView: View {
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain) }
 
                 // What didn't check out is always shown; the rest when opened.
-                let shown = open ? claims : doubtful
+                let shown = open || alwaysOpen ? claims : doubtful
                 if !shown.isEmpty {
                     VStack(alignment: .leading, spacing: Theme.Space.s) {
                         ForEach(shown) { claim in row(claim) }

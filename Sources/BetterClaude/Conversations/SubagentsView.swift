@@ -7,6 +7,10 @@ struct SubagentsView: View {
     @Environment(AppServices.self) private var services
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let conversation: ConversationRef
+    /// In the inspector: no disclosure, the detail straight away.
+    var alwaysOpen = false
+    /// Narrow, for the inspector: shorter lane labels.
+    var compact = false
     @AppStorage("subagentsOpen") private var open = false
     @State private var runs: [Subagents.Run] = []
     @State private var expanded: Set<String> = []
@@ -15,7 +19,7 @@ struct SubagentsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             if !runs.isEmpty {
-                Button {
+                if !alwaysOpen { Button {
                     withAnimation(reduceMotion ? nil : Theme.Motion.snappy) { open.toggle() }
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -32,9 +36,9 @@ struct SubagentsView: View {
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain) }
 
-                if open {
+                if open || alwaysOpen {
                     if runs.contains(where: { $0.started != nil }) { timeline }
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(runs) { run in row(run) }
@@ -74,7 +78,7 @@ struct SubagentsView: View {
                         .foregroundStyle(lane.depth == 0 ? .primary : .secondary)
                         .lineLimit(1)
                         .padding(.leading, CGFloat(max(0, lane.depth - 1)) * 12)
-                        .frame(width: 190, alignment: .leading)
+                        .frame(width: compact ? 104 : 190, alignment: .leading)
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
                             Capsule().fill(Theme.hairline).frame(height: 2)

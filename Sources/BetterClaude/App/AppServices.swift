@@ -450,6 +450,13 @@ final class AppServices {
 
     /// The command palette, over the window.
     var showsPalette = false
+    /// The reader's inspector, and which tab it shows. Both are remembered.
+    var showsInspector = UserDefaults.standard.object(forKey: "showsInspector") as? Bool ?? false {
+        didSet { UserDefaults.standard.set(showsInspector, forKey: "showsInspector") }
+    }
+    var inspectorTab = InspectorTab(rawValue: UserDefaults.standard.string(forKey: "inspectorTab") ?? "") ?? .info {
+        didSet { UserDefaults.standard.set(inspectorTab.rawValue, forKey: "inspectorTab") }
+    }
     /// Text the palette opens with (debug captures).
     var paletteSeed = ""
 

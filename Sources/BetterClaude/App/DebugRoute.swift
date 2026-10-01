@@ -29,6 +29,15 @@ enum DebugRoute {
             // Routes act on what the first scan finds.
             while !services.hasLoaded { try? await Task.sleep(for: .milliseconds(50)) }
             switch parts[0] {
+            case "inspector":
+                // `inspector:<tab>:<title words>`: the reader with its inspector open on a tab.
+                let pieces = argument.split(separator: ":", maxSplits: 1).map(String.init)
+                services.inspectorTab = InspectorTab(rawValue: pieces.first ?? "") ?? .info
+                services.showsInspector = true
+                services.destination = .conversations
+                if let words = pieces.last, let match = services.snapshot.conversations.first(where: { $0.title.localizedCaseInsensitiveContains(words) }) {
+                    services.selectedConversationID = match.id
+                }
             case "home":
                 services.destination = .home
             case "thismac":
@@ -85,6 +94,7 @@ enum DebugRoute {
                     services.selectedConversationID = match.id
                 }
             case "reader":
+                services.showsInspector = false
                 // The panels a capture opened earlier stay closed here.
                 UserDefaults.standard.set(false, forKey: "flightRecorderOpen")
                 UserDefaults.standard.set(false, forKey: "subagentsOpen")

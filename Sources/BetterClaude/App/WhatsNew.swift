@@ -12,6 +12,14 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.31.0": [
+            Item(symbol: "text.bubble", title: "The conversation first",
+                 detail: "A conversation opens on its messages. Sub-agents setting off, the model changing, and coming back after the cache expired show as one line where they happened."),
+            Item(symbol: "sidebar.right", title: "Details beside it",
+                 detail: "⌥⌘I shows the conversation's facts, who was working when, what it cost, the files it changed and what didn't check out, in one panel beside the reader."),
+            Item(symbol: "exclamationmark.bubble", title: "Claims, where they were made",
+                 detail: "When Claude says it did something the transcript doesn't show, the line sits right under that reply."),
+        ],
         "0.30.0": [
             Item(symbol: "house", title: "Home",
                  detail: "Where the app now opens: what needs you, what's running, your limits, where you left off, and what's worth a look, which fills only when something has been found."),

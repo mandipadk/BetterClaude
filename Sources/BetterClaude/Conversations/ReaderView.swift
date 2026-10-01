@@ -50,11 +50,17 @@ struct ReaderView: View {
                                  readable: reader.readable)
                         .padding(.bottom, Theme.Space.xl)
                 }
+                let entries = reader.visibleEntries
+                // While finding, only matching messages show, and markers between them would mislead.
+                let anchors = reader.findQuery.isEmpty
+                    ? TimelineMarkers.anchors(reader.markers, times: entries.map(\.time)) : [:]
                 LazyVStack(alignment: .leading, spacing: Theme.Space.xl) {
-                    ForEach(reader.visibleEntries) { entry in
+                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                        ForEach(anchors[index] ?? []) { marker in MarkerLine(marker: marker) }
                         switch entry {
                         case .message(let message):
                             MessageView(message: message,
+                                        claims: message.role == .user ? [] : message.timestamp.flatMap { reader.doubtfulClaims[$0] } ?? [],
                                         onFork: reader.forkPoints[message.id] == nil ? nil : {
                                             services.forking = ForkRequest(messageID: message.id)
                                         })
@@ -62,7 +68,7 @@ struct ReaderView: View {
                             ToolsLine(names: names)
                         case .compaction(let compaction):
                             CompactionMarker(compaction: compaction, conversation: reader.conversation,
-                                             number: reader.visibleEntries.compactMap { entry -> String? in
+                                             number: entries.compactMap { entry -> String? in
                                                  if case .compaction(let other) = entry, other.summary != nil { return other.id }
                                                  return nil
                                              }.firstIndex(of: compaction.id))
@@ -70,6 +76,10 @@ struct ReaderView: View {
                             RecapLine(text: text)
                         }
                     }
+                    ForEach(anchors[entries.count] ?? []) { marker in MarkerLine(marker: marker) }
+                }
+                .task(id: "\(reader.conversation?.id ?? "")#\(services.index.generation)#\(reader.state == .ready)") {
+                    await reader.loadAnnotations(index: services.index.index, generation: services.index.generation)
                 }
                 if reader.visibleEntries.isEmpty, !reader.findQuery.isEmpty {
                     Text("No message here contains “\(reader.findQuery)”.")
@@ -104,88 +114,16 @@ struct ReaderHeader: View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             HStack(alignment: .top, spacing: Theme.Space.m) {
                 Text(conversation.title)
-                    .font(Theme.Font.display)
+                    .font(Theme.Font.title)
                     .lineLimit(3)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                if actionsHidden {
-                    EmptyView()
-                } else if conversation.external != nil {
-                    // Outside conversations can't become Claude Code transcripts; a brief
-                    // carries them on instead.
-                    Button("Write a Handoff…") { services.beginHandoff(conversation) }
-                        .buttonStyle(.borderedProminent)
-                        .help("A one-page brief of this conversation, to continue it in a fresh one")
-                } else {
-                    Button("Continue in…") {
-                        services.beginContinue(conversation)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(conversation.isTranscriptMissing)
-                    .help("Carry this conversation to another Claude or to Claude Code")
-                }
-                MoreMenu {
-                    ConversationActions(conversation: conversation)
-                }
             }
 
-            HStack(alignment: .top, spacing: 28) {
-                if let install {
-                    Fact(label: "In") {
-                        HStack(spacing: 5) {
-                            InstallIcon(install: install, size: 16)
-                            Text(install.name)
-                        }
-                    }
-                }
-                if let project = conversation.projectName {
-                    Fact(label: "Project") { Text(project) }
-                }
-                if let model = readable?.model ?? conversation.model {
-                    Fact(label: "Model") { Text(humanModelName(model)) }
-                }
-                Fact(label: "Last active") { Text(conversation.lastActivity.listStamp) }
-                if let readable {
-                    Fact(label: "Messages") { Text("\(readable.messageCount)") }
-                }
-                if let deletion = deletionText {
-                    Fact(label: "Claude Code deletes it") { Text(deletion) }
-                        .help("Claude Code removes conversations \(Int(services.kept.period / 86_400)) days after they were last used. Better Claude keeps a copy.")
-                }
-                Spacer(minLength: 0)
-            }
-
-            if let readable, !readable.pullRequests.isEmpty || !related(readable).isEmpty {
-                HStack(alignment: .top, spacing: 28) {
-                    if !readable.pullRequests.isEmpty {
-                        Fact(label: readable.pullRequests.count == 1 ? "Pull request" : "Pull requests") {
-                            HStack(spacing: 10) {
-                                ForEach(readable.pullRequests, id: \.self) { pull in
-                                    Link(pull.name, destination: pull.url)
-                                        .foregroundStyle(Theme.accent)
-                                        .help(pull.url.absoluteString)
-                                }
-                            }
-                        }
-                    }
-                    ForEach(related(readable), id: \.conversation.id) { item in
-                        Fact(label: item.label) {
-                            Button(item.conversation.title) { services.selectedConversationID = item.conversation.id }
-                                .buttonStyle(.plain)
-                                .foregroundStyle(Theme.accent)
-                                .help("Open it")
-                        }
-                    }
-                    Spacer(minLength: 0)
-                }
-            }
-
-            if conversation.external == nil {
-                ModelSwitchesView(conversation: conversation)
-                FlightRecorderView(conversation: conversation)
-                SubagentsView(conversation: conversation)
-                ClaimsView(conversation: conversation)
-            }
+            Text(context)
+                .font(Theme.Font.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
 
             FindField(text: $reader.findQuery)
                 .frame(maxWidth: 260)
@@ -194,8 +132,22 @@ struct ReaderHeader: View {
 }
 
 extension ReaderHeader {
+    /// One line of where and when: "Claude Code in billing-service, today at 1:21 PM".
+    var context: String {
+        var line = install?.name ?? "Claude"
+        if let project = conversation.projectName { line += " in \(project)" }
+        let when = conversation.lastActivity
+        let day = Calendar.current.isDateInToday(when) ? "today" : Calendar.current.isDateInYesterday(when) ? "yesterday"
+            : when.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
+        return "\(line), \(day) at \(when.formatted(date: .omitted, time: .shortened))"
+    }
+
     /// The conversations this one came from or went on in, when they're still on this Mac.
     func related(_ readable: ReadableConversation) -> [(label: String, conversation: ConversationRef)] {
+        Self.related(readable, services: services)
+    }
+
+    static func related(_ readable: ReadableConversation, services: AppServices) -> [(label: String, conversation: ConversationRef)] {
         readable.relatives.compactMap { relative in
             switch relative {
             case .continuedIn(let id):
@@ -206,8 +158,8 @@ extension ReaderHeader {
         }
     }
 
-    /// "in 3 days" when Claude Code's cleanup is near, for a conversation Claude Code owns.
-    var deletionText: String? {
+    /// "In 3 days" when Claude Code's cleanup is near, for a conversation Claude Code owns.
+    static func deletionText(_ conversation: ConversationRef, services: AppServices) -> String? {
         guard let url = conversation.claudeCodeSession?.transcriptURL,
               !url.path.hasPrefix(Vault.root.path),
               let expiry = Vault.expiry(of: url, period: services.kept.period) else { return nil }
@@ -272,6 +224,8 @@ struct FindField: View {
 
 struct MessageView: View {
     let message: MessageText
+    /// Claims in this reply that the transcript doesn't back.
+    var claims: [Claims.Claim] = []
     var onFork: (() -> Void)? = nil
     @State private var hovering = false
 
@@ -312,11 +266,125 @@ struct MessageView: View {
                 MarkdownView(message.text)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            ForEach(claims) { claim in
+                Text(claimSentence(claim))
+                    .font(Theme.Font.callout)
+                    .foregroundStyle(Theme.attention)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(.rect)
+        .contextMenu {
+            if let onFork { Button("Fork from Here…", action: onFork) }
+            Button("Copy") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(message.text, forType: .string)
+            }
+        }
         .onHover { hovering = $0 }
         .animation(Theme.Motion.fade, value: hovering)
+    }
+}
+
+extension ReadableConversation.Entry {
+    /// When it happened, where the transcript says.
+    var time: Date? {
+        switch self {
+        case .message(let message): return message.timestamp
+        case .tools: return nil
+        case .compaction(let compaction): return compaction.timestamp
+        case .recap(_, _, let timestamp): return timestamp
+        }
+    }
+}
+
+/// Something that happened during the conversation, at the moment it happened: one quiet line
+/// between messages. Opening it shows the matching tab in the inspector.
+struct MarkerLine: View {
+    @Environment(AppServices.self) private var services
+    let marker: TimelineMarker
+
+    var body: some View {
+        Button {
+            services.inspectorTab = tab
+            services.showsInspector = true
+        } label: {
+            HStack(spacing: 10) {
+                Rectangle().fill(Theme.hairline).frame(height: 1)
+                HStack(spacing: 6) {
+                    Image(systemName: symbol).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(sentence)
+                        .font(Theme.Font.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                }
+                .layoutPriority(1)
+                Rectangle().fill(Theme.hairline).frame(height: 1)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(sentence)
+    }
+
+    private var tab: InspectorTab {
+        switch marker.kind {
+        case .subagents: return .activity
+        case .modelSwitch: return .checks
+        case .cacheBreak: return .cost
+        }
+    }
+
+    private var symbol: String {
+        switch marker.kind {
+        case .subagents: return "arrow.triangle.branch"
+        case .modelSwitch: return "arrow.triangle.swap"
+        case .cacheBreak: return "clock"
+        }
+    }
+
+    private var help: String {
+        switch marker.kind {
+        case .subagents: return "Show who was working when"
+        case .modelSwitch: return "Show every change of model"
+        case .cacheBreak: return "Show cost and context"
+        }
+    }
+
+    private var sentence: String {
+        switch marker.kind {
+        case .subagents(let count, let descriptions, let cost):
+            let what = count == 1 ? (descriptions.first.map { "A sub-agent set off: \($0)" } ?? "A sub-agent set off")
+                                  : "\(count) sub-agents set off together"
+            return cost >= 0.01 ? "\(what), \(Self.dollars(cost))" : what
+        case .modelSwitch(let change):
+            return ModelSwitchesView.sentence(change)
+        case .cacheBreak(let gap, let cost):
+            return "Back after \(Self.duration(gap)). This reply rewrote the cache, \(Self.dollars(cost)) at list prices"
+        }
+    }
+
+    static func duration(_ gap: TimeInterval) -> String {
+        let minutes = Int(gap / 60)
+        if minutes < 90 { return "\(minutes) minutes" }
+        let hours = Int((gap / 3_600).rounded())
+        return hours == 1 ? "an hour" : "\(hours) hours"
+    }
+
+    static func dollars(_ value: Double) -> String {
+        value < 0.01 ? "under 1¢" : value.formatted(.currency(code: "USD").precision(.fractionLength(2)))
+    }
+}
+
+extension MessageView {
+    func claimSentence(_ claim: Claims.Claim) -> String {
+        switch claim.verdict {
+        case .contradicted(let evidence): return "Says “\(claim.sentence)”, but \(evidence)."
+        default: return "Says “\(claim.sentence)”, but nothing in the transcript does this."
+        }
     }
 }
 

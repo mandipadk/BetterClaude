@@ -6,12 +6,52 @@ struct ConversationsView: View {
     @Environment(AppServices.self) private var services
 
     var body: some View {
+        @Bindable var services = services
         HStack(spacing: 0) {
             TimelineColumn()
-                .frame(width: 356)
+                .frame(width: services.showsInspector ? 280 : 320)
             Rectangle().fill(Theme.hairline).frame(width: 1)
             ReaderView()
                 .frame(maxWidth: .infinity)
+            if services.showsInspector {
+                Rectangle().fill(Theme.hairline).frame(width: 1)
+                ReaderInspector()
+                    .frame(width: 290)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .animation(Theme.Motion.snappy, value: services.showsInspector)
+        .toolbar {
+            if let conversation = services.reader.conversation {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        ConversationActions(conversation: conversation)
+                    } label: {
+                        Label("More", systemImage: "ellipsis")
+                    }
+                    .menuIndicator(.hidden)
+                    .help("More for this conversation")
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    if conversation.external != nil {
+                        Button("Write a Handoff…") { services.beginHandoff(conversation) }
+                            .buttonStyle(.borderedProminent)
+                            .help("A one-page brief of this conversation, to continue it in a fresh one")
+                    } else {
+                        Button("Continue in…") { services.beginContinue(conversation) }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(conversation.isTranscriptMissing)
+                            .help("Carry this conversation to another Claude or to Claude Code")
+                    }
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button { services.showsInspector.toggle() } label: {
+                    Label("Inspector", systemImage: "sidebar.right")
+                }
+                .help("Show or hide details (⌥⌘I)")
+                .keyboardShortcut("i", modifiers: [.command, .option])
+            }
         }
     }
 }

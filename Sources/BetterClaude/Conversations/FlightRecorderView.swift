@@ -7,6 +7,8 @@ import SwiftUI
 struct FlightRecorderView: View {
     @Environment(AppServices.self) private var services
     let conversation: ConversationRef
+    /// In the inspector: no disclosure, the detail straight away.
+    var alwaysOpen = false
     @AppStorage("flightRecorderOpen") private var open = false
     @State private var record: FlightRecord?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -14,7 +16,7 @@ struct FlightRecorderView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             if let record, !record.replies.isEmpty {
-                Button {
+                if !alwaysOpen { Button {
                     withAnimation(reduceMotion ? nil : Theme.Motion.snappy) { open.toggle() }
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -33,9 +35,9 @@ struct FlightRecorderView: View {
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain) }
 
-                if open { detail(record).transition(.opacity) }
+                if open || alwaysOpen { detail(record).transition(.opacity) }
             }
         }
         .task(id: "\(conversation.id)#\(services.index.generation)") {
@@ -74,9 +76,6 @@ struct FlightRecorderView: View {
                         RuleMark(x: .value("Compacted", date))
                             .foregroundStyle(Color.primary.opacity(0.35))
                             .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 3]))
-                            .annotation(position: .top, alignment: .trailing) {
-                                Text("Compacted").font(Theme.Font.caption).foregroundStyle(.secondary)
-                            }
                     }
                 }
                 .chartYScale(domain: 0...Double(record.window) * 1.08)
@@ -87,6 +86,12 @@ struct FlightRecorderView: View {
                     }
                 }
                 .frame(height: 150)
+                if !record.compactions.isEmpty {
+                    Text(record.compactions.count == 1 ? "The dotted line is where Claude compacted."
+                                                       : "Dotted lines are where Claude compacted.")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -114,12 +119,16 @@ struct FlightRecorderView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Most expensive replies").font(Theme.Font.caption).foregroundStyle(.secondary)
                 ForEach(record.expensive) { reply in
-                    HStack(spacing: Theme.Space.l) {
-                        Text(reply.timestamp.formatted(.dateTime.weekday(.abbreviated).hour().minute()))
-                            .frame(width: 120, alignment: .leading)
-                        Text(dollars(reply.cost)).frame(width: 70, alignment: .trailing)
-                        Text("read \(tokens(reply.context)) tokens, wrote \(tokens(reply.output))\(reply.afterBreak.map { ", after \(breakLength($0)) away" } ?? "")")
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack {
+                            Text(reply.timestamp.formatted(.dateTime.weekday(.abbreviated).hour().minute()))
+                            Spacer()
+                            Text(dollars(reply.cost))
+                        }
+                        Text("Read \(tokens(reply.context)) tokens, wrote \(tokens(reply.output))\(reply.afterBreak.map { ", after \(breakLength($0)) away" } ?? "")")
+                            .font(Theme.Font.caption)
                             .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .font(Theme.Font.callout)
                     .monospacedDigit()

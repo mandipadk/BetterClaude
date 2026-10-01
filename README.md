@@ -127,21 +127,24 @@ conversation gets a notification two minutes before its cache goes cold.
 was updated or created, work was committed or pushed, or the build succeeds, the reader
 checks the transcript: the test run and whether it failed, the edits to that file, the git
 command. Each claim is backed, contradicted, or has nothing to back it; the doubtful ones are
-always shown. Claims the transcript can't settle aren't guessed at.
+shown right under the reply that made them, and the Checks tab of the inspector lists them
+all. Claims the transcript can't settle aren't guessed at.
 
 When a conversation's replies switched model partway, the reader says when, to what, and
 whether anyone asked for it: you with `/model`, Claude Code with a fallback after a refusal,
 or nothing on record. Usage lists every change nobody asked for in the last month, and a
 running session that switches on its own sends a notification.
 
-Every sub-agent a Claude Code conversation spawned is listed under its title, after a
-timeline of who was working when, with the conversation and each sub-agent as a lane: what kind it
+A conversation opens on its messages. When sub-agents set off, the model changed, or a reply
+came back after the cache had expired, one quiet line says so where it happened, and clicking
+it opens the inspector (⌥⌘I) beside the reader. Its Activity tab lists every sub-agent the
+conversation spawned, after a timeline of who was working when, with the conversation and each sub-agent as a lane: what kind it
 was, the task it was given, its model, replies, tools and cost, what it came back with, and
 the sub-agents it spawned in turn. Runs that ended without replying, and ones that ran on a
 different model than they were asked to, are marked. Their usage
 counts in every total: Usage, cost attribution, Projects and Your Month.
 
-Every Claude Code conversation has **Cost and context** under its title: how much of the
+The inspector's **Cost** tab shows, for every Claude Code conversation, how much of the
 conversation each reply had to read, against the context window, where Claude compacted,
 what each reply cost at list prices, and the costliest replies.
 
