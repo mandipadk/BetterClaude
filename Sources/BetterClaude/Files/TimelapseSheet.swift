@@ -75,7 +75,7 @@ struct TimelapseSheet: View {
             HStack(spacing: Theme.Space.m) {
                 GlyphTile(systemImage: "film.stack", size: 44)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Watch it change").font(Theme.Font.title)
+                    Text("Play changes").font(Theme.Font.title)
                     Text("A file through this conversation, step by step, from the versions Claude Code saved, each beside what was asked.")
                         .font(Theme.Font.callout)
                         .foregroundStyle(.secondary)

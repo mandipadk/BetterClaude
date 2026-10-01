@@ -102,6 +102,19 @@ struct ProjectsPage: View {
                         }
                         .padding(.vertical, 4)
                         .tag(project.id)
+                        .contextMenu {
+                            Button("Show Conversations") {
+                                services.filter = .project(project.path)
+                                services.destination = .conversations
+                            }
+                            Button("Show in Finder") {
+                                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: project.path)])
+                            }
+                            Button("Copy Path") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(project.path, forType: .string)
+                            }
+                        }
                     }
                 }
                 .listStyle(.inset)

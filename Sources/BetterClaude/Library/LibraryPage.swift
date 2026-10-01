@@ -70,6 +70,7 @@ private struct LibraryColumn: View {
                             ImageTile(artifact: artifact, isSelected: library.selectedID == artifact.id) {
                                 library.selectedID = artifact.id
                             }
+                            .contextMenu { LibraryItemActions(artifact: artifact) }
                         }
                     }
                     .padding(12)
@@ -78,6 +79,7 @@ private struct LibraryColumn: View {
                 List(selection: $library.selectedID) {
                     ForEach(artifacts) { artifact in
                         ArtifactRow(artifact: artifact).tag(artifact.id).listRowSeparator(.hidden)
+                            .contextMenu { LibraryItemActions(artifact: artifact) }
                     }
                 }
                 .listStyle(.inset)
@@ -225,21 +227,7 @@ private struct ArtifactPreview: View {
                     }
                     .buttonStyle(.borderedProminent)
                 }
-                MoreMenu {
-                    if let conversation {
-                        Button("Show Conversation") { services.show(conversation) }
-                    }
-                    if let url = artifact.fileURL {
-                        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                        Button("Copy File Path") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(url.path, forType: .string)
-                        }
-                    }
-                    if let code = artifact.inlineContent {
-                        Button("Save As…") { save(code, suggested: artifact) }
-                    }
-                }
+                MoreMenu { LibraryItemActions(artifact: artifact) }
             }
             HStack(alignment: .top, spacing: 28) {
                 if let conversation {
@@ -308,13 +296,6 @@ private struct ArtifactPreview: View {
         }
     }
 
-    private func save(_ code: String, suggested artifact: Artifact) {
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = artifact.title.replacingOccurrences(of: "/", with: "-")
-        panel.canCreateDirectories = true
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        try? Data(code.utf8).write(to: url, options: .atomic)
-    }
 }
 
 /// A file without an inline preview: its Quick Look thumbnail, large.
@@ -333,5 +314,39 @@ private struct FilePreviewTile: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, Theme.Space.xl)
         .task(id: url) { thumbnail = await Thumbnails.load(url, size: 640) }
+    }
+}
+
+/// What you can do with something in the library, for its ⋯ menu and its context menu.
+struct LibraryItemActions: View {
+    @Environment(AppServices.self) private var services
+    let artifact: Artifact
+
+    var body: some View {
+        if let conversation = services.snapshot.conversations.first(where: { $0.id == artifact.conversationID }) {
+            Button("Open Conversation") { services.show(conversation) }
+        }
+        if let url = artifact.fileURL {
+            Button("Open") { NSWorkspace.shared.open(url) }
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+            Button("Copy File Path") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(url.path, forType: .string)
+            }
+        }
+        if let code = artifact.inlineContent {
+            Button("Copy") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(code, forType: .string)
+            }
+            Button("Save As…") {
+                let panel = NSSavePanel()
+                panel.nameFieldStringValue = artifact.title.replacingOccurrences(of: "/", with: "-")
+                panel.canCreateDirectories = true
+                if panel.runModal() == .OK, let url = panel.url {
+                    try? Data(code.utf8).write(to: url, options: .atomic)
+                }
+            }
+        }
     }
 }

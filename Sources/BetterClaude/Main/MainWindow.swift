@@ -28,6 +28,16 @@ struct MainWindow: View {
                 .navigationTitle("")
         }
         .toolbar {
+            ToolbarItemGroup(placement: .navigation) {
+                Button { services.goBack() } label: { Label("Back", systemImage: "chevron.left") }
+                    .disabled(services.backPlaces.isEmpty)
+                    .help("Back (⌘[)")
+                    .keyboardShortcut("[", modifiers: .command)
+                Button { services.goForward() } label: { Label("Forward", systemImage: "chevron.right") }
+                    .disabled(services.forwardPlaces.isEmpty)
+                    .help("Forward (⌘])")
+                    .keyboardShortcut("]", modifiers: .command)
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     services.refresh()
@@ -38,8 +48,31 @@ struct MainWindow: View {
                 .keyboardShortcut("r", modifiers: .command)
             }
         }
-        .searchable(text: $services.query, placement: .toolbar, prompt: "Search conversations")
+        .searchable(text: $services.query, placement: .toolbar, prompt: "Search, or ⌘↩ to ask")
         .searchFocused($searchFocused)
+        .overlay {
+            if services.showsPalette {
+                ZStack(alignment: .top) {
+                    Color.black.opacity(0.12)
+                        .ignoresSafeArea()
+                        .onTapGesture { services.showsPalette = false }
+                    CommandPalette { services.showsPalette = false }
+                        .padding(.top, 70)
+                        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                }
+            }
+        }
+        .animation(Theme.Motion.fade, value: services.showsPalette)
+        .background {
+            // ⌘↩ in search asks the question instead of matching words.
+            Button("") {
+                let question = services.query.trimmingCharacters(in: .whitespaces)
+                if !question.isEmpty { services.askHistory(question) }
+            }
+            .keyboardShortcut(.return, modifiers: .command)
+            .opacity(0)
+            .accessibilityHidden(true)
+        }
         .background {
             // ⌘F finds conversations from anywhere in the window.
             Button("") {
@@ -213,6 +246,20 @@ struct Sidebar: View {
                                    isRunning: services.isRunning(install),
                                    count: services.conversationCount(in: install))
                             .tag(SidebarDestination.install(install.id))
+                            .contextMenu {
+                                Button("Show Conversations") {
+                                    services.filter = .install(install.id)
+                                    services.destination = .conversations
+                                }
+                                if install.appURL != nil {
+                                    Button(services.isRunning(install) ? "Show \(install.name)" : "Open \(install.name)") {
+                                        services.open(install)
+                                    }
+                                }
+                                Button("Show in Finder") {
+                                    NSWorkspace.shared.activateFileViewerSelecting([install.dataRoot])
+                                }
+                            }
                     }
                 }
             }

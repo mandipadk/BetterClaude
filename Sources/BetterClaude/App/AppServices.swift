@@ -21,6 +21,15 @@ enum SidebarDestination: Hashable {
     case secrets
 }
 
+/// A place in the window: a page and what was selected on it, so going back returns to
+/// exactly where you were.
+struct Place: Equatable {
+    var destination: SidebarDestination?
+    var filter: ConversationFilter
+    var conversationID: String?
+    var projectID: String?
+}
+
 /// Narrows the conversation timeline to one install or one project folder.
 enum ConversationFilter: Hashable {
     case all
@@ -40,7 +49,51 @@ final class AppServices {
     /// Installs whose app is open right now, by install id.
     private(set) var running: Set<String> = []
 
-    var destination: SidebarDestination? = .conversations
+    var destination: SidebarDestination? = .conversations {
+        didSet {
+            guard destination != oldValue, !restoringPlace else { return }
+            remember(Place(destination: oldValue, filter: filter, conversationID: selectedConversationID,
+                           projectID: projectPages.selectedID))
+        }
+    }
+
+    // MARK: Back and forward
+
+    private(set) var backPlaces: [Place] = []
+    private(set) var forwardPlaces: [Place] = []
+    private var restoringPlace = false
+
+    var currentPlace: Place {
+        Place(destination: destination, filter: filter, conversationID: selectedConversationID,
+              projectID: projectPages.selectedID)
+    }
+
+    private func remember(_ place: Place) {
+        if backPlaces.last != place { backPlaces.append(place) }
+        if backPlaces.count > 50 { backPlaces.removeFirst(backPlaces.count - 50) }
+        forwardPlaces.removeAll()
+    }
+
+    func goBack() {
+        guard let place = backPlaces.popLast() else { return }
+        forwardPlaces.append(currentPlace)
+        restore(place)
+    }
+
+    func goForward() {
+        guard let place = forwardPlaces.popLast() else { return }
+        backPlaces.append(currentPlace)
+        restore(place)
+    }
+
+    private func restore(_ place: Place) {
+        restoringPlace = true
+        defer { restoringPlace = false }
+        destination = place.destination
+        filter = place.filter
+        if let project = place.projectID { projectPages.selectedID = project }
+        selectedConversationID = place.conversationID
+    }
     var filter: ConversationFilter = .all
     var selectedConversationID: String? {
         didSet { if selectedConversationID != oldValue { openSelected() } }
@@ -392,8 +445,21 @@ final class AppServices {
         }
     }
 
-    /// Debug builds only: opens the backup sheet on the Kept page, to capture it.
-    var debugBackupSheet = false
+    /// The command palette, over the window.
+    var showsPalette = false
+    /// Text the palette opens with (debug captures).
+    var paletteSeed = ""
+
+    /// Asks the model built into macOS about your history, on the Ask page.
+    func askHistory(_ question: String) {
+        query = ""
+        destination = .ask
+        ask.question = question
+        ask.ask(index: index.index)
+    }
+
+    /// Opens the backup sheet when the Kept page appears (the palette, and debug captures).
+    var pendingBackupSheet = false
 
     /// A one-line confirmation, shown as an alert.
     var notice: String?

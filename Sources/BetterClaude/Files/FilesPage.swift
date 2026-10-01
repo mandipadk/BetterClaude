@@ -79,6 +79,7 @@ private struct FileListColumn: View {
                     }
                     .padding(.vertical, 3)
                     .tag(file.path)
+                    .contextMenu { FileActions(path: file.path) }
                 }
             }
             .listStyle(.inset)
@@ -150,12 +151,7 @@ private struct FileDetail: View {
                 }
             }
             Spacer(minLength: Theme.Space.l)
-            MoreMenu {
-                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
-                    .disabled(!FileManager.default.fileExists(atPath: path))
-                Button("Open") { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
-                    .disabled(!FileManager.default.fileExists(atPath: path))
-            }
+            MoreMenu { FileActions(path: path) }
         }
         .padding(.bottom, Theme.Space.xl)
     }
@@ -406,6 +402,22 @@ struct DiffView: View {
         case .added: return Theme.accent.opacity(0.14)
         case .removed: return Theme.failure.opacity(0.10)
         default: return .clear
+        }
+    }
+}
+
+/// What you can do with a file Claude changed, for its ⋯ menu and its context menu.
+struct FileActions: View {
+    let path: String
+
+    var body: some View {
+        let exists = FileManager.default.fileExists(atPath: path)
+        Button("Open") { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }.disabled(!exists)
+        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+            .disabled(!exists)
+        Button("Copy File Path") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(path, forType: .string)
         }
     }
 }

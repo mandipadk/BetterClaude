@@ -146,7 +146,10 @@ struct KeptPage: View {
         }
         .task {
             kept.reload()
-            if services.debugBackupSheet { services.debugBackupSheet = false; backup = .backUp }
+            if services.pendingBackupSheet { services.pendingBackupSheet = false; backup = .backUp }
+        }
+        .onChange(of: services.pendingBackupSheet) { _, pending in
+            if pending { services.pendingBackupSheet = false; backup = .backUp }
         }
         .sheet(item: $backup) { mode in
             BackupSheet(mode: mode) { backup = nil }

@@ -73,7 +73,7 @@ struct RewindSheet: View {
             HStack(spacing: Theme.Space.m) {
                 GlyphTile(systemImage: "clock.arrow.circlepath", size: 44)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("What this conversation changed").font(Theme.Font.title)
+                    Text("Changes").font(Theme.Font.title)
                     Text("Every file it edited or created, compared with how it was before. Put any of them back; Undo in History reverses it.")
                         .font(Theme.Font.callout)
                         .foregroundStyle(.secondary)

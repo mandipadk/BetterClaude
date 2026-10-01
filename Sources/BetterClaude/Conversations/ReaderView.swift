@@ -125,31 +125,7 @@ struct ReaderHeader: View {
                     .help("Carry this conversation to another Claude or to Claude Code")
                 }
                 MoreMenu {
-                    if conversation.external == nil {
-                        Button("Write a Handoff…") { services.beginHandoff(conversation) }
-                            .disabled(conversation.isTranscriptMissing)
-                    }
-                    Button("Replay on Another Model…") { services.replaying = ReplayModel(conversation: conversation) }
-                        .disabled(conversation.isTranscriptMissing)
-                    if conversation.external == nil {
-                        Button("What It Changed…") { services.rewinding = RewindModel(conversation: conversation) }
-                        Button("Watch It Change…") { services.watching = TimelapseModel(conversation: conversation) }
-                    }
-                    Divider()
-                    if let session = conversation.claudeCodeSession, !session.resolvedCwd.isEmpty,
-                       !session.transcriptURL.path.hasPrefix(Vault.root.path) {
-                        Button("Resume in Terminal") {
-                            services.resumeInTerminal(cwd: session.resolvedCwd, sessionId: session.sessionId)
-                        }
-                        Divider()
-                    }
-                    Button("Export as Markdown…") { services.reader.exportMarkdown() }
-                    Button("Export as Web Page…") { services.reader.exportWebPage() }
-                    Button("Show in Finder") { services.revealInFinder(conversation) }
-                    if let install, install.appURL != nil {
-                        Divider()
-                        Button("Open \(install.name)") { services.open(install) }
-                    }
+                    ConversationActions(conversation: conversation)
                 }
             }
 

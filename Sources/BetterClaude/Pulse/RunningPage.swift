@@ -162,26 +162,30 @@ struct LiveSessionRow: View {
                 }
             }
             if !compact {
-                MoreMenu {
-                    if let host {
-                        Button("Show in \(host.localizedName ?? "its app")") { services.pulse.show(session) }
-                    }
-                    if let conversation {
-                        Button("Read the Conversation") { services.show(conversation) }
-                    }
-                    Button("Show Folder in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: session.cwd)])
-                    }
-                    .disabled(session.cwd.isEmpty)
-                }
+                MoreMenu { actions(host: host, conversation: conversation) }
             }
         }
         .padding(.vertical, compact ? 6 : 10)
         .contentShape(.rect)
+        .contextMenu { actions(host: host, conversation: conversation) }
         .onTapGesture { services.pulse.show(session) }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityHint("Brings its app to the front")
+    }
+
+    @ViewBuilder
+    private func actions(host: NSRunningApplication?, conversation: ConversationRef?) -> some View {
+        if let host {
+            Button("Show in \(host.localizedName ?? "Its App")") { services.pulse.show(session) }
+        }
+        if let conversation {
+            Button("Open Conversation") { services.show(conversation) }
+        }
+        Button("Show in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: session.cwd)])
+        }
+        .disabled(session.cwd.isEmpty)
     }
 
     private var stateWord: String {

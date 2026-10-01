@@ -117,6 +117,9 @@ struct BetterClaudeApp: App {
                 }
             }
             CommandGroup(after: .sidebar) {
+                Button("Command Palette…") { services.showsPalette.toggle() }
+                    .keyboardShortcut("k", modifiers: .command)
+                Divider()
                 Button("Conversations") { services.destination = .conversations }
                     .keyboardShortcut("1", modifiers: .command)
                 Button("Running") { services.destination = .running }

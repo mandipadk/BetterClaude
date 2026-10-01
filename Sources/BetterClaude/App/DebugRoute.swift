@@ -182,13 +182,22 @@ enum DebugRoute {
                 services.library.selectedID = services.library.visible.first?.id
             case "panel":
                 services.previewsMenuBarPanel = true
+            case "palette":
+                // `palette:<query>` over the first coding conversation, as if typed.
+                services.destination = .conversations
+                if let match = services.snapshot.conversations.first(where: { $0.title.localizedCaseInsensitiveContains("webhook") }) {
+                    services.selectedConversationID = match.id
+                }
+                try? await Task.sleep(for: .milliseconds(600))
+                services.paletteSeed = argument
+                services.showsPalette = true
             case "gallery":
                 services.previewsGallery = true
             case "history":
                 services.destination = .history
             case "backup":
                 services.destination = .kept
-                services.debugBackupSheet = true
+                services.pendingBackupSheet = true
             case "kept":
                 services.destination = .kept
             case "storage":

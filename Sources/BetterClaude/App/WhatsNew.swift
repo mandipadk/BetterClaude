@@ -12,6 +12,14 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.29.0": [
+            Item(symbol: "command", title: "⌘K finds anything",
+                 detail: "One field for every page, every action on the conversation you're reading, and every conversation by name. Words you'd use work too: “rewind” finds Show Changes. ⌘↩ asks your history instead."),
+            Item(symbol: "chevron.left", title: "Back and forward",
+                 detail: "⌘[ and ⌘] go back to where you were, with what you had selected, after opening a conversation from Projects, a notification or a link."),
+            Item(symbol: "contextualmenu.and.cursorarrow", title: "Right-click anything",
+                 detail: "Conversations, search results, projects, files, library items, running sessions and installs have context menus, with the same words as their ⋯ menus."),
+        ],
         "0.28.0": [
             Item(symbol: "macwindow", title: "A new look",
                  detail: "Better Claude now uses macOS's own design: its toolbar, sidebar, buttons and switches are the system's, in a new accent, Lagoon. Status is said in words, never with tinted panels."),

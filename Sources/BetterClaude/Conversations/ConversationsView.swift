@@ -48,6 +48,7 @@ struct TimelineColumn: View {
                                             live: services.pulse.session(forConversation: conversation.cliSessionId)?.state)
                                 .tag(conversation.id)
                                 .listRowSeparator(.hidden)
+                                .contextMenu { ConversationActions(conversation: conversation, asContextMenu: true) }
                         }
                     }
                 }
@@ -270,6 +271,11 @@ struct MessageHitsList: View {
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        if let conversation = services.snapshot.conversations.first(where: { $0.id == hit.conversationID }) {
+                            ConversationActions(conversation: conversation, asContextMenu: true)
+                        }
+                    }
                 }
             }
             .listStyle(.inset)

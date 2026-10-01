@@ -381,6 +381,10 @@ with Better Claude's release key. Releasing is described in
 Pick a conversation in the timeline, read it, and press **Continue in…**. You see where it
 is going and what will happen first; nothing is written until you confirm.
 
+Press **⌘K** anywhere to find a page, an action on the conversation you're reading, or any
+conversation by name, and **⌘↩** to ask your history a question instead. **⌘[** and **⌘]** go
+back and forward, and every row has a context menu with what you can do to it.
+
 From the command line:
 
 ```bash
