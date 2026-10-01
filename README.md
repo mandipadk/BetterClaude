@@ -88,7 +88,8 @@ a week.
 Every running Claude Code session, in any terminal or a Desktop app's Code tab, read from
 the status file Claude Code keeps for each one: working, done, or waiting on a permission or
 an answer. A notification arrives the moment one needs you, or a long turn finishes, and
-clicking it brings the right app forward. An optional switch adds three hooks to Claude
+clicking it brings the right app forward. Every notification has its own switch in Settings,
+under Notifications. An optional one there adds three hooks to Claude
 Code's settings so notifications can say what Claude asked; switching it off removes
 exactly those hooks.
 

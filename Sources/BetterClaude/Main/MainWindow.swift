@@ -63,6 +63,7 @@ struct MainWindow: View {
             }
         }
         .animation(Theme.Motion.fade, value: services.showsPalette)
+
         .background {
             // ⌘↩ in search asks the question instead of matching words.
             Button("") {

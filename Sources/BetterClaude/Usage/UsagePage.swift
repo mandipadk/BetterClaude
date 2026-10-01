@@ -5,7 +5,7 @@ import SwiftUI
 /// Every account's plan limits, where the week is heading, and what used it.
 struct UsagePage: View {
     @Environment(AppServices.self) private var services
-    @AppStorage(PulseNotifier.limitsKey) private var notifyLimits = true
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         let usage = services.usage
@@ -14,9 +14,10 @@ struct UsagePage: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Usage").font(Theme.Font.display)
-                        Text("Your plan limits in every account, where this week is heading, and what used it.")
-                            .font(Theme.Font.callout)
+                        Text(headline(usage.quotas))
+                            .font(Theme.Font.body)
                             .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
                     Button("Your Month…") { services.lookingBack = MonthModel() }
@@ -33,18 +34,17 @@ struct UsagePage: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                WeekSection()
-                ModelDriftSection()
-                CacheBreaksSection()
                 ForEach(usage.quotas) { quota in
                     AccountUsageSection(quota: quota, items: usage.spend[quota.account.id] ?? [])
                 }
+                WeekSection()
+                CacheBreaksSection()
+                ModelDriftSection()
                 if !usage.quotas.isEmpty {
-                    DetailSection(title: "Alerts") {
-                        ExplainedToggle(title: "Before you hit a limit",
-                                        detail: "A notification when an account passes 80% and 95% of its five-hour or weekly limit, once each time, naming the account with the most room left.",
-                                        isOn: $notifyLimits)
-                    }
+                    Button("Notifications Before You Hit a Limit…") { openSettings() }
+                        .buttonStyle(.link)
+                        .font(Theme.Font.callout)
+                        .padding(.top, Theme.Space.l)
                     Text("The percentages are Claude's own. Which projects and conversations used them is estimated from the tokens each reply used, weighed at API list prices, since plan limits aren't published as a formula.")
                         .font(Theme.Font.caption)
                         .foregroundStyle(.secondary)
@@ -59,6 +59,17 @@ struct UsagePage: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onAppear { usage.refresh(snapshot: services.snapshot, index: services.index.index) }
+    }
+
+    /// The answer first: where the tightest account is heading.
+    private func headline(_ quotas: [AccountQuota]) -> String {
+        for quota in quotas {
+            if case .reachesLimit(let date)? = quota.forecast {
+                return "At this pace, \(quota.account.displayName) reaches its weekly limit \(AccountUsageSection.when(date))."
+            }
+        }
+        if quotas.isEmpty { return "Your plan limits in every account, where this week is heading, and what used it." }
+        return quotas.count == 1 ? "Your account has room this week." : "Every account has room this week."
     }
 }
 

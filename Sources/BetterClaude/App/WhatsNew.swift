@@ -12,6 +12,12 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.33.0": [
+            Item(symbol: "gearshape", title: "Settings, all in one place",
+                 detail: "General, Notifications, Claude Access, API Key and Updates. All seven notifications are together, and whether each Claude can search your history is on one screen."),
+            Item(symbol: "chart.bar.xaxis", title: "Usage leads with the answer",
+                 detail: "Where your tightest account is heading comes first, then each account's limits, then what used them."),
+        ],
         "0.32.0": [
             Item(symbol: "folder", title: "A project, in four tabs",
                  detail: "Overview, Conversations, Files and Memory: what you keep telling Claude and what was decided, every conversation, the files Claude changed, and what Claude is told about it."),

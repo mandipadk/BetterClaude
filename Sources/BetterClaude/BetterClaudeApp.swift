@@ -146,6 +146,7 @@ struct BetterClaudeApp: App {
         Settings {
             SettingsView()
                 .environment(services)
+                .environment(updates)
         }
     }
 }

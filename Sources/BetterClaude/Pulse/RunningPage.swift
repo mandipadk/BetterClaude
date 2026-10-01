@@ -5,13 +5,7 @@ import SwiftUI
 /// Every Claude Code session running now, the ones waiting for you first.
 struct RunningPage: View {
     @Environment(AppServices.self) private var services
-    @AppStorage(PulseNotifier.needsYouKey) private var notifyNeedsYou = true
-    @AppStorage(PulseNotifier.finishedKey) private var notifyFinished = true
-    @AppStorage(PulseNotifier.contextKey) private var notifyContext = true
-    @AppStorage(PulseNotifier.cacheKey) private var notifyCache = true
-    /// Redraws the two switches that read UserDefaults directly.
-    @State private var jobsTick = false
-    @State private var hookError: String?
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         let pulse = services.pulse
@@ -33,34 +27,10 @@ struct RunningPage: View {
                 group("Waiting for your next message", subtitle: nil, pulse.sessions.filter { $0.state == .idle })
                 UnattendedSection()
 
-                DetailSection(title: "Alerts") {
-                    VStack(alignment: .leading, spacing: Theme.Space.l) {
-                        let _ = jobsTick
-                        ExplainedToggle(title: "When Claude needs you",
-                                        detail: "A permission to grant or a question to answer. Not shown while you're already in the app it's running in.",
-                                        isOn: $notifyNeedsYou)
-                        ExplainedToggle(title: "When a long turn finishes",
-                                        detail: "After Claude has been working for a minute or more.",
-                                        isOn: $notifyFinished)
-                        ExplainedToggle(title: "When a background job ends",
-                                        detail: "A job started with claude --bg or /fork finishes, fails, or stops without finishing.",
-                                        isOn: Binding(get: { PulseNotifier.setting(PulseNotifier.jobsKey, fallback: PulseNotifier.finishedKey) },
-                                                      set: { UserDefaults.standard.set($0, forKey: PulseNotifier.jobsKey); jobsTick.toggle() }))
-                        ExplainedToggle(title: "When a session's context is filling up",
-                                        detail: "At 75% and 90% of the context window, once each until it compacts. Every reply rereads the whole conversation, so this is when compacting or a handoff saves the most.",
-                                        isOn: $notifyContext)
-                        ExplainedToggle(title: "When a model changes on its own",
-                                        detail: "A running session's replies come from a different model with nothing on record asking for it.",
-                                        isOn: Binding(get: { PulseNotifier.setting(PulseNotifier.driftKey, fallback: PulseNotifier.contextKey) },
-                                                      set: { UserDefaults.standard.set($0, forKey: PulseNotifier.driftKey); jobsTick.toggle() }))
-                        ExplainedToggle(title: "Before a waiting session's cache expires",
-                                        detail: "Two minutes before, for conversations over 80K tokens. After that, your next reply there writes the whole conversation into the cache again.",
-                                        isOn: $notifyCache)
-                        ExplainedToggle(title: "Say what Claude asked",
-                                        detail: hookError ?? "Adds three small hooks to Claude Code's settings so an alert can include Claude's question and any error. Turning this off takes out exactly those hooks. Your settings are backed up first.",
-                                        isOn: Binding(get: { pulse.hooksInstalled }, set: { setHooks($0) }))
-                    }
-                }
+                Button("Notification Settings…") { openSettings() }
+                    .buttonStyle(.link)
+                    .font(Theme.Font.callout)
+                    .padding(.top, Theme.Space.xl)
             }
             .padding(.horizontal, 32)
             .padding(.top, 24)
@@ -110,14 +80,6 @@ struct RunningPage: View {
         }
     }
 
-    private func setHooks(_ on: Bool) {
-        do {
-            try services.pulse.setHooks(on)
-            hookError = nil
-        } catch {
-            hookError = "Couldn't change Claude Code's settings: \(error.localizedDescription)"
-        }
-    }
 }
 
 struct LiveSessionRow: View {

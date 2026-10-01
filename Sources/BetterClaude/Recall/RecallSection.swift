@@ -5,14 +5,33 @@ import SwiftUI
 struct RecallSection: View {
     @Environment(AppServices.self) private var services
     let install: Install
+    /// In Settings, under the install's name: the switches without the section around them.
+    var embedded = false
 
     var body: some View {
         let recall = services.recall
         let snapshot = services.snapshot
         let own = snapshot.account(of: install)
         let others = snapshot.knownAccounts.filter { $0.id != own?.id }
-        DetailSection(title: "Your history, for Claude",
-                      subtitle: "Lets this Claude look up your past conversations when you mention earlier work, and quote what was said. It reads Better Claude's index on this Mac; nothing leaves it.") {
+        Group {
+            if embedded {
+                switches(recall: recall, snapshot: snapshot, own: own, others: others)
+            } else {
+                DetailSection(title: "Your history, for Claude",
+                              subtitle: "Lets this Claude look up your past conversations when you mention earlier work, and quote what was said. It reads Better Claude's index on this Mac; nothing leaves it.") {
+                    switches(recall: recall, snapshot: snapshot, own: own, others: others)
+                }
+            }
+        }
+        .alert("Couldn't change it",
+               isPresented: Binding(get: { recall.errorMessage != nil }, set: { if !$0 { recall.errorMessage = nil } })) {
+            Button("OK") { recall.errorMessage = nil }
+        } message: {
+            Text(recall.errorMessage ?? "")
+        }
+    }
+
+    private func switches(recall: RecallModel, snapshot: CatalogSnapshot, own: ClaudeAccount?, others: [ClaudeAccount]) -> some View {
             VStack(alignment: .leading, spacing: Theme.Space.l) {
                 HStack(spacing: Theme.Space.s) {
                     ExplainedToggle(title: "Let \(install.name) search your history",
@@ -36,13 +55,6 @@ struct RecallSection: View {
                     }
                 }
             }
-        }
-        .alert("Couldn't change it",
-               isPresented: Binding(get: { recall.errorMessage != nil }, set: { if !$0 { recall.errorMessage = nil } })) {
-            Button("OK") { recall.errorMessage = nil }
-        } message: {
-            Text(recall.errorMessage ?? "")
-        }
     }
 
     private func detail(connected: Bool) -> String {

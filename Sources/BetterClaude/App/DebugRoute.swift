@@ -38,6 +38,14 @@ enum DebugRoute {
                 if let words = pieces.last, let match = services.snapshot.conversations.first(where: { $0.title.localizedCaseInsensitiveContains(words) }) {
                     services.selectedConversationID = match.id
                 }
+            case "settings":
+                UserDefaults.standard.set(argument.isEmpty ? "general" : argument, forKey: "settingsTab")
+                // The app menu's own Settings… item, as if chosen.
+                try? await Task.sleep(for: .seconds(1))
+                if let menu = NSApp.mainMenu?.items.first?.submenu,
+                   let index = menu.items.firstIndex(where: { $0.keyEquivalent == "," }) {
+                    menu.performActionForItem(at: index)
+                }
             case "home":
                 services.destination = .home
             case "thismac":
