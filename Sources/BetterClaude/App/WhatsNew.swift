@@ -12,6 +12,10 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "1.2.1": [
+            Item(symbol: "lock", title: "Sees every Claude that's open",
+                 detail: "A copy of Claude opened through Parallex could be missed when checking whether it was open, so a conversation could be written while it ran. Better Claude now checks every process, and quits that Claude first or waits for you to."),
+        ],
         "1.2.0": [
             Item(symbol: "rectangle.stack", title: "Copy a whole Cowork project",
                  detail: "Projects lists your Cowork projects. Copy To… carries one into another Claude with its folder, what Claude remembers about it, and every conversation in it. The original stays put, and Undo in Activity takes the copy back."),

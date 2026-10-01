@@ -88,7 +88,53 @@ public enum Guards {
                 userDataDirWasExplicit: explicit != nil
             ))
         }
+        // Launch Services can lose track of a Claude it started: one opened through a Parallex
+        // wrapper is listed with no process id once the wrapper exits, and the loop above has
+        // to skip it. The process table is read as well, so that one still counts as running.
+        let known = Set(found.map(\.pid))
+        for (pid, bundleURL) in desktopProcesses() where !known.contains(pid) {
+            let argv = processArguments(pid: pid) ?? []
+            if argv.dropFirst().contains(where: { $0.hasPrefix("--type=") }) { continue }
+            let explicit = userDataDirectory(inArguments: argv)
+            found.append(RunningVariant(
+                pid: pid,
+                bundleURL: canonical(bundleURL),
+                userDataDir: explicit ?? defaultUserDataDirectory,
+                userDataDirWasExplicit: explicit != nil
+            ))
+        }
         return found.sorted { $0.pid < $1.pid }
+    }
+
+    /// Every process whose executable sits in a Claude Desktop bundle, from the process table.
+    ///
+    /// Only the desktop app's own bundle counts: Claude Code ships as `com.anthropic.claude-code`
+    /// and holds no store, and the helpers are dropped by their `--type=` switch afterwards.
+    static func desktopProcesses() -> [(pid_t, URL)] {
+        let capacity = proc_listallpids(nil, 0)
+        guard capacity > 0 else { return [] }
+        var pids = [pid_t](repeating: 0, count: Int(capacity) + 64)
+        let count = pids.withUnsafeMutableBytes { buffer in
+            proc_listallpids(buffer.baseAddress, Int32(buffer.count))
+        }
+        guard count > 0 else { return [] }
+        var result: [(pid_t, URL)] = []
+        var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        var identifiers: [String: String?] = [:]
+        for pid in pids.prefix(Int(count)) where pid > 0 {
+            guard proc_pidpath(pid, &path, UInt32(path.count)) > 0 else { continue }
+            let executable = String(cString: path)
+            guard let marker = executable.range(of: ".app/Contents/MacOS/", options: .backwards) else { continue }
+            let bundle = String(executable[..<marker.lowerBound]) + ".app"
+            if identifiers[bundle] == nil {
+                identifiers[bundle] = .some(Bundle(url: URL(fileURLWithPath: bundle))?.bundleIdentifier?.lowercased())
+            }
+            guard let identifier = identifiers[bundle] ?? nil,
+                  identifier.hasPrefix("com.anthropic.claudefordesktop"), !identifier.hasSuffix(".helper")
+            else { continue }
+            result.append((pid, URL(fileURLWithPath: bundle)))
+        }
+        return result
     }
 
     /// Processes that have the endpoint's store open and would fight us for it.

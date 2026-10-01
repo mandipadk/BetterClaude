@@ -97,7 +97,12 @@ public enum Importer {
             id: "PC2", title: "No Claude instance is running against the destination",
             passed: conflicts.isEmpty || options.quitRunningVariant,
             detail: conflicts.isEmpty ? nil
-                : "running: " + conflicts.map { "pid \($0.pid) → \($0.userDataDir.lastPathComponent)" }.joined(separator: ", ")))
+                : "running: " + conflicts.map { conflict in
+                    // A Parallex copy keeps its store in a folder named `data`; say which Claude it is.
+                    var name = conflict.userDataDir.lastPathComponent
+                    if case .cowork(let account) = endpoint { name = account.store.variantDirName }
+                    return "pid \(conflict.pid) → \(name)"
+                }.joined(separator: ", ")))
 
         switch endpoint {
         case .cowork(let account):

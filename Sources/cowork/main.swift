@@ -512,7 +512,7 @@ func cmdStores() throws {
     for store in stores {
         var tags: [String] = []
         if store.isOrphan { tags.append("no launcher") }
-        if running.contains(where: { $0.userDataDir.standardizedFileURL == store.userDataDir.standardizedFileURL }) {
+        if running.contains(where: { $0.userDataDir.resolvingSymlinksInPath().path == store.userDataDir.resolvingSymlinksInPath().path }) {
             tags.append("RUNNING")
         }
         let suffix = tags.isEmpty ? "" : "  (\(tags.joined(separator: ", ")))"
@@ -528,7 +528,8 @@ func cmdStores() throws {
     if !running.isEmpty {
         print("\nRunning Claude processes (a store cannot be written to while its app runs):")
         for variant in running {
-            print("  pid \(variant.pid)  →  \(variant.userDataDir.lastPathComponent)")
+            let owner = stores.first { $0.userDataDir.resolvingSymlinksInPath().path == variant.userDataDir.resolvingSymlinksInPath().path }
+            print("  pid \(variant.pid)  →  \(owner?.variantDirName ?? variant.userDataDir.lastPathComponent)")
         }
     }
 }
