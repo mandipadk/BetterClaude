@@ -20,7 +20,7 @@ struct UsagePage: View {
                     }
                     Spacer()
                     Button("Your Month…") { services.lookingBack = MonthModel() }
-                        .buttonStyle(.secondary)
+                        .buttonStyle(.bordered)
                         .help("A month with Claude on one card, to look back on or save as an image")
                 }
                 .padding(.bottom, Theme.Space.xl)

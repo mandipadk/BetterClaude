@@ -7,6 +7,8 @@
 # each screen straight from a route (BC_UI_ROUTE) in light and dark. No real conversation is
 # ever on screen, and nothing clicks: the mouse and keyboard stay yours while it runs.
 # `screencapture -l` grabs the window's own backing store, so other windows never leak in.
+# ACTIVATE=1 brings each window to the front first, so prominent buttons draw as they do in
+# use (inactive windows draw them grey). It takes keyboard focus while it runs.
 set -uo pipefail
 
 OUT="${1:?usage: capture.sh <output-dir> [route ...]}"
@@ -32,9 +34,17 @@ APP="$ROOT/dist/debug/BetterClaude.app/Contents/MacOS/BetterClaude"
 for route in "${ROUTES[@]}"; do
   for appearance in light dark; do
     name="$(echo "$route" | tr ':/ ' '---' | tr -cd '[:alnum:]-')-$appearance"
-    BC_FIXTURE_ROOT="$WORK/mac" BC_UI_ROUTE="$route" BC_APPEARANCE="$appearance" \
-      BC_ACCENT="${BC_ACCENT:-}" "$APP" >/dev/null 2>&1 &
-    pid=$!
+    if [ -n "${ACTIVATE:-}" ]; then
+      # Through Launch Services, which brings the app to the front; a process started from a
+      # shell can't take focus on its own.
+      open -n --env BC_FIXTURE_ROOT="$WORK/mac" --env BC_UI_ROUTE="$route" --env BC_APPEARANCE="$appearance" \
+        "$ROOT/dist/debug/BetterClaude.app"
+      sleep 1
+      pid="$(pgrep -n -f "dist/debug/BetterClaude.app/Contents/MacOS/BetterClaude")"
+    else
+      BC_FIXTURE_ROOT="$WORK/mac" BC_UI_ROUTE="$route" BC_APPEARANCE="$appearance" "$APP" >/dev/null 2>&1 &
+      pid=$!
+    fi
     sleep "${SETTLE:-3}"
     id="$("$WORK/windowid" "Better Claude" --pid "$pid" 2>/dev/null)"
     if [ -n "$id" ]; then
@@ -42,6 +52,6 @@ for route in "${ROUTES[@]}"; do
     else
       echo "  ! no window for $name"
     fi
-    kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+    kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done
   done
 done

@@ -6,6 +6,7 @@ import SwiftUI
 struct InstallPage: View {
     @Environment(AppServices.self) private var services
     let install: Install
+    @State private var confirmingRemoval = false
 
     var body: some View {
         ScrollView {
@@ -26,6 +27,20 @@ struct InstallPage: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollContentBackground(.hidden)
+        .confirmationDialog(removalTitle, isPresented: $confirmingRemoval, titleVisibility: .visible) {
+            Button(install.kind == .external(.otherMac) ? "Remove History" : "Remove Conversations", role: .destructive) {
+                if install.kind == .external(.otherMac) { services.removeOtherMac(install) } else { services.removeClaudeWebImport() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(install.kind == .external(.otherMac)
+                 ? "Better Claude forgets what it read from this backup. The backup file itself stays where it is, and you can open it again."
+                 : "Better Claude forgets the conversations it imported. Your export file stays where it is, and you can import it again.")
+        }
+    }
+
+    private var removalTitle: String {
+        install.kind == .external(.otherMac) ? "Remove \(install.name)'s history?" : "Remove the imported claude.ai conversations?"
     }
 
     private var isRunning: Bool { services.isRunning(install) }
@@ -43,7 +58,7 @@ struct InstallPage: View {
             Spacer(minLength: Theme.Space.l)
             if install.appURL != nil {
                 Button(isRunning ? "Show" : "Open") { services.open(install) }
-                    .buttonStyle(.primary)
+                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut("o", modifiers: .command)
             }
             MoreMenu {
@@ -60,12 +75,12 @@ struct InstallPage: View {
                 }
                 if install.kind == .external(.otherMac) {
                     Button("Open a Newer Backup…") { services.openOtherMac() }
-                    Button("Remove This Mac's History") { services.removeOtherMac(install) }
+                    Button("Remove This Mac's History…") { confirmingRemoval = true }
                     Divider()
                 }
                 if install.kind == .external(.claudeWeb) {
                     Button("Import a Newer Export…") { services.importClaudeWebExport() }
-                    Button("Remove Imported Conversations") { services.removeClaudeWebImport() }
+                    Button("Remove Imported Conversations…") { confirmingRemoval = true }
                     Divider()
                 }
                 Button("Show Data Folder") {
@@ -156,7 +171,7 @@ struct InstallPage: View {
                         services.filter = .install(install.id)
                         services.destination = .conversations
                     }
-                    .buttonStyle(.secondary)
+                    .buttonStyle(.bordered)
                 }
             }
         }

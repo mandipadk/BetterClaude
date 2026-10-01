@@ -48,6 +48,8 @@ final class AppServices {
     var query = ""
     /// Debug builds only: shows the menu bar panel inside the window so it can be captured.
     var previewsMenuBarPanel = false
+    /// Debug builds: the component gallery instead of a page.
+    var previewsGallery = false
 
     let reader = ReaderModel()
     let index: IndexModel

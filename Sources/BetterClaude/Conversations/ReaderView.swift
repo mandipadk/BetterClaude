@@ -87,8 +87,14 @@ struct ReaderView: View {
     }
 }
 
+extension EnvironmentValues {
+    /// True where the reader is shown inside a sheet, which can't open another sheet on top.
+    @Entry var readerActionsHidden = false
+}
+
 struct ReaderHeader: View {
     @Environment(AppServices.self) private var services
+    @Environment(\.readerActionsHidden) private var actionsHidden
     let conversation: ConversationRef
     let install: Install?
     let readable: ReadableConversation?
@@ -102,17 +108,19 @@ struct ReaderHeader: View {
                     .lineLimit(3)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                if conversation.external != nil {
+                if actionsHidden {
+                    EmptyView()
+                } else if conversation.external != nil {
                     // Outside conversations can't become Claude Code transcripts; a brief
                     // carries them on instead.
                     Button("Write a Handoff…") { services.beginHandoff(conversation) }
-                        .buttonStyle(.primary)
+                        .buttonStyle(.borderedProminent)
                         .help("A one-page brief of this conversation, to continue it in a fresh one")
                 } else {
                     Button("Continue in…") {
                         services.beginContinue(conversation)
                     }
-                    .buttonStyle(.primary)
+                    .buttonStyle(.borderedProminent)
                     .disabled(conversation.isTranscriptMissing)
                     .help("Carry this conversation to another Claude or to Claude Code")
                 }
@@ -417,7 +425,7 @@ struct CompactionMarker: View {
                 Spacer().frame(width: 16)
                 if let project = conversation?.projectPath {
                     Button(added ? "Added to CLAUDE.md" : "Add to CLAUDE.md…") { confirming = true }
-                        .buttonStyle(.secondary)
+                        .buttonStyle(.bordered)
                         .disabled(added)
                         .confirmationDialog("Add \(forgotten.count == 1 ? "this" : "these \(forgotten.count)") to this project's CLAUDE.md?", isPresented: $confirming) {
                             Button("Add") {
@@ -432,7 +440,7 @@ struct CompactionMarker: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(forgotten.map { "- \($0.text)" }.joined(separator: "\n"), forType: .string)
                 }
-                .buttonStyle(.secondary)
+                .buttonStyle(.bordered)
             }
         }
         .padding(Theme.Space.m)

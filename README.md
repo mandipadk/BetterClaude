@@ -336,7 +336,7 @@ folder that no longer exists on this Mac.
 
 ## Install
 
-Requires macOS 14 or later. [Download Better Claude](https://github.com/mandipadk/BetterClaude/releases/latest/download/BetterClaude.dmg)
+Requires macOS 26 or later. [Download Better Claude](https://github.com/mandipadk/BetterClaude/releases/latest/download/BetterClaude.dmg)
 (or see [betterclaude.mandip.dev](https://betterclaude.mandip.dev)) and drag the app to
 Applications.
 
@@ -346,7 +346,7 @@ Security, and choose **Open Anyway**. Updates installed from inside the app don'
 
 ### Building from source
 
-Needs Xcode's Swift toolchain in addition to macOS 14.
+Needs macOS 26 and Xcode 26 or later (its Swift toolchain, and actool for the icon).
 
 ```bash
 git clone https://github.com/mandipadk/BetterClaude.git && cd BetterClaude

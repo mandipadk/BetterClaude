@@ -217,13 +217,13 @@ private struct ArtifactPreview: View {
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if let url = artifact.fileURL {
-                    Button("Open") { NSWorkspace.shared.open(url) }.buttonStyle(.primary)
+                    Button("Open") { NSWorkspace.shared.open(url) }.buttonStyle(.borderedProminent)
                 } else if let code = artifact.inlineContent {
                     Button("Copy Code") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(code, forType: .string)
                     }
-                    .buttonStyle(.primary)
+                    .buttonStyle(.borderedProminent)
                 }
                 MoreMenu {
                     if let conversation {

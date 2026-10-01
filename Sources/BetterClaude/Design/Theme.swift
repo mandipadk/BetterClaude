@@ -1,67 +1,47 @@
 import AppKit
 import SwiftUI
 
-/// Better Claude's design tokens, in the same language as Parallex: one accent color for the
-/// thing to do next, selection, and the mark; native neutrals and materials for everything
-/// else, so the app reads as part of macOS. Install colors are data — small marks, never
-/// chrome.
+/// Better Claude's design tokens: one accent, used sparingly (selection, the one thing to do
+/// next, links, the app's own data); native neutrals and materials for everything else, so
+/// the app reads as part of macOS. Status is said in words, never with tinted panels. Install
+/// colours are data, small marks, never chrome.
 enum Theme {
 
     // MARK: Accent
 
-    /// The accent is jade. The other candidates stay for comparison in debug builds. Each is
-    /// tuned per appearance: deep enough in light mode to
-    /// carry white text at 4.5:1 or better, brighter in dark mode where it sits on graphite.
-    enum Accent: String, CaseIterable {
-        case jade, teal, cobalt
-
-        var light: NSColor {
-            switch self {
-            case .jade: return NSColor(srgbRed: 0.043, green: 0.490, blue: 0.349, alpha: 1)   // #0B7D59
-            case .teal: return NSColor(srgbRed: 0.043, green: 0.498, blue: 0.525, alpha: 1)   // #0B7F86
-            case .cobalt: return NSColor(srgbRed: 0.165, green: 0.357, blue: 0.843, alpha: 1) // #2A5BD7
-            }
-        }
-
-        var dark: NSColor {
-            switch self {
-            case .jade: return NSColor(srgbRed: 0.180, green: 0.698, blue: 0.494, alpha: 1)   // #2EB27E
-            case .teal: return NSColor(srgbRed: 0.137, green: 0.667, blue: 0.698, alpha: 1)   // #23AAB2
-            case .cobalt: return NSColor(srgbRed: 0.341, green: 0.522, blue: 1.0, alpha: 1)   // #5785FF
-            }
+    /// The accent is Lagoon, a cyan from the far side of the colour wheel from Claude's clay,
+    /// so the app's own actions never blend into the install icons around them. It has three
+    /// jobs, each with its own value per appearance.
+    private static func dynamic(_ name: String, light: NSColor, dark: NSColor) -> NSColor {
+        NSColor(name: NSColor.Name(name)) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
         }
     }
 
-    /// The accent in use. Debug builds can try another with `BC_ACCENT=teal` and friends.
-    static let accentChoice: Accent = {
-        #if DEBUG
-        if let raw = ProcessInfo.processInfo.environment["BC_ACCENT"], let choice = Accent(rawValue: raw) {
-            return choice
-        }
-        #endif
-        return .jade
-    }()
-
-    static let accentNS = NSColor(name: "BetterClaudeAccent") { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? accentChoice.dark : accentChoice.light
-    }
+    /// Ink: links, selected text and symbols. Readable at 4.5:1 or better on the window.
+    static let accentNS = dynamic("BetterClaudeAccent",
+                                  light: NSColor(srgbRed: 0.000, green: 0.471, blue: 0.604, alpha: 1),   // #00789A
+                                  dark: NSColor(srgbRed: 0.310, green: 0.827, blue: 0.961, alpha: 1))    // #4FD3F5
     static let accent = Color(nsColor: accentNS)
 
-    /// The accent as a fill under white text. In light mode it is the accent itself; in dark
-    /// mode the accent is bright enough to glow on graphite, which leaves white labels on it
-    /// at 2.7:1, so filled buttons use a deeper jade that holds 3.7:1 for their bold labels.
-    static let accentFill = Color(nsColor: NSColor(name: "BetterClaudeAccentFill") { appearance in
-        guard appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua else { return accentChoice.light }
-        return accentChoice == .jade
-            ? NSColor(srgbRed: 0.133, green: 0.596, blue: 0.416, alpha: 1)   // #22986A
-            : accentChoice.dark.blended(withFraction: 0.25, of: .black) ?? accentChoice.dark
-    })
+    /// Fill: the one prominent button and switches, which carry white labels. Deep enough for
+    /// 4.6:1 in light mode and 3.7:1 in dark, the level of the system's own blue.
+    static let accentFillNS = dynamic("BetterClaudeAccentFill",
+                                      light: NSColor(srgbRed: 0.043, green: 0.498, blue: 0.651, alpha: 1),  // #0B7FA6
+                                      dark: NSColor(srgbRed: 0.086, green: 0.561, blue: 0.714, alpha: 1))   // #168FB6
+    static let accentFill = Color(nsColor: accentFillNS)
+
+    /// Bright: meters, charts and the mark, where nothing sits on top of it.
+    static let accentBright = Color(nsColor: dynamic("BetterClaudeAccentBright",
+                                                     light: NSColor(srgbRed: 0.114, green: 0.714, blue: 0.878, alpha: 1),   // #1DB6E0
+                                                     dark: NSColor(srgbRed: 0.208, green: 0.784, blue: 0.941, alpha: 1)))   // #35C8F0
 
     static let attention = Color(nsColor: .systemOrange)
     static let failure = Color(nsColor: .systemRed)
     static let hairline = Color(nsColor: .separatorColor)
     static let subtleFill = Color(nsColor: .quaternaryLabelColor).opacity(0.5)
+    /// The grouped fill under content: rows, wells, tiles.
+    static let groupFill = Color(nsColor: .quaternarySystemFill)
 
     // MARK: Type
     // SF Pro throughout; the Display optical size takes over at 20pt and up.
@@ -99,6 +79,8 @@ enum Theme {
     enum Radius {
         static let control: CGFloat = 7
         static let tile: CGFloat = 10
+        /// A group of rows on a page.
+        static let group: CGFloat = 12
         static let panel: CGFloat = 14
     }
 

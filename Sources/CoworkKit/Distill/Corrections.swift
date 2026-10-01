@@ -159,7 +159,7 @@ public enum Corrections {
     @discardableResult
     public static func add(_ rules: [String], to file: URL, paths: HostPaths = .current) throws -> ImportReceipt {
         let fm = FileManager.default
-        var receipt = ImportReceipt(direction: .fileRestore, destination: file.path)
+        var receipt = ImportReceipt(direction: .memoryEdit, destination: file.path)
         receipt.title = "Added \(rules.count) line\(rules.count == 1 ? "" : "s") to \(file.lastPathComponent)"
         receipt.itemCount = rules.count
         let existed = fm.fileExists(atPath: file.path)

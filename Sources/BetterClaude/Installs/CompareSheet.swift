@@ -31,7 +31,7 @@ struct CompareSheet: View {
                 HStack(spacing: 8) {
                     Toggle("Only differences", isOn: $onlyDifferences)
                         .labelsHidden()
-                        .toggleStyle(AccentSwitchStyle())
+                        .toggleStyle(.switch)
                     Text("Only differences").font(Theme.Font.body)
                 }
                 Spacer()
@@ -44,7 +44,6 @@ struct CompareSheet: View {
             .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
         }
         .frame(width: 760, height: 620)
-        .tint(Theme.accent)
         .task { await load() }
         .confirmationDialog("Copy this server?", isPresented: Binding(get: { copying != nil }, set: { if !$0 { copying = nil } }),
                             presenting: copying) { item in

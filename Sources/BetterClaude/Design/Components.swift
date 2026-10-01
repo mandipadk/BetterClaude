@@ -4,59 +4,18 @@ import SwiftUI
 
 // MARK: - Buttons
 
-/// Rectangular buttons for inside the window. Filled with the accent for the one thing to do
-/// next; a neutral fill for everything beside it. Sheets and onboarding use the capsule glass
-/// buttons in Glass.swift instead.
-struct ActionButtonStyle: ButtonStyle {
-    var prominent: Bool
-    var large = false
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(large ? .system(size: 14, weight: .semibold) : Theme.Font.headline)
-            .foregroundStyle(prominent ? AnyShapeStyle(.white)
-                             : AnyShapeStyle(isEnabled ? .primary : .tertiary))
-            .padding(.horizontal, large ? 22 : 14)
-            .frame(height: large ? 36 : 28)
-            .background {
-                if prominent {
-                    RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                        .fill(Theme.accentFill.opacity(isEnabled ? 1 : 0.4))
-                } else {
-                    RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                        .fill(Color(nsColor: .quaternaryLabelColor)
-                            .opacity(configuration.isPressed ? 0.9 : 0.55))
-                }
-            }
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .brightness(prominent && configuration.isPressed ? -0.06 : 0)
-            .animation(Theme.Motion.fade, value: configuration.isPressed)
-    }
-}
-
-extension ButtonStyle where Self == ActionButtonStyle {
-    static var primary: ActionButtonStyle { ActionButtonStyle(prominent: true) }
-    static var primaryLarge: ActionButtonStyle { ActionButtonStyle(prominent: true, large: true) }
-    static var secondary: ActionButtonStyle { ActionButtonStyle(prominent: false) }
-    static var secondaryLarge: ActionButtonStyle { ActionButtonStyle(prominent: false, large: true) }
-}
-
-/// A 28pt square icon button with a neutral fill: the ⋯ menu beside a page's primary action.
+/// The ⋯ menu beside a page's primary action, drawn by the system as a bordered button.
 struct MoreMenu<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
         Menu { content } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 28, height: 28)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.bordered)
         .menuIndicator(.hidden)
-        .frame(width: 28, height: 28)
-        .background(Color(nsColor: .quaternaryLabelColor).opacity(0.55),
-                    in: .rect(cornerRadius: Theme.Radius.control))
+        .fixedSize()
         .accessibilityLabel("More actions")
     }
 }
@@ -106,38 +65,11 @@ struct ExplainedToggle: View {
             Spacer(minLength: Theme.Space.l)
             Toggle(title, isOn: $isOn)
                 .labelsHidden()
-                .toggleStyle(AccentSwitchStyle())
+                .toggleStyle(.switch)
         }
         .contentShape(.rect)
         .onTapGesture { isOn.toggle() }
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// A switch in the accent. The system switch ignores the app's tint with the classic
-/// window chrome and draws its "on" state grey, which reads as off.
-struct AccentSwitchStyle: ToggleStyle {
-    @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func makeBody(configuration: Configuration) -> some View {
-        Button {
-            configuration.isOn.toggle()
-        } label: {
-            Capsule()
-                .fill(configuration.isOn ? Theme.accentFill : Color(nsColor: .quaternaryLabelColor))
-                .frame(width: 32, height: 18)
-                .overlay(alignment: configuration.isOn ? .trailing : .leading) {
-                    Circle()
-                        .fill(.white)
-                        .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
-                        .padding(2)
-                }
-                .opacity(isEnabled ? 1 : 0.5)
-                .animation(reduceMotion ? nil : Theme.Motion.snappy, value: configuration.isOn)
-        }
-        .buttonStyle(.plain)
-        .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label } }
     }
 }
 
@@ -305,34 +237,50 @@ struct GlyphTile: View {
 
 // MARK: - Brand mark
 
-/// Better Claude's mark: one stroke rising and splitting in two. Carrying a conversation to
-/// another install and forking it are the same move in different directions.
-struct ForkMark: View {
+/// Better Claude's mark: a heavy lowercase b whose square corner is a speech bubble's tail,
+/// with a smaller speech bubble for its counter. The same geometry as the app icon
+/// (Scripts/make-icon.swift).
+struct BMark: View {
     var size: CGFloat = 17
-    var tint: Color = Theme.accent
+    var tint: Color = Theme.accentBright
 
     var body: some View {
-        Canvas { context, canvas in
-            // The icon's geometry, normalised from its 1024 grid to the glyph's own box.
-            let s = canvas.width / 460
-            func p(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: (x + 230) * s, y: (730 - y) * s) }
-            var path = Path()
-            path.move(to: p(-172, 730))
-            path.addLine(to: p(0, 545))
-            path.addLine(to: p(0, 300))
-            path.move(to: p(172, 730))
-            path.addLine(to: p(0, 545))
-            context.stroke(path, with: .color(tint),
-                           style: StrokeStyle(lineWidth: 68 * s, lineCap: .round, lineJoin: .round))
-            for point in [p(-172, 730), p(172, 730), p(0, 300)] {
-                let r = 47 * s
-                context.fill(Path(ellipseIn: CGRect(x: point.x - r, y: point.y - r, width: r * 2, height: r * 2)),
-                             with: .color(tint))
+        BMarkShape()
+            .fill(tint, style: FillStyle(eoFill: true))
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
+    }
+}
+
+struct BMarkShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        // The glyph's box on the icon's 1024 grid, fitted to the rect.
+        let box = CGRect(x: 268, y: 242, width: 500, height: 546)
+        let scale = min(rect.width / box.width, rect.height / box.height)
+        let dx = rect.midX - box.midX * scale, dy = rect.midY - box.midY * scale
+        func p(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: x * scale + dx, y: y * scale + dy) }
+        var path = Path()
+        func arc(_ cx: Double, _ cy: Double, _ r: Double, _ from: Double, _ to: Double) {
+            let steps = 32
+            for i in 1...steps {
+                let t = (from + (to - from) * Double(i) / Double(steps)) * .pi / 180
+                path.addLine(to: p(cx + r * cos(t), cy + r * sin(t)))
             }
         }
-        .frame(width: size, height: size)
-        .padding(size * 0.02)
-        .accessibilityHidden(true)
+        path.move(to: p(268, 300))
+        arc(326, 300, 58, 180, 360)
+        let joinY = 560 - (228.0 * 228 - 156 * 156).squareRoot()
+        path.addLine(to: p(384, joinY))
+        arc(540, 560, 228, atan2(joinY - 560, 384 - 540) * 180 / .pi + 360, 450)
+        path.addLine(to: p(268, 788))
+        path.closeSubpath()
+        path.move(to: p(540, 474))
+        arc(540, 570, 96, 270, 450)
+        path.addLine(to: p(444, 666))
+        path.addLine(to: p(444, 570))
+        arc(540, 570, 96, 180, 270)
+        path.closeSubpath()
+        return path
     }
 }
 

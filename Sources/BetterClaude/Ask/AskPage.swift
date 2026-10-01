@@ -55,10 +55,10 @@ struct AskPage: View {
                 .disabled(ask.availability != .available)
             if working {
                 Button("Stop") { ask.cancel() }
-                    .buttonStyle(.secondary)
+                    .buttonStyle(.bordered)
             } else {
                 Button("Ask") { ask.ask(index: services.index.index) }
-                    .buttonStyle(.primary)
+                    .buttonStyle(.borderedProminent)
                     .disabled(ask.question.trimmingCharacters(in: .whitespaces).isEmpty
                               || ask.availability != .available || !services.index.isReady)
             }

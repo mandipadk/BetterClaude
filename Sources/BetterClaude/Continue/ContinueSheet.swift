@@ -29,7 +29,6 @@ struct ContinueSheet: View {
             actionBar
         }
         .frame(width: 660, height: 580)
-        .tint(Theme.accent)
         .onDisappear { model.cleanUp() }
     }
 
@@ -165,7 +164,7 @@ private struct ChooseStep: View {
                         }
                     }
                     Button("Choose a Folder…") { chooseFolder() }
-                        .buttonStyle(.secondary)
+                        .buttonStyle(.bordered)
                 }
 
                 DisclosureGroup(isExpanded: $showOptions) {
@@ -284,11 +283,11 @@ private struct InstallTile: View {
             .padding(.vertical, 12)
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity)
-            .background(isSelected ? Theme.accent.opacity(0.14) : Theme.subtleFill,
+            .background(Theme.groupFill,
                         in: .rect(cornerRadius: Theme.Radius.panel, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
-                    .strokeBorder(isSelected ? Theme.accent : .clear, lineWidth: 2)
+                    .strokeBorder(isSelected ? Theme.accentFill : .clear, lineWidth: 2)
             }
             .overlay(alignment: .topTrailing) {
                 if isSelected {
@@ -334,7 +333,7 @@ private struct ProjectRow: View {
             }
             .padding(.horizontal, 10)
             .frame(height: 40)
-            .background(isSelected ? Theme.accent.opacity(0.12) : .clear,
+            .background(isSelected ? Color.primary.opacity(0.08) : .clear,
                         in: .rect(cornerRadius: Theme.Radius.control))
             .contentShape(.rect)
         }
@@ -470,7 +469,7 @@ private struct WorkingStep: View {
 
     var body: some View {
         VStack(spacing: Theme.Space.l) {
-            ForkMark(size: 64)
+            BMark(size: 64)
                 .scaleEffect(pulse ? 1.06 : 0.96)
                 .opacity(pulse ? 1 : 0.7)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever(), value: pulse)
@@ -558,7 +557,7 @@ private struct Passage: View {
                     .lineLimit(1)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .glassCapsule()
+                    .background(Theme.groupFill, in: .capsule)
                     .frame(maxWidth: 220)
                     .offset(x: arrived || reduceMotion ? 0 : -24)
                     .opacity(arrived || reduceMotion ? 1 : 0)

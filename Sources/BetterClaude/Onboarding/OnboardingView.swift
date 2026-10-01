@@ -34,8 +34,6 @@ struct OnboardingView: View {
             footer
         }
         .frame(width: 780, height: 540)
-        .background(WindowGlassBackground(material: .sidebar))
-        .tint(Theme.accent)
         .animation(reduceMotion ? Theme.Motion.fade : Theme.Motion.smooth, value: page)
         .onAppear {
             #if DEBUG
@@ -199,10 +197,9 @@ private struct Promise: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: symbol)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Theme.accent)
-                .frame(width: 34, height: 34)
-                .background(Theme.accent.opacity(0.12), in: .rect(cornerRadius: 9))
+                .font(.system(size: 17))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 22)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(Theme.Font.headline)
                 Text(detail)
@@ -214,7 +211,7 @@ private struct Promise: View {
         }
         .padding(16)
         .frame(height: 104, alignment: .top)
-        .glassSurface(cornerRadius: 18)
+        .groupSurface(cornerRadius: 18)
     }
 }
 
@@ -245,7 +242,7 @@ private struct SetupPage: View {
             }
             .padding(.horizontal, 20)
             .frame(width: 460)
-            .glassSurface(cornerRadius: 18)
+            .groupSurface(cornerRadius: 18)
         }
     }
 }

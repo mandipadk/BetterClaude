@@ -26,7 +26,16 @@ struct BackupSheet: View {
     @State private var result: String?
     @State private var failure: String?
 
+    /// Seconds since 1970, as a Double, so `@AppStorage` can read it.
     static let lastBackupKey = "lastBackupDate"
+
+    /// Versions before 0.28 saved a `Date` here, which `@AppStorage` can't read as a number,
+    /// so the Kept page always said "Not backed up yet". Rewrites it as a number once.
+    static func migrateLastBackup(_ defaults: UserDefaults = .standard) {
+        if let date = defaults.object(forKey: lastBackupKey) as? Date {
+            defaults.set(date.timeIntervalSince1970, forKey: lastBackupKey)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
@@ -45,7 +54,7 @@ struct BackupSheet: View {
 
             if let result {
                 Text(result).font(Theme.Font.body)
-                HStack { Spacer(); Button("Done") { onClose() }.buttonStyle(.primary).keyboardShortcut(.defaultAction) }
+                HStack { Spacer(); Button("Done") { onClose() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction) }
             } else {
                 VStack(alignment: .leading, spacing: Theme.Space.s) {
                     SecureField("Password", text: $password)
@@ -62,15 +71,15 @@ struct BackupSheet: View {
                 if isBackUp {
                     HStack {
                         FactRow(label: "Saves to", value: destinationLabel, labelWidth: 70)
-                        Button("Change…") { chooseDestination() }.buttonStyle(.secondary)
+                        Button("Change…") { chooseDestination() }.buttonStyle(.bordered)
                     }
                 }
                 HStack {
-                    Button("Cancel") { onClose() }.buttonStyle(.secondary).keyboardShortcut(.cancelAction)
+                    Button("Cancel") { onClose() }.buttonStyle(.bordered).keyboardShortcut(.cancelAction)
                     Spacer()
                     if working { ProgressView().controlSize(.small) }
                     Button(isBackUp ? "Back Up" : "Restore") { run() }
-                        .buttonStyle(.primary)
+                        .buttonStyle(.borderedProminent)
                         .keyboardShortcut(.defaultAction)
                         .disabled(!canRun || working)
                 }
@@ -144,7 +153,7 @@ struct BackupSheet: View {
             case .success(let report):
                 let size = report.bytes.fileSize
                 if isBackUp {
-                    UserDefaults.standard.set(Date(), forKey: Self.lastBackupKey)
+                    UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastBackupKey)
                     result = "Backed up \(report.files) files, \(size) before compression, to \(destinationLabel)."
                 } else {
                     result = report.files == 0

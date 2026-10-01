@@ -58,7 +58,7 @@ public struct MemoryHealth: Sendable, Equatable {
     /// receipt: Undo in History puts the index back as it was.
     @discardableResult
     public func link(_ notes: [URL], paths: HostPaths = .current) throws -> ImportReceipt {
-        var receipt = ImportReceipt(direction: .fileRestore, destination: index.path)
+        var receipt = ImportReceipt(direction: .memoryEdit, destination: index.path)
         receipt.title = "Linked \(notes.count) note\(notes.count == 1 ? "" : "s") from MEMORY.md"
         receipt.itemCount = notes.count
         let saved = try FileProvenance.saveCurrent(index, paths: paths)

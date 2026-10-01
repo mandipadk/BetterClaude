@@ -30,11 +30,6 @@ struct ForkSheet: View {
         let total = reader.readable?.messageCount ?? kept
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             HStack(spacing: Theme.Space.m) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(Theme.accent)
-                    .frame(width: 40, height: 40)
-                    .background(Theme.accent.opacity(0.12), in: .rect(cornerRadius: Theme.Radius.tile))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Fork from here").font(Theme.Font.title)
                     Text(kept == total
@@ -75,7 +70,6 @@ struct ForkSheet: View {
         }
         .padding(24)
         .frame(width: 460)
-        .tint(Theme.accent)
         .onAppear {
             title = "\(reader.conversation?.title ?? "Conversation") (fork)"
         }

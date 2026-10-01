@@ -47,7 +47,7 @@ struct HistoryPage: View {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("History").font(Theme.Font.display)
-                    Text("Every conversation Better Claude has copied or forked, and a way to take each back.")
+                    Text("Everything Better Claude has changed on this Mac, and a way to take each back.")
                         .font(Theme.Font.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -145,7 +145,7 @@ struct HistoryRow: View {
                     .foregroundStyle(.secondary)
             } else {
                 Button("Undo…", action: onUndo)
-                    .buttonStyle(.secondary)
+                    .buttonStyle(.bordered)
                     .opacity(hovering ? 1 : 0.8)
             }
         }
@@ -162,6 +162,7 @@ struct HistoryRow: View {
         case .fileRestore: return "clock.arrow.circlepath"
         case .skill: return "wand.and.stars"
         case .fleet: return "square.on.square"
+        case .memoryEdit: return "text.badge.plus"
         default: return "arrow.right.circle"
         }
     }
@@ -174,6 +175,7 @@ struct HistoryRow: View {
         case .skill: return "Added to Claude Code's skills, \(when)"
         case .fleet: return "Copied into \(receipt.destination), \(when)"
         case .restore: return "Put back where Claude Code finds it, \(when)"
+        case .memoryEdit: return "Added to \(URL(fileURLWithPath: receipt.destination).lastPathComponent), \(when)"
         default: return "Copied into \(Self.place(of: receipt)), \(when)"
         }
     }

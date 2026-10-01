@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        BackupSheet.migrateLastBackup()
         NSAppleEventManager.shared().setEventHandler(
             self, andSelector: #selector(handleQuit(_:reply:)),
             forEventClass: AEEventClass(kCoreEventClass), andEventID: AEEventID(kAEQuitApplication))

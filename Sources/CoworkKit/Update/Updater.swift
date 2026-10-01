@@ -223,6 +223,10 @@ public enum Updater {
         guard info?["CFBundleShortVersionString"] as? String == update.version,
               bundleIdentifier == nil || info?["CFBundleIdentifier"] as? String == bundleIdentifier
         else { throw UpdateError.wrongApplication }
+        // An app this Mac can't open would replace one that works.
+        if let required = info?["LSMinimumSystemVersion"] as? String, !systemMeets(required) {
+            throw UpdateError.systemTooOld(required: required)
+        }
         return app
     }
 

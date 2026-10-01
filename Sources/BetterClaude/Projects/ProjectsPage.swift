@@ -151,7 +151,7 @@ private struct ProjectDetailView: View {
                     Button("Show in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: summary.path)])
                     }
-                    .buttonStyle(.secondary)
+                    .buttonStyle(.bordered)
                     .disabled(!FileManager.default.fileExists(atPath: summary.path))
                 }
                 .padding(.bottom, Theme.Space.l)
@@ -264,7 +264,7 @@ private struct ProjectDetailView: View {
                                     Text(url.lastPathComponent == "memory" ? "Claude Code's memory for this project" : relative(url.path))
                                         .font(Theme.Font.body).lineLimit(1).truncationMode(.middle)
                                     Spacer()
-                                    Button("Open") { NSWorkspace.shared.open(url) }.buttonStyle(.secondary)
+                                    Button("Open") { NSWorkspace.shared.open(url) }.buttonStyle(.bordered)
                                 }
                             }
                         }
@@ -357,7 +357,7 @@ private struct CorrectionsSection: View {
                         HStack {
                             Spacer()
                             Button("Add \(model.chosen.count) to CLAUDE.md…") { confirming = true }
-                                .buttonStyle(.primary)
+                                .buttonStyle(.borderedProminent)
                                 .disabled(model.chosen.isEmpty)
                         }
                     }
@@ -393,8 +393,7 @@ private struct DecisionRow: View {
                     services.destination = .conversations
                     services.selectedConversationID = decision.conversationID
                 } label: {
-                    (Text("\(who), in ").foregroundStyle(.secondary) + Text(decision.conversationTitle).foregroundStyle(Theme.accent)
-                     + Text(decision.date.map { ", \($0.listStamp.lowercasedIfWordLocal)" } ?? "").foregroundStyle(.secondary))
+                    Text("\(Text("\(who), in ").foregroundStyle(.secondary))\(Text(decision.conversationTitle).foregroundStyle(Theme.accent))\(Text(decision.date.map { ", \($0.listStamp.lowercasedIfWordLocal)" } ?? "").foregroundStyle(.secondary))")
                         .font(Theme.Font.caption)
                         .lineLimit(1)
                 }

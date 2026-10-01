@@ -171,10 +171,19 @@ final class PulseNotifier: NSObject, UNUserNotificationCenterDelegate {
     static let limitsKey = "notifyLimits"
     static let contextKey = "notifyContext"
     static let cacheKey = "notifyCache"
+    /// Their own switches since 0.28. Until someone sets them, they follow the switch that
+    /// used to control them, so nobody's notifications change on update.
+    static let driftKey = "notifyDrift"
+    static let jobsKey = "notifyJobs"
+
+    static func setting(_ key: String, fallback: String) -> Bool {
+        let defaults = UserDefaults.standard
+        return defaults.object(forKey: key) as? Bool ?? defaults.object(forKey: fallback) as? Bool ?? true
+    }
 
     /// A background job finished, failed, or stopped without finishing.
     func post(job: Unattended.Job) {
-        guard Self.available, isEnabled(.finished) else { return }
+        guard Self.available, Self.setting(Self.jobsKey, fallback: Self.finishedKey) else { return }
         let content = UNMutableNotificationContent()
         switch job.outcome {
         case .finished: content.title = "\(job.name) finished"
@@ -209,7 +218,7 @@ final class PulseNotifier: NSObject, UNUserNotificationCenterDelegate {
 
     /// A running session's replies switched model with nothing on record asking for it.
     func post(drift change: ModelDrift.Switch, project: String) {
-        guard Self.available, UserDefaults.standard.object(forKey: Self.contextKey) as? Bool ?? true else { return }
+        guard Self.available, Self.setting(Self.driftKey, fallback: Self.contextKey) else { return }
         let content = UNMutableNotificationContent()
         content.title = "\(project) switched to \(humanModelName(change.to)) on its own"
         content.body = "Its replies came from \(humanModelName(change.from)) until now, and nothing on record asked for the change."

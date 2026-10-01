@@ -49,7 +49,7 @@ struct SettingsView: View {
                     }
                     Spacer()
                     Button("Show Welcome") { onboardingCompleted = false }
-                        .buttonStyle(.secondary)
+                        .buttonStyle(.bordered)
                 }
             }
             Section {
@@ -67,7 +67,7 @@ struct SettingsView: View {
                     Button("Show Its Data") {
                         NSWorkspace.shared.activateFileViewerSelecting([HostPaths.current.betterClaudeSupport])
                     }
-                    .buttonStyle(.secondary)
+                    .buttonStyle(.bordered)
                 }
             } footer: {
                 Text("Better Claude reads what Claude keeps on this Mac. Nothing leaves it, apart from checking for updates when you ask.")
@@ -78,7 +78,6 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 540)
         .fixedSize(horizontal: false, vertical: true)
-        .tint(Theme.accent)
     }
 
     private func setOpenAtLogin(_ on: Bool) {
@@ -103,7 +102,7 @@ private struct APIKeyRow: View {
             if isSet {
                 Text("A key is saved.").font(Theme.Font.body)
                 Spacer()
-                Button("Remove") { APIKeyStore.remove(); isSet = false }.buttonStyle(.secondary)
+                Button("Remove") { APIKeyStore.remove(); isSet = false }.buttonStyle(.bordered)
             } else {
                 SecureField("sk-ant-…", text: $key).textFieldStyle(.roundedBorder)
                 Button("Save") {
@@ -116,7 +115,7 @@ private struct APIKeyRow: View {
                         failure = "Couldn't save it to the Keychain."
                     }
                 }
-                .buttonStyle(.secondary)
+                .buttonStyle(.bordered)
                 .disabled(key.trimmingCharacters(in: .whitespaces).count < 20)
             }
         }
@@ -126,23 +125,13 @@ private struct APIKeyRow: View {
 
 /// The fork mark as a template image, for the menu bar.
 enum MenuBarIcon {
+    /// The b as a template image, so the menu bar tints it like every other item.
     static let image: NSImage = {
         let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { rect in
-            let s = rect.width / 520
-            func p(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: (x + 260) * s, y: (760 - y) * s) }
-            let path = NSBezierPath()
-            path.lineWidth = 72 * s
-            path.lineCapStyle = .round
-            path.lineJoinStyle = .round
-            path.move(to: p(-172, 730)); path.line(to: p(0, 545)); path.line(to: p(0, 300))
-            path.move(to: p(172, 730)); path.line(to: p(0, 545))
-            NSColor.black.setStroke()
-            path.stroke()
-            NSColor.black.setFill()
-            for point in [p(-172, 730), p(172, 730), p(0, 300)] {
-                let r = 52 * s
-                NSBezierPath(ovalIn: NSRect(x: point.x - r, y: point.y - r, width: r * 2, height: r * 2)).fill()
-            }
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            context.addPath(BMarkShape().path(in: rect.insetBy(dx: 1.5, dy: 1)).cgPath)
+            context.setFillColor(NSColor.black.cgColor)
+            context.fillPath(using: .evenOdd)
             return true
         }
         image.isTemplate = true

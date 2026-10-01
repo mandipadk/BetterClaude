@@ -12,6 +12,14 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.28.0": [
+            Item(symbol: "macwindow", title: "A new look",
+                 detail: "Better Claude now uses macOS's own design: its toolbar, sidebar, buttons and switches are the system's, in a new accent, Lagoon. Status is said in words, never with tinted panels."),
+            Item(symbol: "b.square", title: "A new icon",
+                 detail: "A lowercase b whose bowl is a speech bubble, with a smaller one inside. Drawn for macOS's glass, in light, dark, clear and tinted."),
+            Item(symbol: "checkmark.circle", title: "Small things, put right",
+                 detail: "Kept shows when you last backed up. Model changes and background jobs have their own alert switches. Removing imported history and putting back a kept conversation ask first."),
+        ],
         "0.27.0": [
             Item(symbol: "chart.bar.xaxis", title: "Who was working when",
                  detail: "A conversation's sub-agents open with a timeline: the conversation and each sub-agent as a lane, nested ones under their parent, so a run that fanned out finally makes sense."),
@@ -210,10 +218,9 @@ struct WhatsNewSheet: View {
                 ForEach(Array((ReleaseHighlights.items(for: version) ?? []).enumerated()), id: \.element.id) { index, item in
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: item.symbol)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(Theme.accent)
-                            .frame(width: 34, height: 34)
-                            .background(Theme.accent.opacity(0.12), in: .rect(cornerRadius: 9))
+                            .font(.system(size: 15))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 22, height: 20)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item.title).font(Theme.Font.headline)
                             Text(item.detail)
@@ -235,8 +242,6 @@ struct WhatsNewSheet: View {
         }
         .padding(32)
         .frame(width: 500, height: 560)
-        .background(WindowGlassBackground(material: .sidebar))
-        .tint(Theme.accent)
         .onAppear { shown = true }
     }
 }

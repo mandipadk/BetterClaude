@@ -1,120 +1,147 @@
 import AppKit
 import Foundation
 
-// Draws the app icon and writes a full .iconset.
+// Draws the app icon from one geometry.
 //
-// Generated rather than hand-drawn so the mark is identical at every size and the palette
-// stays tied to the one in Theme.swift. The glyph is a fork: a single stroke rising and
-// splitting in two — the app's whole argument in one shape, since transferring a
-// conversation and branching one are the same move made in different directions.
+//   make-icon <AppIcon.icon>               an Icon Composer bundle, compiled by actool
+//   make-icon --accent <Assets.xcassets>   the app's accent colour, Lagoon, for the same pass
+//   make-icon --png <file.png> <size>      a flat rendering, for the website and touch icon
 //
-// Flat, no gradient and no bevel. That is a deliberate match for the app's own surface
-// rather than an omission.
+// The mark is a heavy lowercase b. Its square bottom-left corner is a speech bubble's tail,
+// and its counter is a smaller speech bubble. Generated rather than drawn by hand, so the
+// icon, the in-app mark (BMark in Components.swift) and the website never drift apart.
+//
+// Nothing is painted for depth: the system adds the glass, highlights and shadow to the
+// Icon Composer layers in every appearance (default, dark, clear and tinted).
 
 let canvas = 1024.0
-/// macOS icons leave a margin and use a superellipse; 824 in 1024 with a 185pt radius is the
-/// proportion Apple's own templates use.
-let plateInset = 100.0
-let plateSize = canvas - plateInset * 2
-let plateRadius = 185.0
+/// The glyph's own box on the 1024 grid, and how much it is enlarged about the centre.
+let glyphCentre = (x: 518.0, y: 515.0)
+let glyphScale = 1.1
 
-let plateColour = NSColor(srgbRed: 0.118, green: 0.122, blue: 0.133, alpha: 1)   // #1E1F22, Parallex's graphite
-let markColour  = NSColor(srgbRed: 0.180, green: 0.698, blue: 0.494, alpha: 1)   // dark-mode jade, #2EB27E
+let backgroundSRGB = (0.047, 0.106, 0.141)   // #0C1B24, deep ink
+let glyphHex = "#35C8F0"                      // Lagoon, bright
 
-func drawIcon(size: Double) -> NSBitmapImageRep {
-    let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
-                               pixelsWide: Int(size), pixelsHigh: Int(size),
-                               bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
-                               isPlanar: false, colorSpaceName: .deviceRGB,
-                               bytesPerRow: 0, bitsPerPixel: 0)!
+/// The b, in SVG path syntax on a 1024 grid with y pointing down.
+let glyphPath = "M268 300 a58 58 0 0 1 116 0 V 388 A 228 228 0 1 1 540 788 H 268 Z " +
+                "M540 474 a96 96 0 1 1 0 192 H 444 V 570 a96 96 0 0 1 96 -96 Z"
+
+let transform = "translate(512 512) scale(\(glyphScale)) translate(\(-glyphCentre.x) \(-glyphCentre.y))"
+
+func writeIconBundle(to bundle: URL) throws {
+    let fm = FileManager.default
+    try? fm.removeItem(at: bundle)
+    try fm.createDirectory(at: bundle.appendingPathComponent("Assets"), withIntermediateDirectories: true)
+    let svg = """
+    <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">\
+    <path transform="\(transform)" fill-rule="evenodd" fill="\(glyphHex)" d="\(glyphPath)"/></svg>
+    """
+    try Data(svg.utf8).write(to: bundle.appendingPathComponent("Assets/b.svg"))
+    let (r, g, b) = backgroundSRGB
+    let json = """
+    {
+      "fill" : { "solid" : "srgb:\(String(format: "%.5f,%.5f,%.5f", r, g, b)),1.00000" },
+      "groups" : [
+        {
+          "layers" : [ { "image-name" : "b.svg", "name" : "b" } ],
+          "shadow" : { "kind" : "neutral", "opacity" : 0.5 },
+          "translucency" : { "enabled" : true, "value" : 0.4 }
+        }
+      ],
+      "supported-platforms" : { "squares" : [ "macOS" ] }
+    }
+    """
+    try Data(json.utf8).write(to: bundle.appendingPathComponent("icon.json"))
+}
+
+/// A flat rendering on the macOS icon grid (824 of 1024, continuous corners).
+func writePNG(to file: URL, size: Int) throws {
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size,
+                               bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                               colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
     let context = NSGraphicsContext.current!.cgContext
-    let scale = size / canvas
-    context.scaleBy(x: scale, y: scale)
-    context.setShouldAntialias(true)
-
-    // Plate
-    let plate = NSBezierPath(roundedRect: NSRect(x: plateInset, y: plateInset,
-                                                 width: plateSize, height: plateSize),
-                             xRadius: plateRadius, yRadius: plateRadius)
-    plateColour.setFill()
-    plate.fill()
-    // The same faint inner edge as Parallex's icon, so the plate reads as an object on a
-    // dark Dock rather than a hole in it.
-    let edge = NSBezierPath(roundedRect: NSRect(x: plateInset + 7, y: plateInset + 7,
-                                                width: plateSize - 14, height: plateSize - 14),
-                            xRadius: plateRadius - 7, yRadius: plateRadius - 7)
-    edge.lineWidth = 14
-    NSColor(white: 1, alpha: 0.07).setStroke()
-    edge.stroke()
-
-    // Fork. Straight arms with a round join rather than curves: two curves meeting at the
-    // split overlapped their own end caps and read as a lump at small sizes, where this
-    // glyph has to survive at 16pt.
-    let centreX = canvas / 2
-    let stemBottom = 300.0
-    let split = 545.0
-    let armTop = 730.0
-    let armSpread = 172.0
-    let stroke = 68.0
-    let node = 47.0
-
-    markColour.setStroke()
-    markColour.setFill()
-
-    // Left arm and the stem are one continuous path so the join is mitred once, not twice.
-    let spine = NSBezierPath()
-    spine.lineWidth = stroke
-    spine.lineCapStyle = .round
-    spine.lineJoinStyle = .round
-    spine.move(to: NSPoint(x: centreX - armSpread, y: armTop))
-    spine.line(to: NSPoint(x: centreX, y: split))
-    spine.line(to: NSPoint(x: centreX, y: stemBottom))
-    spine.stroke()
-
-    let rightArm = NSBezierPath()
-    rightArm.lineWidth = stroke
-    rightArm.lineCapStyle = .round
-    rightArm.lineJoinStyle = .round
-    rightArm.move(to: NSPoint(x: centreX + armSpread, y: armTop))
-    rightArm.line(to: NSPoint(x: centreX, y: split))
-    rightArm.stroke()
-
-    // Terminals: two destinations and one origin.
-    for point in [NSPoint(x: centreX - armSpread, y: armTop),
-                  NSPoint(x: centreX + armSpread, y: armTop),
-                  NSPoint(x: centreX, y: stemBottom)] {
-        NSBezierPath(ovalIn: NSRect(x: point.x - node, y: point.y - node,
-                                    width: node * 2, height: node * 2)).fill()
-    }
-
+    let scale = Double(size) / canvas
+    // Flip to the SVG's y-down grid.
+    context.translateBy(x: 0, y: CGFloat(size))
+    context.scaleBy(x: scale, y: -scale)
+    let (r, g, b) = backgroundSRGB
+    NSColor(srgbRed: r, green: g, blue: b, alpha: 1).setFill()
+    NSBezierPath(roundedRect: NSRect(x: 100, y: 100, width: 824, height: 824), xRadius: 185, yRadius: 185).fill()
+    context.translateBy(x: 512, y: 512)
+    context.scaleBy(x: glyphScale, y: glyphScale)
+    context.translateBy(x: -glyphCentre.x, y: -glyphCentre.y)
+    context.addPath(BPath.make())
+    context.setFillColor(NSColor(srgbRed: 0.208, green: 0.784, blue: 0.941, alpha: 1).cgColor)
+    context.fillPath(using: .evenOdd)
     NSGraphicsContext.restoreGraphicsState()
-    return rep
+    try rep.representation(using: .png, properties: [:])!.write(to: file)
 }
 
-let outputDirectory = CommandLine.arguments.count > 1
-    ? CommandLine.arguments[1]
-    : FileManager.default.currentDirectoryPath + "/dist/BetterClaude.iconset"
-try? FileManager.default.createDirectory(atPath: outputDirectory,
-                                         withIntermediateDirectories: true)
-
-// The exact set `iconutil` expects.
-let variants: [(name: String, pixels: Double)] = [
-    ("icon_16x16", 16), ("icon_16x16@2x", 32),
-    ("icon_32x32", 32), ("icon_32x32@2x", 64),
-    ("icon_128x128", 128), ("icon_128x128@2x", 256),
-    ("icon_256x256", 256), ("icon_256x256@2x", 512),
-    ("icon_512x512", 512), ("icon_512x512@2x", 1024),
-]
-
-for variant in variants {
-    let rep = drawIcon(size: variant.pixels)
-    guard let data = rep.representation(using: .png, properties: [:]) else {
-        FileHandle.standardError.write(Data("could not encode \(variant.name)\n".utf8))
-        exit(1)
+/// The same b as `glyphPath`, as a CGPath (y down), for the flat rendering.
+enum BPath {
+    static func arc(_ path: CGMutablePath, cx: Double, cy: Double, r: Double, from: Double, to: Double) {
+        let steps = 64
+        for i in 1...steps {
+            let t = (from + (to - from) * Double(i) / Double(steps)) * .pi / 180
+            path.addLine(to: CGPoint(x: cx + r * cos(t), y: cy + r * sin(t)))
+        }
     }
-    let url = URL(fileURLWithPath: outputDirectory).appendingPathComponent("\(variant.name).png")
-    try data.write(to: url)
+
+    static func make() -> CGPath {
+        let path = CGMutablePath()
+        // Stem with a round top, then the bowl, then the square tail.
+        path.move(to: CGPoint(x: 268, y: 300))
+        arc(path, cx: 326, cy: 300, r: 58, from: 180, to: 360)
+        let joinY = 560 - (228.0 * 228 - 156 * 156).squareRoot()
+        path.addLine(to: CGPoint(x: 384, y: joinY))
+        let start = atan2(joinY - 560, 384 - 540) * 180 / .pi + 360
+        arc(path, cx: 540, cy: 560, r: 228, from: start, to: 450)
+        path.addLine(to: CGPoint(x: 268, y: 788))
+        path.closeSubpath()
+        // The counter: a bubble with its own square tail.
+        path.move(to: CGPoint(x: 540, y: 474))
+        arc(path, cx: 540, cy: 570, r: 96, from: 270, to: 450)
+        path.addLine(to: CGPoint(x: 444, y: 666))
+        path.addLine(to: CGPoint(x: 444, y: 570))
+        arc(path, cx: 540, cy: 570, r: 96, from: 180, to: 270)
+        path.closeSubpath()
+        return path
+    }
 }
-print("wrote \(variants.count) sizes to \(outputDirectory)")
+
+/// The accent macOS uses for the sidebar, selection and prominent buttons. The same values as
+/// Theme.accentFill: deep enough to carry white labels.
+func writeAccentCatalog(to catalog: URL) throws {
+    let set = catalog.appendingPathComponent("AccentColor.colorset")
+    try? FileManager.default.removeItem(at: catalog)
+    try FileManager.default.createDirectory(at: set, withIntermediateDirectories: true)
+    try Data(#"{ "info" : { "author" : "xcode", "version" : 1 } }"#.utf8).write(to: catalog.appendingPathComponent("Contents.json"))
+    func colour(_ r: String, _ g: String, _ b: String) -> String {
+        #"{ "color-space" : "srgb", "components" : { "alpha" : "1.000", "red" : "\#(r)", "green" : "\#(g)", "blue" : "\#(b)" } }"#
+    }
+    let json = """
+    {
+      "colors" : [
+        { "idiom" : "universal", "color" : \(colour("0.043", "0.498", "0.651")) },
+        { "idiom" : "universal", "appearances" : [ { "appearance" : "luminosity", "value" : "dark" } ],
+          "color" : \(colour("0.086", "0.561", "0.714")) }
+      ],
+      "info" : { "author" : "xcode", "version" : 1 }
+    }
+    """
+    try Data(json.utf8).write(to: set.appendingPathComponent("Contents.json"))
+}
+
+let arguments = CommandLine.arguments
+if arguments.count == 3, arguments[1] == "--accent" {
+    try writeAccentCatalog(to: URL(fileURLWithPath: arguments[2]))
+} else if arguments.count == 4, arguments[1] == "--png", let size = Int(arguments[3]) {
+    try writePNG(to: URL(fileURLWithPath: arguments[2]), size: size)
+} else if arguments.count == 2 {
+    try writeIconBundle(to: URL(fileURLWithPath: arguments[1]))
+} else {
+    FileHandle.standardError.write(Data("usage: make-icon <AppIcon.icon> | --png <file.png> <size>\n".utf8))
+    exit(2)
+}

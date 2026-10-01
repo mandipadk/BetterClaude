@@ -25,6 +25,7 @@ struct MemoryHealthTests {
 
             let before = try Data(contentsOf: folder.appendingPathComponent("MEMORY.md"))
             let receipt = try health.link(health.unlinked, paths: sample.paths)
+            #expect(receipt.direction == .memoryEdit)
             let after = try #require(MemoryHealth.check(folder: folder))
             #expect(after.unlinked.isEmpty)
             let text = try String(contentsOf: folder.appendingPathComponent("MEMORY.md"), encoding: .utf8)

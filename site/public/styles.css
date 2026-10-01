@@ -1,4 +1,4 @@
-/* Better Claude's page. System fonts, one accent (jade), nothing loaded from anywhere else. */
+/* Better Claude's page. System fonts, one accent (Lagoon), nothing loaded from anywhere else. */
 
 :root {
   --ground: #f6f6f4;
@@ -8,7 +8,7 @@
   --faint: #8a8d92;
   --rule: #e3e3df;
   --fill: #ececea;
-  --accent: #0b7d59;
+  --accent: #0b7fa6;
   --accent-ink: #ffffff;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 24px 60px -24px rgb(0 0 0 / 0.28);
   color-scheme: light;
@@ -23,7 +23,7 @@
     --faint: #75787d;
     --rule: #2c2e31;
     --fill: #26282b;
-    --accent: #2eb27e;
+    --accent: #168fb6;
     --accent-ink: #ffffff;
     --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 30px 70px -28px rgb(0 0 0 / 0.8);
     color-scheme: dark;

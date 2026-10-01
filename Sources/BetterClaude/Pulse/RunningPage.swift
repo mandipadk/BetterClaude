@@ -9,6 +9,8 @@ struct RunningPage: View {
     @AppStorage(PulseNotifier.finishedKey) private var notifyFinished = true
     @AppStorage(PulseNotifier.contextKey) private var notifyContext = true
     @AppStorage(PulseNotifier.cacheKey) private var notifyCache = true
+    /// Redraws the two switches that read UserDefaults directly.
+    @State private var jobsTick = false
     @State private var hookError: String?
 
     var body: some View {
@@ -33,15 +35,24 @@ struct RunningPage: View {
 
                 DetailSection(title: "Alerts") {
                     VStack(alignment: .leading, spacing: Theme.Space.l) {
+                        let _ = jobsTick
                         ExplainedToggle(title: "When Claude needs you",
                                         detail: "A permission to grant or a question to answer. Not shown while you're already in the app it's running in.",
                                         isOn: $notifyNeedsYou)
                         ExplainedToggle(title: "When a long turn finishes",
                                         detail: "After Claude has been working for a minute or more.",
                                         isOn: $notifyFinished)
+                        ExplainedToggle(title: "When a background job ends",
+                                        detail: "A job started with claude --bg or /fork finishes, fails, or stops without finishing.",
+                                        isOn: Binding(get: { PulseNotifier.setting(PulseNotifier.jobsKey, fallback: PulseNotifier.finishedKey) },
+                                                      set: { UserDefaults.standard.set($0, forKey: PulseNotifier.jobsKey); jobsTick.toggle() }))
                         ExplainedToggle(title: "When a session's context is filling up",
                                         detail: "At 75% and 90% of the context window, once each until it compacts. Every reply rereads the whole conversation, so this is when compacting or a handoff saves the most.",
                                         isOn: $notifyContext)
+                        ExplainedToggle(title: "When a model changes on its own",
+                                        detail: "A running session's replies come from a different model with nothing on record asking for it.",
+                                        isOn: Binding(get: { PulseNotifier.setting(PulseNotifier.driftKey, fallback: PulseNotifier.contextKey) },
+                                                      set: { UserDefaults.standard.set($0, forKey: PulseNotifier.driftKey); jobsTick.toggle() }))
                         ExplainedToggle(title: "Before a waiting session's cache expires",
                                         detail: "Two minutes before, for conversations over 80K tokens. After that, your next reply there writes the whole conversation into the cache again.",
                                         isOn: $notifyCache)
@@ -142,7 +153,7 @@ struct LiveSessionRow: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(stateWord)
                     .font(Theme.Font.callout.weight(session.state == .needsYou ? .semibold : .regular))
-                    .foregroundStyle(session.state == .needsYou ? Theme.accent : .secondary)
+                    .foregroundStyle(session.state == .needsYou ? Theme.attention : .secondary)
                 TimelineView(.periodic(from: .now, by: 30)) { _ in
                     Text(elapsed)
                         .font(Theme.Font.caption)
@@ -264,7 +275,7 @@ private struct UnattendedSection: View {
                     services.destination = .conversations
                     services.selectedConversationID = conversation.id
                 }
-                .buttonStyle(.secondary)
+                .buttonStyle(.bordered)
             }
         }
     }

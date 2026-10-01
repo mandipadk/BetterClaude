@@ -153,8 +153,6 @@ struct UpdateSheet: View {
         .multilineTextAlignment(.center)
         .padding(28)
         .frame(width: 540, height: 460)
-        .background(WindowGlassBackground(material: .sidebar))
-        .tint(Theme.accent)
     }
 
     private var symbol: String {

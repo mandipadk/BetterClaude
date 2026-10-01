@@ -25,24 +25,9 @@ struct MainWindow: View {
         } detail: {
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // Content never scrolls up under the toolbar's title and controls.
-                .clipped()
-                .background(WindowGlassBackground(material: .sidebar).ignoresSafeArea())
                 .navigationTitle("")
         }
-        .toolbarBackground(.hidden, for: .windowToolbar)
         .toolbar {
-            ToolbarItem(placement: .navigation) {
-                HStack(spacing: 7) {
-                    ForkMark(size: 16)
-                    Text("Better Claude")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.leading, 6)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Better Claude")
-            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     services.refresh()
@@ -54,7 +39,7 @@ struct MainWindow: View {
             }
         }
         .searchable(text: $services.query, placement: .toolbar, prompt: "Search conversations")
-        .modifier(SearchFocus(focused: $searchFocused))
+        .searchFocused($searchFocused)
         .background {
             // ⌘F finds conversations from anywhere in the window.
             Button("") {
@@ -71,7 +56,6 @@ struct MainWindow: View {
                 services.destination = .conversations
             }
         }
-        .tint(Theme.accent)
         .task {
             if !services.hasLoaded { services.refresh() }
             // After the window has its toolbar: a sheet raised during the very first layout
@@ -135,7 +119,14 @@ struct MainWindow: View {
 
     @ViewBuilder
     private var detail: some View {
-        if services.previewsMenuBarPanel {
+        #if DEBUG
+        if services.previewsGallery {
+            GalleryView()
+        }
+        #endif
+        if services.previewsGallery {
+            EmptyView()
+        } else if services.previewsMenuBarPanel {
             MenuBarPanel()
                 .background(.regularMaterial, in: .rect(cornerRadius: Theme.Radius.panel))
                 .overlay(RoundedRectangle(cornerRadius: Theme.Radius.panel).strokeBorder(Theme.hairline))
@@ -315,19 +306,6 @@ struct InstallRow: View {
         case 0: return install.kind == .science ? "Projects and files" : "No conversations"
         case 1: return "1 conversation"
         default: return "\(count) conversations"
-        }
-    }
-}
-
-/// Focus for the toolbar search field, where the system offers it (macOS 15 and later).
-private struct SearchFocus: ViewModifier {
-    var focused: FocusState<Bool>.Binding
-
-    func body(content: Content) -> some View {
-        if #available(macOS 15.0, *) {
-            content.searchFocused(focused)
-        } else {
-            content
         }
     }
 }

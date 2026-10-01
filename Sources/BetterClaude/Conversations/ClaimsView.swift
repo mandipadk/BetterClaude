@@ -20,7 +20,7 @@ struct ClaimsView: View {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 10, weight: .semibold))
-                            .rotationEffect(.degrees(open || !doubtful.isEmpty ? 90 : 0))
+                            .rotationEffect(.degrees(open ? 90 : 0))
                             .foregroundStyle(.secondary)
                         Text(claims.count == 1 ? "1 claim checked" : "\(claims.count) claims checked").font(Theme.Font.headline)
                         Text(summary)

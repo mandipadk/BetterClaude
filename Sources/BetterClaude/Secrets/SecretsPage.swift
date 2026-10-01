@@ -73,7 +73,7 @@ struct SecretsPage: View {
                     }
                     Spacer()
                     Button("Sweep Again") { model.sweep(services.snapshot) }
-                        .buttonStyle(.secondary)
+                        .buttonStyle(.bordered)
                         .disabled(model.sweeping)
                 }
                 .padding(.bottom, Theme.Space.l)
@@ -124,12 +124,12 @@ private struct FindingRow: View {
                     .textSelection(.disabled)
                 Spacer()
                 if let url = finding.kind.rotateURL, !rotated {
-                    Button("Rotate…") { NSWorkspace.shared.open(url) }.buttonStyle(.secondary)
+                    Button("Rotate…") { NSWorkspace.shared.open(url) }.buttonStyle(.bordered)
                 }
                 Button(rotated ? "Not Rotated Yet" : "I've Rotated It") {
                     services.secrets.setRotated(finding, !rotated)
                 }
-                .buttonStyle(.secondary)
+                .buttonStyle(.bordered)
             }
             ForEach(Array(finding.sightings.prefix(4).enumerated()), id: \.offset) { _, sighting in
                 if let conversation = services.snapshot.conversations.first(where: { $0.id == sighting.conversationID }) {
@@ -138,8 +138,7 @@ private struct FindingRow: View {
                         services.destination = .conversations
                         services.selectedConversationID = conversation.id
                     } label: {
-                        (Text("\(sighting.source.description) in ").foregroundStyle(.secondary)
-                         + Text(conversation.title).foregroundStyle(Theme.accent))
+                        Text("\(Text("\(sighting.source.description) in ").foregroundStyle(.secondary))\(Text(conversation.title).foregroundStyle(Theme.accent))")
                             .font(Theme.Font.callout)
                             .lineLimit(1)
                     }

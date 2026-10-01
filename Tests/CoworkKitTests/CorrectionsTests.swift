@@ -31,6 +31,7 @@ struct CorrectionsTests {
             let file = Corrections.target(for: pnpm.project, paths: sample.paths)
             #expect(!FileManager.default.fileExists(atPath: file.path))
             let receipt = try Corrections.add([pnpm.rule], to: file, paths: sample.paths)
+            #expect(receipt.direction == .memoryEdit)
             let written = try String(contentsOf: file, encoding: .utf8)
             #expect(written.contains("## Corrections from past sessions\n\n- \(pnpm.rule)"))
             let second = try Corrections.add(["Keep the retry cap at ten minutes."], to: file, paths: sample.paths)

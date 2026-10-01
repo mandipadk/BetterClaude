@@ -48,11 +48,12 @@ struct HistoryIndexTests {
         #expect(scan.endOffset == Int64(text.utf8.count - #"{"type":"user","message":{"content":"half a li"#.utf8.count))
     }
 
-    static func withSample(_ body: (FixtureHome, CatalogSnapshot, HistoryIndex) async throws -> Void) async throws {
+    static func withSample(now: Date = Date(),
+                           _ body: (FixtureHome, CatalogSnapshot, HistoryIndex) async throws -> Void) async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("index-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        var sample = FixtureHome(root: root)
+        var sample = FixtureHome(root: root, now: now)
         sample.iconDonors = [:]
         try sample.make()
         try await HostPaths.$current.withValue(sample.paths) {

@@ -76,6 +76,7 @@ struct KeptPage: View {
     @State private var reading: ConversationRef?
     @State private var backup: BackupSheet.Mode?
     @AppStorage(BackupSheet.lastBackupKey) private var lastBackup: Double = 0
+    @State private var puttingBack: KeptRowData?
 
     var body: some View {
         let kept = services.kept
@@ -99,8 +100,8 @@ struct KeptPage: View {
                             .font(Theme.Font.callout)
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Button("Restore…") { chooseBackup() }.buttonStyle(.secondary)
-                        Button("Back Up…") { backup = .backUp }.buttonStyle(.primary)
+                        Button("Restore…") { chooseBackup() }.buttonStyle(.bordered)
+                        Button("Back Up…") { backup = .backUp }.buttonStyle(.borderedProminent)
                     }
                 }
 
@@ -154,6 +155,16 @@ struct KeptPage: View {
         .sheet(item: $reading) { conversation in
             KeptReaderSheet(conversation: conversation) { reading = nil }
                 .environment(services)
+        }
+        .confirmationDialog("Put “\(puttingBack?.title ?? "")” back?",
+                            isPresented: Binding(get: { puttingBack != nil }, set: { if !$0 { puttingBack = nil } }),
+                            titleVisibility: .visible, presenting: puttingBack) { row in
+            Button("Put Back") {
+                if let (entry, _) = row.action { services.kept.restore(entry) { services.refresh() } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("It goes back where Claude Code can resume it. You can undo this from History.")
         }
         .alert("Something went wrong",
                isPresented: Binding(get: { kept.errorMessage != nil }, set: { if !$0 { kept.errorMessage = nil } })) {
@@ -248,11 +259,9 @@ struct KeptPage: View {
                             let fallback = services.installs.first { $0.kind == .claudeCode }?.id ?? ""
                             reading = services.kept.conversation(for: entry, fallbackInstall: fallback)
                         }
-                        .buttonStyle(.secondary)
-                        Button("Put Back") {
-                            services.kept.restore(entry) { services.refresh() }
-                        }
-                        .buttonStyle(.secondary)
+                        .buttonStyle(.bordered)
+                        Button("Put Back…") { puttingBack = row }
+                        .buttonStyle(.bordered)
                         .help("Put it back where Claude Code can resume it. You can undo this from History.")
                     }
                 }
@@ -273,6 +282,7 @@ private struct KeptReaderSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             ReaderView()
+                .environment(\.readerActionsHidden, true)
             HStack {
                 Label("A kept copy. Claude Code no longer has this conversation.", systemImage: "archivebox")
                     .font(Theme.Font.callout)
@@ -285,7 +295,6 @@ private struct KeptReaderSheet: View {
             .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
         }
         .frame(width: 820, height: 660)
-        .tint(Theme.accent)
         .onAppear { services.reader.open(conversation, in: services.install(for: conversation)) }
         .onDisappear { services.selectedConversationID = nil; services.reader.close() }
     }

@@ -29,7 +29,7 @@ notes = open(notes_path, encoding="utf-8").read().strip() if os.path.exists(note
 manifest = {
     "version": version,
     "build": os.popen("git rev-list --count HEAD").read().strip() or "1",
-    "minimumSystemVersion": "14.0",
+    "minimumSystemVersion": "26.0",
     "publishedAt": datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
         .isoformat().replace("+00:00", "Z"),
     "zipURL": f"{base}/{os.path.basename(zip_path)}",

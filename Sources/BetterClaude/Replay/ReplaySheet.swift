@@ -100,7 +100,7 @@ struct ReplaySheet: View {
                     Text("Add your Anthropic API key in Settings first. Replays are billed to it at API prices.")
                         .font(Theme.Font.body)
                     Spacer()
-                    SettingsLink { Text("Open Settings…") }.buttonStyle(.secondary)
+                    SettingsLink { Text("Open Settings…") }.buttonStyle(.bordered)
                 }
             } else if !model.loaded {
                 ProgressView().frame(maxWidth: .infinity)
@@ -116,14 +116,14 @@ struct ReplaySheet: View {
                 Button(model.running ? "Stop" : "Close") {
                     if model.running { model.cancel() } else { onClose() }
                 }
-                .buttonStyle(.secondary)
+                .buttonStyle(.bordered)
                 .keyboardShortcut(.cancelAction)
                 Spacer()
                 if !model.results.isEmpty {
                     Text(spentText).font(Theme.Font.callout).foregroundStyle(.secondary).monospacedDigit()
                 } else if APIKeyStore.isSet, !model.turns.isEmpty {
                     Button("Replay \(model.count) Turn\(model.count == 1 ? "" : "s")") { model.run() }
-                        .buttonStyle(.primary)
+                        .buttonStyle(.borderedProminent)
                         .keyboardShortcut(.defaultAction)
                 }
             }

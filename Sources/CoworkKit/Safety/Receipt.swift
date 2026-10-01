@@ -17,6 +17,8 @@ public enum TransferDirection: String, Codable, Sendable {
     case skill
     /// Something one install is set up with, copied into another.
     case fleet
+    /// Lines added to a memory file Claude reads, such as CLAUDE.md or MEMORY.md.
+    case memoryEdit
 }
 
 /// SHA-256 helpers.

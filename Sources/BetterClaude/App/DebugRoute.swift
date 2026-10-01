@@ -34,7 +34,10 @@ enum DebugRoute {
             case "month":
                 services.destination = .usage
                 while !services.index.isReady { try? await Task.sleep(for: .milliseconds(50)) }
-                services.lookingBack = MonthModel()
+                // `month:last` opens the previous month, for captures early in a month.
+                services.lookingBack = argument == "last"
+                    ? MonthModel(month: Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date())
+                    : MonthModel()
             case "othermac":
                 // The sample Mac's own backup, opened as if it came from another Mac.
                 let paths = services.snapshot.paths
@@ -78,6 +81,9 @@ enum DebugRoute {
                     services.selectedConversationID = match.id
                 }
             case "reader":
+                // The panels a capture opened earlier stay closed here.
+                UserDefaults.standard.set(false, forKey: "flightRecorderOpen")
+                UserDefaults.standard.set(false, forKey: "subagentsOpen")
                 services.destination = .conversations
                 if let match = services.snapshot.conversations.first(where: {
                     $0.title.localizedCaseInsensitiveContains(argument)
@@ -176,6 +182,8 @@ enum DebugRoute {
                 services.library.selectedID = services.library.visible.first?.id
             case "panel":
                 services.previewsMenuBarPanel = true
+            case "gallery":
+                services.previewsGallery = true
             case "history":
                 services.destination = .history
             case "backup":

@@ -115,16 +115,16 @@ struct RewindSheet: View {
                 if case .done = model.phase {
                     Spacer()
                     Button("Done") { onClose() }
-                        .buttonStyle(.primary)
+                        .buttonStyle(.borderedProminent)
                         .keyboardShortcut(.defaultAction)
                 } else {
                     Button("Close") { onClose() }
-                        .buttonStyle(.secondary)
+                        .buttonStyle(.bordered)
                         .keyboardShortcut(.cancelAction)
                     Spacer()
                     if case .ready = model.phase, !model.chosen.isEmpty {
                         Button("Put Back \(model.chosen.count) File\(model.chosen.count == 1 ? "" : "s")…") { confirming = true }
-                            .buttonStyle(.primary)
+                            .buttonStyle(.borderedProminent)
                             .keyboardShortcut(.defaultAction)
                     }
                 }

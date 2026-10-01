@@ -55,7 +55,7 @@ struct HealthSection: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(report.shareable, forType: .string)
             }
-            .buttonStyle(.secondary)
+            .buttonStyle(.bordered)
         }
     }
 
@@ -121,7 +121,7 @@ struct CommandRulesSection: View {
                                     .font(Theme.Font.callout)
                                     .foregroundStyle(.secondary)
                                 Spacer()
-                                Button("Allow") { allow([suggestion.rule]) }.buttonStyle(.secondary)
+                                Button("Allow") { allow([suggestion.rule]) }.buttonStyle(.bordered)
                             }
                         }
                         if !added.isEmpty {
@@ -130,7 +130,7 @@ struct CommandRulesSection: View {
                                     .font(Theme.Font.callout)
                                     .foregroundStyle(.secondary)
                                 Spacer()
-                                Button("Take Them Out") { removeAdded() }.buttonStyle(.secondary)
+                                Button("Take Them Out") { removeAdded() }.buttonStyle(.bordered)
                             }
                         }
                         if let failure {
@@ -203,7 +203,7 @@ struct WeekSection: View {
                             HStack {
                                 if summarizing { ProgressView().controlSize(.small) }
                                 Button(summary.isEmpty ? "Summarize My Week" : "Summarize Again") { summarize(digest) }
-                                    .buttonStyle(.secondary)
+                                    .buttonStyle(.bordered)
                                     .disabled(summarizing)
                             }
                         }

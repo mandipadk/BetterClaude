@@ -136,7 +136,15 @@ struct FlightRecorderTests {
 struct MonthStatsTests {
     @Test("A month counts conversations, prompts, days, hours, models and tools from the index")
     func month() async throws {
-        try await HistoryIndexTests.withSample { sample, snapshot, index in
+        // The 20th of last month, so the month under test always holds the whole sample
+        // whatever day the tests run (on the 1st, this month holds almost nothing).
+        let calendar = Calendar.current
+        let lastMonth = calendar.date(byAdding: .month, value: -1, to: Date())!
+        var parts = calendar.dateComponents([.year, .month], from: lastMonth)
+        parts.day = 20
+        parts.hour = 15
+        let now = calendar.date(from: parts)!
+        try await HistoryIndexTests.withSample(now: now) { sample, snapshot, index in
             try await index.update(from: snapshot)
             let stats = try await MonthStats.build(index: index, month: sample.now)
             #expect(stats.conversations > 5 && stats.prompts >= stats.conversations)

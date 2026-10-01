@@ -46,7 +46,6 @@ fi
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-ICONSET="$(dirname "$APP")/BetterClaude.iconset"
 
 # Shortcuts and Siri find the app's actions from Metadata.appintents, which Xcode makes with
 # appintentsmetadataprocessor. SwiftPM builds with Swift Build leave the compiler's constant
@@ -62,7 +61,7 @@ if [ -s "$INTENTS_WORK/constvals.txt" ] && xcrun --find appintentsmetadataproces
     --toolchain-dir "$(dirname "$(dirname "$(dirname "$(xcrun --find swiftc)")")")" \
     --module-name BetterClaude --sdk-root "$(xcrun --sdk macosx --show-sdk-path)" \
     --xcode-version "$(xcodebuild -version | awk '/Build version/ {print $3}')" \
-    --platform-family macOS --deployment-target 14.0 --target-triple arm64-apple-macos14.0 \
+    --platform-family macOS --deployment-target 26.0 --target-triple arm64-apple-macos26.0 \
     --source-file-list "$INTENTS_WORK/sources.txt" --swift-const-vals-list "$INTENTS_WORK/constvals.txt" >/dev/null 2>&1 \
     || echo "Shortcuts actions weren't described; the app works without them."
 else
@@ -70,13 +69,19 @@ else
 fi
 rm -rf "$INTENTS_WORK"
 
-# Icon: generated rather than checked in, so the mark stays tied to the palette in
-# Theme.swift and every size is redrawn from the same geometry.
+# Icon: an Icon Composer bundle generated from one geometry (Scripts/make-icon.swift), then
+# compiled the way Xcode does, so the system draws its glass in every appearance, together
+# with the accent colour. actool writes Assets.car and AppIcon.icns beside it.
 ICON_BIN="${TMPDIR:-/tmp/}bc-icon"
+ICON_WORK="$(mktemp -d)"
 swiftc -O "$ROOT/Scripts/make-icon.swift" -o "$ICON_BIN"
-rm -rf "$ICONSET"
-"$ICON_BIN" "$ICONSET"
-iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/BetterClaude.icns"
+"$ICON_BIN" "$ICON_WORK/AppIcon.icon"
+"$ICON_BIN" --accent "$ICON_WORK/Assets.xcassets"
+xcrun actool "$ICON_WORK/Assets.xcassets" "$ICON_WORK/AppIcon.icon" --compile "$APP/Contents/Resources" \
+  --app-icon AppIcon --accent-color AccentColor \
+  --platform macosx --minimum-deployment-target 26.0 \
+  --output-partial-info-plist "$ICON_WORK/partial.plist" >/dev/null
+rm -rf "$ICON_WORK"
 
 cp "$BIN/BetterClaude" "$APP/Contents/MacOS/BetterClaude"
 # Ship the CLI inside the bundle so the two can never drift apart in version.
@@ -92,16 +97,15 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleName</key><string>Better Claude</string>
     <key>CFBundleDisplayName</key><string>Better Claude</string>
     <key>CFBundleExecutable</key><string>BetterClaude</string>
-    <key>CFBundleIconFile</key><string>BetterClaude</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>CFBundleIconName</key><string>AppIcon</string>
+    <key>NSAccentColorName</key><string>AccentColor</string>
     <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$BUILD</string>
-    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>LSMinimumSystemVersion</key><string>26.0</string>
     <key>NSHighResolutionCapable</key><true/>
-    <!-- The classic full-height sidebar and one frosted window surface, rather than
-         macOS 26's floating inset sidebar. -->
-    <key>UIDesignRequiresCompatibility</key><true/>
     <key>NSHumanReadableCopyright</key><string>Every Claude conversation on your Mac, in one place.</string>
     <key>CFBundleURLTypes</key>
     <array>

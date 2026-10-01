@@ -192,9 +192,9 @@ struct ConversationRow: View {
                     Spacer(minLength: 4)
                     switch live {
                     case .needsYou:
-                        Text("Needs you").font(Theme.Font.caption.weight(.semibold)).foregroundStyle(Theme.accent)
+                        Text("Needs you").font(Theme.Font.caption.weight(.semibold)).foregroundStyle(Theme.attention)
                     case .working:
-                        Text("Working").font(Theme.Font.caption).foregroundStyle(Theme.accent)
+                        Text("Working").font(Theme.Font.caption).foregroundStyle(.secondary)
                     default:
                         Text(conversation.lastActivity.listStamp)
                             .font(Theme.Font.caption)

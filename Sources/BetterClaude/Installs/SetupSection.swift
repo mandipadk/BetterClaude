@@ -169,7 +169,7 @@ struct InstallNotice: View {
             }
             Spacer(minLength: Theme.Space.m)
             if let action {
-                Button(action.title, action: action.run).buttonStyle(.secondary)
+                Button(action.title, action: action.run).buttonStyle(.bordered)
             }
         }
         .padding(Theme.Space.m)

@@ -31,7 +31,6 @@ struct MenuBarPanel: View {
             footer
         }
         .frame(width: 340)
-        .tint(Theme.accent)
         .task {
             if !services.hasLoaded { services.refresh() }
             searchFocused = true
@@ -52,7 +51,7 @@ struct MenuBarPanel: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            ForkMark(size: 16)
+            BMark(size: 16)
             Text("Better Claude").font(Theme.Font.headline)
             Spacer()
             if services.isLoading {
@@ -194,9 +193,9 @@ struct MenuBarPanel: View {
             .keyboardShortcut("o", modifiers: .command)
             Button { AppDelegate.quit() } label: {
                 HStack {
-                    Text("Quit")
+                    Text("Quit Better Claude")
                     Spacer()
-                    KeyCaps(keys: ["⌘", "Q"])
+                    KeyCaps(keys: ["⌥", "⌘", "Q"])
                 }
                 .font(Theme.Font.body)
                 .padding(.horizontal, 14)
@@ -204,7 +203,8 @@ struct MenuBarPanel: View {
                 .contentShape(.rect)
             }
             .buttonStyle(PanelRowStyle())
-            .keyboardShortcut("q", modifiers: .command)
+            // The same keys as everywhere else: ⌘Q only closes the window to the menu bar.
+            .keyboardShortcut("q", modifiers: [.command, .option])
         }
         .padding(.vertical, 5)
     }
@@ -247,7 +247,7 @@ private struct PanelConversationRow: View {
     }
 }
 
-/// A panel row: a quiet fill under the pointer, an accent wash while pressed.
+/// A panel row: a quiet fill under the pointer, a little deeper while pressed.
 struct PanelRowStyle: ButtonStyle {
     @State private var hovering = false
 
@@ -255,7 +255,7 @@ struct PanelRowStyle: ButtonStyle {
         configuration.label
             .background {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(configuration.isPressed ? Theme.accent.opacity(0.18)
+                    .fill(configuration.isPressed ? Color.primary.opacity(0.12)
                           : hovering ? Theme.subtleFill : .clear)
                     .padding(.horizontal, 5)
             }
