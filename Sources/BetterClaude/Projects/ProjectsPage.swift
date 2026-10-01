@@ -150,23 +150,40 @@ struct ProjectsPage: View {
     }
 }
 
+enum ProjectTab: String, CaseIterable, Identifiable {
+    case overview, conversations, files, memory
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .overview: return "Overview"
+        case .conversations: return "Conversations"
+        case .files: return "Files"
+        case .memory: return "Memory"
+        }
+    }
+}
+
 private struct ProjectDetailView: View {
     @Environment(AppServices.self) private var services
     let detail: ProjectDetail
+    @AppStorage("projectTab") private var tab: ProjectTab = .overview
 
     var body: some View {
         let summary = detail.summary
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top, spacing: Theme.Space.m) {
-                    GlyphTile(systemImage: "folder", size: 56)
+                HStack(alignment: .center, spacing: Theme.Space.m) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                        .groupSurface(cornerRadius: 11)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(summary.name).font(Theme.Font.display)
-                        Text(services.snapshot.paths.abbreviating(summary.path))
+                        Text(facts(summary))
                             .font(Theme.Font.callout)
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                            .lineLimit(2)
                     }
                     Spacer()
                     Button("Show in Finder") {
@@ -175,124 +192,22 @@ private struct ProjectDetailView: View {
                     .buttonStyle(.bordered)
                     .disabled(!FileManager.default.fileExists(atPath: summary.path))
                 }
-                .padding(.bottom, Theme.Space.l)
-
-                HStack(alignment: .top, spacing: 28) {
-                    Fact(label: "Conversations") { Text("\(summary.conversations)") }
-                    Fact(label: "At list prices") { Text(dollars(summary.cost)) }
-                    if let first = summary.firstActivity { Fact(label: "Since") { Text(first.formatted(date: .abbreviated, time: .omitted)) } }
-                    if let last = summary.lastActivity { Fact(label: "Last active") { Text(last.listStamp) } }
-                    Fact(label: "In") { Text(summary.places.prefix(2).joined(separator: ", ")) }
-                    Spacer(minLength: 0)
+                Picker("Show", selection: $tab) {
+                    ForEach(ProjectTab.allCases) { Text($0.title).tag($0) }
                 }
-                .padding(.bottom, Theme.Space.xl)
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .padding(.top, Theme.Space.l)
 
-                if detail.activity.contains(where: { $0.conversations > 0 }) {
-                    DetailSection(title: "Activity", subtitle: "Conversations you worked in each day, the last eight weeks.") {
-                        ActivityGrid(days: detail.activity)
-                    }
-                }
-
-                CorrectionsSection(project: summary.path)
-
-                if !services.projectPages.decisions.isEmpty {
-                    DetailSection(title: "Decisions", subtitle: "What was settled in this project's conversations, newest first. Claude can check these too, before deciding again.") {
-                        VStack(alignment: .leading, spacing: Theme.Space.m) {
-                            ForEach(services.projectPages.decisions.prefix(12)) { decision in
-                                DecisionRow(decision: decision)
-                            }
-                        }
-                    }
-                }
-
-                DetailSection(title: "Conversations") {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(detail.conversations.prefix(40)) { conversation in
-                            Button {
-                                services.filter = .all
-                                services.destination = .conversations
-                                services.selectedConversationID = conversation.id
-                            } label: {
-                                HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(conversation.title).font(Theme.Font.body).lineLimit(1)
-                                        Text(conversation.branch.map { "\(conversation.place), on \($0)" } ?? conversation.place)
-                                            .font(Theme.Font.caption)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                    }
-                                    Spacer()
-                                    if conversation.cost > 0 {
-                                        Text(dollars(conversation.cost)).font(Theme.Font.callout).foregroundStyle(.secondary).monospacedDigit()
-                                    }
-                                    Text(conversation.lastActivity?.listStamp ?? "")
-                                        .font(Theme.Font.callout)
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 90, alignment: .trailing)
-                                }
-                                .padding(.vertical, 6)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-
-                if !detail.pullRequests.isEmpty {
-                    DetailSection(title: "Pull requests") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(detail.pullRequests) { pull in
-                                HStack(alignment: .firstTextBaseline) {
-                                    if let url = URL(string: pull.url) {
-                                        Link(pull.name, destination: url).foregroundStyle(Theme.accent)
-                                    }
-                                    Text("from \(pull.conversationTitle)")
-                                        .font(Theme.Font.callout)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if !detail.files.isEmpty {
-                    DetailSection(title: "Files Claude changed", subtitle: "Most recent first. Each opens in Files, with its versions and the conversations that changed it.") {
-                        VStack(alignment: .leading, spacing: 0) {
-                            ForEach(detail.files.prefix(25)) { file in
-                                Button { services.showFile(file.path) } label: {
-                                    HStack {
-                                        Text(relative(file.path)).font(Theme.Font.body).lineLimit(1).truncationMode(.middle)
-                                        Spacer()
-                                        Text(file.conversations == 1 ? "1 conversation" : "\(file.conversations) conversations")
-                                            .font(Theme.Font.callout)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .padding(.vertical, 5)
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                }
-
-                if !detail.memory.isEmpty {
-                    DetailSection(title: "Memory", subtitle: "What Claude is told about this project.") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(detail.memory, id: \.self) { url in
-                                HStack {
-                                    Text(url.lastPathComponent == "memory" ? "Claude Code's memory for this project" : relative(url.path))
-                                        .font(Theme.Font.body).lineLimit(1).truncationMode(.middle)
-                                    Spacer()
-                                    Button("Open") { NSWorkspace.shared.open(url) }.buttonStyle(.bordered)
-                                }
-                            }
-                        }
-                    }
+                switch tab {
+                case .overview: overview(summary)
+                case .conversations: conversations(summary)
+                case .files: files
+                case .memory: memory
                 }
             }
-            .padding(.horizontal, 32)
+            .padding(.horizontal, 28)
             .padding(.top, 24)
             .padding(.bottom, 48)
             .frame(maxWidth: 760, alignment: .leading)
@@ -300,6 +215,119 @@ private struct ProjectDetailView: View {
         }
         // Each project opens at its top.
         .id(detail.summary.id)
+    }
+
+    private func facts(_ summary: ProjectSummary) -> String {
+        var line = services.snapshot.paths.abbreviating(summary.path) + ". "
+        line += summary.conversations == 1 ? "1 conversation" : "\(summary.conversations) conversations"
+        if !summary.places.isEmpty { line += " in " + ListFormatter.localizedString(byJoining: Array(summary.places.prefix(2))) }
+        if summary.cost > 0 { line += ", \(dollars(summary.cost)) at list prices" }
+        if let last = summary.lastActivity { line += ", last active \(last.listStamp.lowercasedIfWordLocal)" }
+        return line + "."
+    }
+
+    @ViewBuilder
+    private func overview(_ summary: ProjectSummary) -> some View {
+        if detail.activity.contains(where: { $0.conversations > 0 }) {
+            GroupLabel(title: "Activity")
+            ActivityGrid(days: detail.activity)
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .groupSurface()
+        }
+        CorrectionsSection(project: summary.path)
+        if !services.projectPages.decisions.isEmpty {
+            DetailSection(title: "Decided", subtitle: "What was settled in this project's conversations, newest first.") {
+                VStack(alignment: .leading, spacing: Theme.Space.m) {
+                    ForEach(services.projectPages.decisions.prefix(12)) { decision in
+                        DecisionRow(decision: decision)
+                    }
+                }
+            }
+        }
+        if !detail.pullRequests.isEmpty {
+            GroupLabel(title: "Pull requests")
+            RowGroup {
+                ForEach(detail.pullRequests) { pull in
+                    GroupRow(title: pull.name, detail: "From \(pull.conversationTitle)") {
+                        if let url = URL(string: pull.url) {
+                            Link("Open", destination: url).font(Theme.Font.callout)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func conversations(_ summary: ProjectSummary) -> some View {
+        GroupLabel(title: detail.conversations.count == 1 ? "1 conversation" : "\(detail.conversations.count) conversations",
+                   link: "Show in Conversations", action: {
+            services.filter = .project(summary.path)
+            services.destination = .conversations
+        })
+        RowGroup {
+            ForEach(detail.conversations) { conversation in
+                Button {
+                    services.filter = .project(summary.path)
+                    services.destination = .conversations
+                    services.selectedConversationID = conversation.id
+                } label: {
+                    GroupRow(title: conversation.title,
+                             detail: conversation.branch.map { "\(conversation.place), on \($0)" } ?? conversation.place) {
+                        if conversation.cost > 0 {
+                            Text(dollars(conversation.cost)).font(Theme.Font.callout).foregroundStyle(.secondary).monospacedDigit()
+                        }
+                        Text(conversation.lastActivity?.listStamp ?? "")
+                            .font(Theme.Font.callout).foregroundStyle(.secondary)
+                        RowChevron()
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var files: some View {
+        if detail.files.isEmpty {
+            Text("Claude Code hasn't kept versions of any file it changed here.")
+                .font(Theme.Font.body).foregroundStyle(.secondary).padding(.top, Theme.Space.xl)
+        } else {
+            GroupLabel(title: "Files Claude changed")
+            RowGroup {
+                ForEach(detail.files) { file in
+                    Button { services.showFile(file.path) } label: {
+                        GroupRow(title: relative(file.path),
+                                 detail: file.conversations == 1 ? "1 conversation" : "\(file.conversations) conversations") {
+                            RowChevron()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu { FileActions(path: file.path) }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var memory: some View {
+        if detail.memory.isEmpty {
+            Text("Claude isn't told anything about this project yet: it has no CLAUDE.md or memory.")
+                .font(Theme.Font.body).foregroundStyle(.secondary).padding(.top, Theme.Space.xl)
+        } else {
+            GroupLabel(title: "What Claude is told about this project", link: "Memory", action: {
+                services.destination = .memory
+            })
+            RowGroup {
+                ForEach(detail.memory, id: \.self) { url in
+                    GroupRow(title: url.lastPathComponent == "memory" ? "Claude Code's memory for this project" : relative(url.path)) {
+                        Button("Open") { NSWorkspace.shared.open(url) }.buttonStyle(.bordered)
+                    }
+                    .contextMenu { FileActions(path: url.path) }
+                }
+            }
+        }
     }
 
     private func relative(_ path: String) -> String {

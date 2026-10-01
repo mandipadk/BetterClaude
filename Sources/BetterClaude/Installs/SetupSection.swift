@@ -158,7 +158,7 @@ struct InstallNotice: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
             Image(systemName: symbol)
-                .foregroundStyle(Theme.attention)
+                .foregroundStyle(.secondary)
                 .accessibilityLabel("Notice")
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(Theme.Font.body)

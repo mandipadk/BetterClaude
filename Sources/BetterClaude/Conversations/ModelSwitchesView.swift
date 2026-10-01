@@ -13,7 +13,7 @@ struct ModelSwitchesView: View {
             ForEach(switches.prefix(3)) { change in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: change.cause == .unexplained ? "exclamationmark.triangle" : "arrow.triangle.swap")
-                        .foregroundStyle(change.cause == .unexplained ? Theme.attention : .secondary)
+                        .foregroundStyle(.secondary)
                         .frame(width: 16)
                     Text(ModelSwitchesView.sentence(change))
                         .font(Theme.Font.callout)

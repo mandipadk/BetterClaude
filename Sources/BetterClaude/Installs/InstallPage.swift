@@ -7,18 +7,67 @@ struct InstallPage: View {
     @Environment(AppServices.self) private var services
     let install: Install
     @State private var confirmingRemoval = false
+    @AppStorage("installTab") private var tab: InstallTab = .conversations
+
+    enum InstallTab: String, CaseIterable, Identifiable {
+        case conversations, setup, health
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .conversations: return "Conversations"
+            case .setup: return "Setup"
+            case .health: return "Health"
+            }
+        }
+    }
+
+    /// Setup for what can be set up; Health for what Claude Code's records can tell.
+    private var tabs: [InstallTab] {
+        var tabs: [InstallTab] = [.conversations]
+        if !install.isExternal || RecallConnection.target(for: install) != nil { tabs.append(.setup) }
+        if install.kind != .external(.otherMac) && !install.isExternal { tabs.append(.health) }
+        return tabs
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                header.padding(.bottom, Theme.Space.xl)
+                header.padding(.bottom, Theme.Space.l)
                 notices
-                conversations
-                if install.kind != .external(.otherMac) { HealthSection(install: install) }
-                if install.kind == .claudeCode { CommandRulesSection(configDir: install.dataRoot) }
-                if RecallConnection.target(for: install) != nil { RecallSection(install: install) }
-                if !install.isExternal { SetupSection(install: install) }
-                details
+                if tabs.count > 1 {
+                    Picker("Show", selection: $tab) {
+                        ForEach(tabs) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .padding(.bottom, Theme.Space.s)
+                }
+                switch tabs.contains(tab) ? tab : .conversations {
+                case .conversations:
+                    conversations
+                case .setup:
+                    let others = services.installs.filter { $0.id != install.id && $0.kind != .science && !$0.isExternal }
+                    if !install.isExternal, !others.isEmpty {
+                        Menu("Compare With…") {
+                            ForEach(others) { other in
+                                Button(other.name) { services.comparing = InstallComparison(left: install, right: other) }
+                            }
+                        }
+                        .menuStyle(.button)
+                        .buttonStyle(.bordered)
+                        .fixedSize()
+                        .padding(.top, Theme.Space.m)
+                        .padding(.bottom, Theme.Space.s)
+                        .help("See what this install and another are set up with, side by side")
+                    }
+                    if !install.isExternal { SetupSection(install: install) }
+                    if install.kind == .claudeCode { CommandRulesSection(configDir: install.dataRoot) }
+                    if RecallConnection.target(for: install) != nil { RecallSection(install: install) }
+                    details
+                case .health:
+                    HealthSection(install: install)
+                }
             }
             .padding(.horizontal, 32)
             .padding(.top, 24)

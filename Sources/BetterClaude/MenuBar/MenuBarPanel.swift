@@ -90,7 +90,7 @@ struct MenuBarPanel: View {
                         Capsule().fill(Theme.subtleFill)
                             .frame(width: 60, height: 5)
                             .overlay(alignment: .leading) {
-                                Capsule().fill(weekly >= 80 ? Theme.attention : Theme.accent)
+                                Capsule().fill(Theme.accentBright)
                                     .frame(width: max(3, 60 * min(1, weekly / 100)), height: 5)
                             }
                         Text("\(Int(weekly.rounded()))% of the week")

@@ -453,7 +453,7 @@ struct CompactionMarker: View {
     private var forgottenList: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: "exclamationmark.bubble").foregroundStyle(Theme.attention)
+                Image(systemName: "exclamationmark.bubble").foregroundStyle(.secondary)
                 Text("The summary doesn't mention \(forgotten.count == 1 ? "one thing" : "\(forgotten.count) things") you said before it, so Claude no longer knows \(forgotten.count == 1 ? "it" : "them"):")
                     .font(Theme.Font.callout)
                     .fixedSize(horizontal: false, vertical: true)

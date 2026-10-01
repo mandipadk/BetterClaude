@@ -72,6 +72,10 @@ enum DebugRoute {
             case "secrets":
                 services.destination = .secrets
             case "projects":
+                // `projects:<name>` or `projects:<name>|<tab>`.
+                let parts = argument.components(separatedBy: "|")
+                UserDefaults.standard.set(parts.count == 2 ? parts[1] : "overview", forKey: "projectTab")
+                let argument = parts[0]
                 services.destination = .projects
                 if !argument.isEmpty {
                     while !services.index.isReady { try? await Task.sleep(for: .milliseconds(50)) }
@@ -109,6 +113,11 @@ enum DebugRoute {
                     services.filter = .install(install.id)
                 }
             case "install":
+                // `install:<name>` or `install:<name>|<tab>`.
+                let parts = argument.components(separatedBy: "|")
+                if parts.count == 2 { UserDefaults.standard.set(parts[1], forKey: "installTab") }
+                else { UserDefaults.standard.set("conversations", forKey: "installTab") }
+                let argument = parts[0]
                 if let install = services.installs.first(where: { $0.name == argument }) {
                     services.destination = .install(install.id)
                 }

@@ -69,7 +69,7 @@ struct ClaimsView: View {
     private func row(_ claim: Claims.Claim) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: icon(claim.verdict))
-                .foregroundStyle(isBacked(claim.verdict) || claim.verdict == .unclear ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.attention))
+                .foregroundStyle(.secondary)
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 2) {
                 Text("“\(claim.sentence)”").font(Theme.Font.callout).fixedSize(horizontal: false, vertical: true)

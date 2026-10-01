@@ -121,6 +121,19 @@ struct RewindSheet: View {
                     Button("Close") { onClose() }
                         .buttonStyle(.bordered)
                         .keyboardShortcut(.cancelAction)
+                    if case .ready = model.phase {
+                        Button("Play…") {
+                            let conversation = model.conversation, file = model.selected
+                            onClose()
+                            // One sheet at a time: the next opens once this one has gone.
+                            Task {
+                                try? await Task.sleep(for: .milliseconds(350))
+                                services.watching = TimelapseModel(conversation: conversation, file: file)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .help("Watch the selected file change, one edit at a time")
+                    }
                     Spacer()
                     if case .ready = model.phase, !model.chosen.isEmpty {
                         Button("Put Back \(model.chosen.count) File\(model.chosen.count == 1 ? "" : "s")…") { confirming = true }

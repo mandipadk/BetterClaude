@@ -19,7 +19,7 @@ struct HealthSection: View {
                         if let drift { driftRow(drift) }
                         ForEach(issues) { issue in
                             HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
-                                Image(systemName: symbol(issue.kind)).foregroundStyle(Theme.attention).frame(width: 18)
+                                Image(systemName: symbol(issue.kind)).foregroundStyle(.secondary).frame(width: 18)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(title(issue)).font(Theme.Font.body)
                                     Text(detail(issue)).font(Theme.Font.callout).foregroundStyle(.secondary)
@@ -41,7 +41,7 @@ struct HealthSection: View {
     /// This install's tool now writes its files in a way Better Claude doesn't fully read.
     private func driftRow(_ report: FormatSurvey.Report) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
-            Image(systemName: "doc.badge.gearshape").foregroundStyle(Theme.attention).frame(width: 18)
+            Image(systemName: "doc.badge.gearshape").foregroundStyle(.secondary).frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(report.contract.name) \(report.shape.version) changed how it records \(report.affected)")
                     .font(Theme.Font.body)

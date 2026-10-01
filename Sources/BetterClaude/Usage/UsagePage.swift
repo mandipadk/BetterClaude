@@ -191,7 +191,6 @@ struct LimitMeter: View {
     let window: QuotaWindow
 
     var body: some View {
-        let high = window.percent >= 80
         VStack(alignment: .leading, spacing: 6) {
             Text(window.kind.title).font(Theme.Font.callout).foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -204,7 +203,7 @@ struct LimitMeter: View {
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Theme.subtleFill)
-                    Capsule().fill(high ? Theme.attention : Theme.accent)
+                    Capsule().fill(Theme.accentBright)
                         .frame(width: max(4, geometry.size.width * min(1, window.percent / 100)))
                 }
             }

@@ -12,6 +12,14 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.32.0": [
+            Item(symbol: "folder", title: "A project, in four tabs",
+                 detail: "Overview, Conversations, Files and Memory: what you keep telling Claude and what was decided, every conversation, the files Claude changed, and what Claude is told about it."),
+            Item(symbol: "app.badge", title: "Each Claude, in three",
+                 detail: "Conversations, Setup and Health. Compare With… sits in Setup, beside what the install is set up with and whether Claude can search your history from it."),
+            Item(symbol: "play", title: "Play from Changes",
+                 detail: "Show Changes now has Play beside Put Back, to watch the file you picked change one edit at a time."),
+        ],
         "0.31.0": [
             Item(symbol: "text.bubble", title: "The conversation first",
                  detail: "A conversation opens on its messages. Sub-agents setting off, the model changing, and coming back after the cache expired show as one line where they happened."),

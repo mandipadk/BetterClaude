@@ -18,9 +18,13 @@ final class TimelapseModel: Identifiable {
     private var index: HistoryIndex?
     private var player: Task<Void, Never>?
 
-    init(conversation: ConversationRef) {
+    /// The file to start on, when it was picked in Changes.
+    private let preferredFile: String?
+
+    init(conversation: ConversationRef, file: String? = nil) {
         self.conversation = conversation
         id = conversation.id
+        preferredFile = file
     }
 
     func load(index: HistoryIndex?) {
@@ -29,7 +33,7 @@ final class TimelapseModel: Identifiable {
         Task {
             files = (try? await Timelapse.files(conversationID: conversation.id, index: index)) ?? []
             loaded = true
-            file = files.first
+            file = preferredFile.flatMap { files.contains($0) ? $0 : nil } ?? files.first
         }
     }
 
