@@ -5,6 +5,8 @@ import SwiftUI
 
 /// Where the main window is.
 enum SidebarDestination: Hashable {
+    case home
+    case thisMac
     case conversations
     case projects
     case running
@@ -49,7 +51,7 @@ final class AppServices {
     /// Installs whose app is open right now, by install id.
     private(set) var running: Set<String> = []
 
-    var destination: SidebarDestination? = .conversations {
+    var destination: SidebarDestination? = .home {
         didSet {
             guard destination != oldValue, !restoringPlace else { return }
             remember(Place(destination: oldValue, filter: filter, conversationID: selectedConversationID,
@@ -110,6 +112,7 @@ final class AppServices {
     let spotlight = SpotlightIndexer()
     let recall: RecallModel
     let ask = AskModel()
+    let home = HomeModel()
     let usage = UsageModel()
     let files = FilesModel()
     let prompts = PromptsModel()
@@ -377,7 +380,7 @@ final class AppServices {
                 show(conversation)
             }
         case "running":
-            destination = .running
+            destination = .home
         default:
             destination = .conversations
         }

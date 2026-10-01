@@ -87,6 +87,14 @@ struct ProjectsPage: View {
                     Text(model.loaded ? "\(model.projects.count) folders Claude has worked in" : "Reading…")
                         .font(Theme.Font.callout)
                         .foregroundStyle(.secondary)
+                    HStack(spacing: 14) {
+                        Button("Files Claude Changed") { services.destination = .files }
+                        Button("Memory") { services.destination = .memory }
+                    }
+                    .buttonStyle(.plain)
+                    .font(Theme.Font.callout.weight(.medium))
+                    .foregroundStyle(Theme.accent)
+                    .padding(.top, 6)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 14)

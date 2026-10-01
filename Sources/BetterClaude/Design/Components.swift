@@ -324,3 +324,118 @@ func humanModelName(_ raw: String) -> String {
     let version = parts.dropFirst().joined(separator: ".")
     return version.isEmpty ? family.capitalized : "\(family.capitalized) \(version)"
 }
+
+// MARK: - Pages built from groups
+
+/// A page's title and the one sentence under it that answers what the page is for.
+struct PageHeader: View {
+    let title: String
+    var subtitle: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(Theme.Font.display)
+            if let subtitle {
+                Text(subtitle)
+                    .font(Theme.Font.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// The label above a group: sentence case, with an optional link on the right.
+struct GroupLabel: View {
+    let title: String
+    var link: String?
+    var action: (() -> Void)?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title).font(Theme.Font.headline).accessibilityAddTraits(.isHeader)
+            Spacer()
+            if let link, let action {
+                Button(link, action: action)
+                    .buttonStyle(.plain)
+                    .font(Theme.Font.callout.weight(.medium))
+                    .foregroundStyle(Theme.accent)
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.bottom, 8)
+        .padding(.top, 24)
+    }
+}
+
+/// Rows on the grouped fill, separated by hairlines inset to where the text starts. The one
+/// container in the app; never tinted to signal state.
+struct RowGroup<Content: View>: View {
+    /// Where the hairline starts: past the leading icon when rows have one.
+    var inset: CGFloat = 14
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Group(subviews: content) { rows in
+                ForEach(rows) { row in
+                    if row.id != rows.first?.id {
+                        Rectangle().fill(Theme.hairline).frame(height: 1).padding(.leading, inset)
+                    }
+                    row
+                }
+            }
+        }
+        .groupSurface()
+    }
+}
+
+/// One row in a group: an optional icon, a title with an optional line under it, and whatever
+/// sits on the right (a state word, a value, a button, a chevron).
+struct GroupRow<Leading: View, Trailing: View>: View {
+    let title: String
+    var detail: String?
+    var detailIsAttention = false
+    @ViewBuilder var leading: Leading
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: Theme.Space.m) {
+            leading
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(Theme.Font.bodyMedium).lineLimit(1)
+                if let detail {
+                    Text(detail)
+                        .font(Theme.Font.callout)
+                        .foregroundStyle(detailIsAttention ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.secondary))
+                        .lineLimit(2)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            trailing
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(minHeight: 44)
+        .contentShape(.rect)
+    }
+}
+
+extension GroupRow where Leading == EmptyView {
+    init(title: String, detail: String? = nil, detailIsAttention: Bool = false, @ViewBuilder trailing: () -> Trailing) {
+        self.init(title: title, detail: detail, detailIsAttention: detailIsAttention, leading: { EmptyView() }, trailing: trailing)
+    }
+}
+
+/// The chevron at the end of a row that opens something.
+struct RowChevron: View {
+    var body: some View {
+        Image(systemName: "chevron.forward")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.tertiary)
+            .accessibilityHidden(true)
+    }
+}

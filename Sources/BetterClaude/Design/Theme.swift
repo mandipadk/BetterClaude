@@ -59,6 +59,8 @@ enum Theme {
         static let caption = SwiftUI.Font.system(size: 11)
         /// Reading size for a conversation: a touch larger than UI text, set for paragraphs.
         static let reading = SwiftUI.Font.system(size: 14)
+        /// A limit's percentage: the one place the app uses SF Rounded, so a figure reads as one.
+        static let figure = SwiftUI.Font.system(size: 24, weight: .semibold, design: .rounded).monospacedDigit()
         /// Code, only ever inside a contained surface.
         static let code = SwiftUI.Font.system(size: 12, design: .monospaced)
     }

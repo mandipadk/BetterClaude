@@ -173,6 +173,10 @@ struct MainWindow: View {
     @ViewBuilder
     private var destinationView: some View {
         switch services.destination {
+        case .home:
+            HomePage()
+        case .thisMac:
+            ThisMacPage()
         case .conversations, nil:
             ConversationsView()
         case .running:
@@ -216,31 +220,39 @@ struct Sidebar: View {
     @Environment(AppServices.self) private var services
     @Environment(UpdateModel.self) private var updates
 
+    /// Pages that live under a sidebar row keep that row selected: Kept is part of This Mac,
+    /// Files and Memory of Projects, Prompts of Library, Running and Ask of Home.
+    private var sidebarSelection: Binding<SidebarDestination?> {
+        Binding {
+            switch services.destination {
+            case .kept, .storage, .secrets, .history: return .thisMac
+            case .files, .memory: return .projects
+            case .prompts: return .library
+            case .running, .ask: return .home
+            default: return services.destination
+            }
+        } set: { services.destination = $0 }
+    }
+
     var body: some View {
         @Bindable var services = services
-        List(selection: $services.destination) {
+        List(selection: sidebarSelection) {
             Section {
+                Label("Home", systemImage: "house")
+                    .badge(services.pulse.needingYou.count)
+                    .tag(SidebarDestination.home)
                 Label("Conversations", systemImage: "bubble.left.and.bubble.right")
                     .tag(SidebarDestination.conversations)
                 Label("Projects", systemImage: "folder")
                     .tag(SidebarDestination.projects)
-                Label("Running", systemImage: "waveform.path.ecg")
-                    .badge(services.pulse.needingYou.count)
-                    .tag(SidebarDestination.running)
-                Label("Ask", systemImage: "sparkle.magnifyingglass")
-                    .tag(SidebarDestination.ask)
-                Label("Usage", systemImage: "gauge.with.dots.needle.50percent")
+                Label("Usage", systemImage: "chart.bar.xaxis")
                     .tag(SidebarDestination.usage)
-                Label("Files", systemImage: "doc.text.magnifyingglass")
-                    .tag(SidebarDestination.files)
-                Label("Library", systemImage: "square.stack")
+                Label("Library", systemImage: "books.vertical")
                     .tag(SidebarDestination.library)
-                Label("Prompts", systemImage: "text.quote")
-                    .tag(SidebarDestination.prompts)
             }
 
             if !services.installs.isEmpty {
-                Section("Installs") {
+                Section("Sources") {
                     ForEach(services.installs) { install in
                         InstallRow(install: install,
                                    isRunning: services.isRunning(install),
@@ -264,18 +276,10 @@ struct Sidebar: View {
                 }
             }
 
-            Section("Upkeep") {
-                Label("Kept", systemImage: "archivebox")
-                    .badge(services.kept.onlyHere.count)
-                    .tag(SidebarDestination.kept)
-                Label("Storage", systemImage: "internaldrive")
-                    .tag(SidebarDestination.storage)
-                Label("Memory", systemImage: "brain")
-                    .tag(SidebarDestination.memory)
-                Label("Secrets", systemImage: "key")
-                    .tag(SidebarDestination.secrets)
-                Label("History", systemImage: "clock.arrow.circlepath")
-                    .tag(SidebarDestination.history)
+            Section {
+                Label("This Mac", systemImage: "laptopcomputer")
+                    .badge(services.secrets.open.count)
+                    .tag(SidebarDestination.thisMac)
             }
         }
         .listStyle(.sidebar)
@@ -329,22 +333,15 @@ struct InstallRow: View {
     let count: Int
 
     var body: some View {
-        HStack(spacing: 10) {
-            InstallIcon(install: install, size: 26)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(install.name)
-                    .font(Theme.Font.bodyMedium)
-                    .lineLimit(1)
-                Text(subtitle)
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .contentTransition(.numericText())
-            }
+        Label {
+            Text(install.name).lineLimit(1)
+        } icon: {
+            InstallIcon(install: install, size: 18)
         }
-        .padding(.vertical, 3)
+        .badge(count)
+        .help(subtitle)
         .accessibilityElement(children: .combine)
+        .accessibilityValue(subtitle)
     }
 
     private var subtitle: String {

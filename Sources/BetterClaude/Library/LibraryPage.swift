@@ -36,6 +36,11 @@ private struct LibraryColumn: View {
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                         .contentTransition(.numericText())
+                    Button("Prompts You Keep Typing") { services.destination = .prompts }
+                        .buttonStyle(.plain)
+                        .font(Theme.Font.callout.weight(.medium))
+                        .foregroundStyle(Theme.accent)
+                        .padding(.top, 6)
                 }
                 Picker("Show", selection: $library.filter) {
                     ForEach(LibraryFilter.allCases) { filter in

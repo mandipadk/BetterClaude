@@ -120,16 +120,18 @@ struct BetterClaudeApp: App {
                 Button("Command Palette…") { services.showsPalette.toggle() }
                     .keyboardShortcut("k", modifiers: .command)
                 Divider()
-                Button("Conversations") { services.destination = .conversations }
+                Button("Home") { services.destination = .home }
                     .keyboardShortcut("1", modifiers: .command)
-                Button("Running") { services.destination = .running }
+                Button("Conversations") { services.destination = .conversations }
                     .keyboardShortcut("2", modifiers: .command)
-                Button("Ask") { services.destination = .ask }
+                Button("Projects") { services.destination = .projects }
                     .keyboardShortcut("3", modifiers: .command)
                 Button("Usage") { services.destination = .usage }
                     .keyboardShortcut("4", modifiers: .command)
                 Button("Library") { services.destination = .library }
                     .keyboardShortcut("5", modifiers: .command)
+                Button("This Mac") { services.destination = .thisMac }
+                    .keyboardShortcut("6", modifiers: .command)
             }
         }
 

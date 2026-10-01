@@ -37,6 +37,8 @@ extension SidebarDestination {
     /// The name of a page, as the sidebar and the palette say it.
     var title: String {
         switch self {
+        case .home: return "Home"
+        case .thisMac: return "This Mac"
         case .conversations: return "Conversations"
         case .projects: return "Projects"
         case .running: return "Running"
@@ -56,6 +58,8 @@ extension SidebarDestination {
 
     var symbol: String {
         switch self {
+        case .home: return "house"
+        case .thisMac: return "laptopcomputer"
         case .conversations: return "bubble.left.and.bubble.right"
         case .projects: return "folder"
         case .running: return "waveform.path.ecg"
@@ -77,7 +81,8 @@ extension SidebarDestination {
 @MainActor
 enum CommandRegistry {
     static let pages: [(SidebarDestination, [String])] = [
-        (.conversations, ["chats", "history", "transcripts"]),
+        (.home, ["today", "start", "overview", "worth a look"]),
+        (.conversations, ["chats", "transcripts"]),
         (.projects, ["folders", "repos", "corrections", "decisions"]),
         (.running, ["now", "live", "sessions", "needs you", "jobs"]),
         (.ask, ["question", "answer"]),
@@ -90,6 +95,7 @@ enum CommandRegistry {
         (.memory, ["CLAUDE.md", "MEMORY.md", "notes"]),
         (.secrets, ["keys", "tokens", "api key", "rotate", "leaked"]),
         (.history, ["undo", "activity", "receipts"]),
+        (.thisMac, ["upkeep", "mac", "backups", "other macs"]),
     ]
 
     /// Everything that doesn't depend on what's typed.
@@ -135,8 +141,10 @@ enum CommandRegistry {
                 NSPasteboard.general.setString("betterclaude://conversation/\(conversation.id)", forType: .string)
             })
         }
+        let keys: [SidebarDestination: String] = [.home: "⌘1", .conversations: "⌘2", .projects: "⌘3",
+                                                  .usage: "⌘4", .library: "⌘5", .thisMac: "⌘6"]
         for (page, aliases) in pages {
-            commands.append(.init(id: "page.\(page.title)", title: page.title, symbol: page.symbol,
+            commands.append(.init(id: "page.\(page.title)", title: page.title, symbol: page.symbol, keys: keys[page],
                                   aliases: aliases, group: .goTo) { services.destination = page })
         }
         for install in services.installs {

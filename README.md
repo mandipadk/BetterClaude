@@ -76,7 +76,14 @@ account's is a door you open in Better Claude, one direction at a time. Claude C
 changed through `claude mcp`; a Desktop install gets one entry in its
 `claude_desktop_config.json`, which is backed up first. Turning the switch off takes it out.
 
-### Running, and knowing when Claude needs you
+### Home, and knowing when Claude needs you
+
+Home is where the app opens: what needs you, what's running, every account's weekly limit
+and where it's heading, the conversations you were last in, and a short "worth a look" list.
+That list fills only when a feature has found something (keys to rotate, things you keep
+telling Claude, memory notes Claude never sees, a model that changed on its own, what breaks
+cost this week, last month's card), with one button that goes there. "Not Now" hides one for
+a week.
 
 Every running Claude Code session, in any terminal or a Desktop app's Code tab, read from
 the status file Claude Code keeps for each one: working, done, or waiting on a permission or
@@ -85,7 +92,7 @@ clicking it brings the right app forward. An optional switch adds three hooks to
 Code's settings so notifications can say what Claude asked; switching it off removes
 exactly those hooks.
 
-**Unattended** on the Running page lists background jobs (`claude --bg`, forks) and
+**Unattended**, on the full Running list from Home, lists background jobs (`claude --bg`, forks) and
 conversations that keep themselves going with `/loop`: how each ended, what it came back
 with, and the ones whose record still says "working" though nothing has moved for half an
 hour. A job that finishes, fails or stalls sends a notification. A job's environment, which

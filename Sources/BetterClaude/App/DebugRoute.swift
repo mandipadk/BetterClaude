@@ -29,6 +29,10 @@ enum DebugRoute {
             // Routes act on what the first scan finds.
             while !services.hasLoaded { try? await Task.sleep(for: .milliseconds(50)) }
             switch parts[0] {
+            case "home":
+                services.destination = .home
+            case "thismac":
+                services.destination = .thisMac
             case "conversations":
                 services.destination = .conversations
             case "month":

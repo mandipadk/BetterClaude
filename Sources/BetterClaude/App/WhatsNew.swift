@@ -12,6 +12,12 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "0.30.0": [
+            Item(symbol: "house", title: "Home",
+                 detail: "Where the app now opens: what needs you, what's running, your limits, where you left off, and what's worth a look, which fills only when something has been found."),
+            Item(symbol: "sidebar.left", title: "Five places",
+                 detail: "Home, Conversations, Projects, Usage and Library, then your installs, then This Mac for upkeep. ⌘1 to ⌘6 go to each, and everything else is a click inside, or ⌘K away."),
+        ],
         "0.29.0": [
             Item(symbol: "command", title: "⌘K finds anything",
                  detail: "One field for every page, every action on the conversation you're reading, and every conversation by name. Words you'd use work too: “rewind” finds Show Changes. ⌘↩ asks your history instead."),
