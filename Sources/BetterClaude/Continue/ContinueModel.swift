@@ -33,6 +33,10 @@ final class ContinueModel: Identifiable {
     }
 
     let conversation: ConversationRef
+    /// Everything being carried: one conversation, or every conversation in a project.
+    let conversations: [ConversationRef]
+    /// Set when a whole Cowork project is being copied.
+    let project: CoworkProject?
     let source: Install?
 
     var step: Step = .choose
@@ -55,10 +59,30 @@ final class ContinueModel: Identifiable {
 
     init(conversation: ConversationRef, source: Install?) {
         self.conversation = conversation
+        self.conversations = [conversation]
+        self.project = nil
         self.source = source
     }
 
+    init(project: CoworkProject, conversations: [ConversationRef], source: Install?) {
+        self.conversation = conversations[0]
+        self.conversations = conversations
+        self.project = project
+        self.source = source
+        // A project is being moved as a whole, so the files in it come too.
+        self.includeUploads = true
+        self.includeOutputs = true
+    }
+
     var isCowork: Bool { conversation.coworkSession != nil }
+
+    /// What the sheet calls the thing being carried.
+    var subject: String { project?.name ?? conversation.title }
+
+    /// "the conversation", or "its 3 conversations".
+    var countPhrase: String {
+        conversations.count == 1 ? "the conversation" : "its \(conversations.count) conversations"
+    }
 
     // MARK: Plan
 
@@ -66,13 +90,13 @@ final class ContinueModel: Identifiable {
         guard let destination else { return }
         isPlanning = true
         failure = nil
-        let conversation = conversation
+        let conversations = conversations
         let options = exportOptions
         let profile = profile
         let quit = quitIfOpen
         Task {
             let result = await Task.detached(priority: .userInitiated) {
-                Result { try Self.buildPlan(conversation: conversation, destination: destination,
+                Result { try Self.buildPlan(conversations: conversations, destination: destination,
                                             options: options, profile: profile, quit: quit) }
             }.value
             isPlanning = false
@@ -95,7 +119,7 @@ final class ContinueModel: Identifiable {
         return options
     }
 
-    nonisolated static func buildPlan(conversation: ConversationRef, destination: ContinueDestination,
+    nonisolated static func buildPlan(conversations: [ConversationRef], destination: ContinueDestination,
                                       options: ExportOptions, profile: RedactionProfile,
                                       quit: Bool) throws -> (ImportPlan, URL) {
         let staging = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -104,12 +128,14 @@ final class ContinueModel: Identifiable {
         let bundle = staging.appendingPathComponent("transfer.coworkbundle")
 
         let exportPlan: ExportPlan
-        if let session = conversation.coworkSession {
-            exportPlan = try Exporter.plan([session], options: options)
-        } else if let session = conversation.claudeCodeSession {
-            exportPlan = try Exporter.plan([session], options: options)
+        let cowork = conversations.compactMap(\.coworkSession)
+        let code = conversations.compactMap(\.claudeCodeSession)
+        if !cowork.isEmpty {
+            exportPlan = try Exporter.plan(cowork, options: options)
+        } else if !code.isEmpty {
+            exportPlan = try Exporter.plan(code, options: options)
         } else {
-            throw TransferError.sourceTranscriptMissing(sessionId: conversation.cliSessionId)
+            throw TransferError.sourceTranscriptMissing(sessionId: conversations.first?.cliSessionId ?? "")
         }
         _ = try Exporter.write(exportPlan, to: bundle, profile: profile)
 
@@ -141,7 +167,7 @@ final class ContinueModel: Identifiable {
     func apply() {
         guard let plan else { return }
         step = .working
-        progress = "Copying the conversation…"
+        progress = conversations.count == 1 ? "Copying the conversation…" : "Copying \(conversations.count) conversations…"
         let options = ImportOptions(quitRunningVariant: quitIfOpen)
         let report: @Sendable (String) -> Void = { [weak self] message in
             Task { @MainActor in self?.progress = ContinueModel.friendly(message) }

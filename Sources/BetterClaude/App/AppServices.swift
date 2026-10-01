@@ -569,6 +569,34 @@ final class AppServices {
     /// The conversation being continued elsewhere, shown as a sheet.
     var continuing: ContinueModel?
 
+    /// Cowork projects with at least one conversation, across every install.
+    private(set) var coworkProjects: [CoworkProject] = []
+
+    func loadCoworkProjects() {
+        let sessions = snapshot.conversations.compactMap(\.coworkSession)
+        Task {
+            let projects = await Task.detached(priority: .utility) { CoworkProjects.projects(in: sessions) }.value
+            coworkProjects = projects
+        }
+    }
+
+    /// The project a Cowork conversation belongs to, once projects have been read.
+    func coworkProject(for conversation: ConversationRef) -> CoworkProject? {
+        guard let session = conversation.coworkSession else { return nil }
+        return coworkProjects.first { $0.sessions.contains { $0.metadataURL == session.metadataURL } }
+    }
+
+    /// Copy a whole Cowork project, every conversation in it, into another Claude.
+    func beginProjectCopy(_ project: CoworkProject) {
+        let paths = Set(project.sessions.map(\.metadataURL))
+        let conversations = snapshot.conversations.filter {
+            guard let session = $0.coworkSession else { return false }
+            return paths.contains(session.metadataURL) && !$0.isTranscriptMissing
+        }
+        guard let first = conversations.first else { return }
+        continuing = ContinueModel(project: project, conversations: conversations, source: install(for: first))
+    }
+
     func beginContinue(_ conversation: ConversationRef) {
         guard !conversation.isTranscriptMissing, conversation.external == nil else { return }
         continuing = ContinueModel(conversation: conversation, source: install(for: conversation))

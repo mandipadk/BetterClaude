@@ -12,6 +12,10 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "1.2.0": [
+            Item(symbol: "rectangle.stack", title: "Copy a whole Cowork project",
+                 detail: "Projects lists your Cowork projects. Copy To… carries one into another Claude with its folder, what Claude remembers about it, and every conversation in it. The original stays put, and Undo in Activity takes the copy back."),
+        ],
         "1.1.0": [
             Item(symbol: "macwindow", title: "Every screen, redrawn",
                  detail: "Home, Conversations, Changes, Usage, Library, projects, This Mac and the menu bar now follow one design: more room between sections, quieter selection, and the same rows and buttons everywhere."),

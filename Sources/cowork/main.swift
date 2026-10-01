@@ -25,6 +25,9 @@ USAGE
   cowork list --code [--config <dir>] [--project <path>]
       List sessions.
 
+  cowork export --project <name> [--store <variant>] --out <file.coworkbundle>
+      Export every conversation in a Cowork project, which carries the project with it.
+
   cowork export <sessionId>... --out <file.coworkbundle>
                 [--profile same-user|cross-user|share] [--uploads] [--outputs]
       Export sessions to a bundle. Blocks if credential-shaped content is found.
@@ -593,8 +596,19 @@ func cmdList(_ args: Args) throws {
 
 func cmdExport(_ args: Args) throws {
     guard let out = args.values["out"] else { fail("--out <file.coworkbundle> is required") }
-    let ids = Set(args.positional)
-    guard !ids.isEmpty else { fail("name at least one session id (see `cowork list`)") }
+    var ids = Set(args.positional)
+    if let name = args.values["project"] {
+        var sessions: [SessionRef] = []
+        for store in try Discovery.stores() where args.values["store"].map({ $0 == store.variantDirName }) ?? true {
+            for account in try Discovery.accounts(in: store) { sessions += try Discovery.sessions(in: account) }
+        }
+        let matches = CoworkProjects.projects(in: sessions).filter { $0.name == name }
+        guard let project = matches.first else { fail("no Cowork project named \(name) holds a conversation") }
+        if matches.count > 1 { fail("more than one Cowork project is named \(name); pick one with --store") }
+        print("\(project.name): \(project.sessions.count) conversation(s) in \(project.account.store.variantDirName)")
+        ids.formUnion(project.sessions.map(\.sessionId))
+    }
+    guard !ids.isEmpty else { fail("name at least one session id (see `cowork list`), or --project <name>") }
 
     let profile = RedactionProfile(rawValue: args.values["profile"] ?? "same-user")
         ?? RedactionProfile(rawValue: (args.values["profile"] ?? "").replacingOccurrences(of: "-", with: ""))

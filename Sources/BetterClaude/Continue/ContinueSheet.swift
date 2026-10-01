@@ -140,11 +140,14 @@ private struct ChooseStep: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text("Continue “\(model.conversation.title)”")
+                Text(model.project == nil ? "Continue “\(model.subject)”" : "Copy “\(model.subject)” to another Claude")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(Theme.Surface.primary)
                     .lineLimit(2)
-                Text("Pick where to carry on. Nothing leaves this Mac.")
+                Text(model.project == nil
+                     ? "Pick where to carry on. Nothing leaves this Mac."
+                     : "The project, its folder, what Claude remembers about it, and \(model.countPhrase). The original stays where it is. Nothing leaves this Mac.")
+                    .fixedSize(horizontal: false, vertical: true)
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.Surface.secondary)
                     .padding(.top, 3)
@@ -159,7 +162,7 @@ private struct ChooseStep: View {
                             model.destination = item.destination
                         }
                     }
-                    if let code = services.installs.first(where: { $0.kind == .claudeCode }) {
+                    if model.project == nil, let code = services.installs.first(where: { $0.kind == .claudeCode }) {
                         DestinationTile(install: code, detail: projectLine,
                                         isSelected: pickingProject || isProject) {
                             pickingProject = true
@@ -208,6 +211,8 @@ private struct ChooseStep: View {
                             }
                             .padding(.horizontal, 14).padding(.vertical, 10)
                         }
+                        // A project's folders only travel with your own name and email kept.
+                        if model.project == nil {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Your name and email").font(.system(size: 13, weight: .medium))
                             Picker("Your name and email", selection: $model.profile) {
@@ -219,6 +224,7 @@ private struct ChooseStep: View {
                             .pickerStyle(.radioGroup)
                         }
                         .padding(.horizontal, 14).padding(.vertical, 10)
+                        }
                     }
                     .toggleStyle(.switch)
                 }
@@ -344,7 +350,7 @@ private struct ReviewStep: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.xl) {
-                Passage(from: model.source, conversationTitle: model.conversation.title,
+                Passage(from: model.source, conversationTitle: model.subject,
                         to: destinationInstall, projectName: destinationProject)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Theme.Space.s)
@@ -410,17 +416,20 @@ private struct ReviewStep: View {
 
     private var heading: String {
         switch model.destination {
-        case .account: return "Ready to continue in \(destinationName)"
+        case .account: return model.project == nil ? "Ready to continue in \(destinationName)" : "Ready to copy it to \(destinationName)"
         case .project: return "Ready to continue in Claude Code"
         case nil: return ""
         }
     }
 
     private var summary: String {
-        let title = "“\(model.conversation.title)”"
+        let title = "“\(model.subject)”"
         switch model.destination {
         case .account(_, let account):
             let who = account.emailAddress.map { ", signed in as \($0)" } ?? ""
+            if model.project != nil {
+                return "Copies the project \(title) and \(model.countPhrase) into \(destinationName)\(who). The project is made there once, with the same folder, and each conversation is filed in it."
+            }
             return "Copies \(title) into \(destinationName)\(who). It will be at the top of its conversation list."
         case .project(let path):
             return "Copies \(title) into Claude Code for \(services.snapshot.paths.abbreviating(path)), where `claude --resume` picks it up."
@@ -505,7 +514,10 @@ private struct DoneStep: View {
 
     private var detail: String {
         switch model.destination {
-        case .account: return "Open it and the conversation is at the top of the list, ready to pick up where it left off."
+        case .account:
+            return model.project == nil
+                ? "Open it and the conversation is at the top of the list, ready to pick up where it left off."
+                : "Open it and the project is in Projects, with \(model.countPhrase) in it. The original is still in \(model.source?.name ?? "the first Claude") until you delete it there."
         case .project(let path): return "Open it in Terminal, or run claude --resume in \(URL(fileURLWithPath: path).lastPathComponent)."
         case nil: return ""
         }

@@ -240,6 +240,14 @@ enum DebugRoute {
                     while !services.memory.loaded { try? await Task.sleep(for: .milliseconds(50)) }
                     services.memory.selectedID = services.memory.groups.first { $0.title == argument }?.id
                 }
+            case "copyproject":
+                // `copyproject:<name>`: the sheet that copies a whole Cowork project.
+                services.destination = .projects
+                services.loadCoworkProjects()
+                while services.coworkProjects.isEmpty { try? await Task.sleep(for: .milliseconds(50)) }
+                if let project = services.coworkProjects.first(where: { $0.name == argument }) {
+                    services.beginProjectCopy(project)
+                }
             case "continue", "continue-review":
                 if let match = services.snapshot.conversations.first(where: {
                     $0.title.localizedCaseInsensitiveContains(argument)

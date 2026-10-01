@@ -28,6 +28,9 @@ struct ConversationActions: View {
         }
         Button("Replay on Another Model…") { services.replaying = ReplayModel(conversation: conversation) }
             .disabled(missing)
+        if let project = services.coworkProject(for: conversation) {
+            Button("Copy Project “\(project.name)” to…") { services.beginProjectCopy(project) }
+        }
         if !external {
             Button("Write a Handoff…") { services.beginHandoff(conversation) }.disabled(missing)
         }
@@ -82,6 +85,9 @@ struct MoreActions: View {
         }
         if conversation.external == nil {
             Button("Play Changes…") { services.rewinding = RewindModel(conversation: conversation, playing: true) }
+        }
+        if let project = services.coworkProject(for: conversation) {
+            Button("Copy Project “\(project.name)” to…") { services.beginProjectCopy(project) }
         }
         Button("Find in Conversation") { services.reader.showsFind = true }.keyboardShortcut("f")
         Divider()

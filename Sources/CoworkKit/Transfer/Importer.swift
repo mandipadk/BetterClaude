@@ -154,11 +154,12 @@ public enum Importer {
         var spacesToCreate: [String] = []
         for entry in manifest.sessions {
             guard let space = entry.space else { continue }
-            if case .absent = SpaceStore.match(space, against: existingSpaces) {
+            // Several conversations in one project name it once each; it is created once.
+            if case .absent = SpaceStore.match(space, against: existingSpaces), !spacesToCreate.contains(space.name) {
                 spacesToCreate.append(space.name)
             }
             for folder in space.folders
-            where !fm.fileExists(atPath: folder) {
+            where !fm.fileExists(atPath: folder) && !missingFolders.contains(folder) {
                 missingFolders.append(folder)
             }
         }

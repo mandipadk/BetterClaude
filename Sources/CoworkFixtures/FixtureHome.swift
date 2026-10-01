@@ -194,12 +194,15 @@ public struct FixtureHome {
                                         "organizationType": plan]],
                       to: orgDir.appendingPathComponent(".claude.json"))
 
+        let spaceID = "5d0c7a1e-3b2f-4c8d-9e6a-1f2b3c4d5e6f"
         for conversation in conversations {
-            try writeCowork(conversation, orgDir: orgDir, email: email, name: name)
+            let inProject = account == Self.workAccount
+                && (conversation.title.hasPrefix("Q4 hiring") || conversation.title.hasPrefix("Customer interview"))
+            try writeCowork(conversation, orgDir: orgDir, email: email, name: name,
+                            spaceID: inProject ? spaceID : nil)
         }
         try writeUsageHistory(to: userData, org: org, weeklyNow: account == Self.workAccount ? 76 : 46)
         if account == Self.workAccount {
-            let spaceID = "5d0c7a1e-3b2f-4c8d-9e6a-1f2b3c4d5e6f"
             try writeJSON(["spaces": [["id": spaceID, "name": "Q4 planning",
                                        "folders": [["path": paths.home.appendingPathComponent("Documents/Q4 planning").path]]]]],
                           to: orgDir.appendingPathComponent("spaces.json"))
@@ -227,7 +230,7 @@ public struct FixtureHome {
     }
 
     func writeCowork(_ conversation: Script.Conversation, orgDir: URL, email: String,
-                     name: String) throws {
+                     name: String, spaceID: String? = nil) throws {
         let sessionId = "local_" + conversation.id
         let processName = conversation.processName
         let cwd = "/sessions/\(processName)"
@@ -250,7 +253,7 @@ public struct FixtureHome {
             }
         }
 
-        try writeJSON([
+        var metadata: [String: Any] = [
             "sessionId": sessionId,
             "cliSessionId": conversation.cliId,
             "processName": processName,
@@ -264,7 +267,9 @@ public struct FixtureHome {
             "emailAddress": email,
             "accountName": name,
             "initialMessage": conversation.turns.first?.user ?? "",
-        ], to: orgDir.appendingPathComponent("\(sessionId).json"))
+        ]
+        if let spaceID { metadata["spaceId"] = spaceID }
+        try writeJSON(metadata, to: orgDir.appendingPathComponent("\(sessionId).json"))
     }
 
     /// Cowork's plugins live beside the conversations, per organisation.

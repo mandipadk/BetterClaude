@@ -230,6 +230,11 @@ with the chat intact: user turns, assistant turns, tool calls, and inline images
 documents byte for byte. You see where it's going and what will happen before anything is
 written, and afterwards you can open it there directly — or resume it in Terminal.
 
+**Copy to…** on a Cowork project in **Projects** carries the whole project into another
+install: its folder, what Claude remembers about it, and every conversation in it. The
+project is created there once and each conversation is filed in it; the original stays where
+it is. From the command line, `cowork export --project "<name>" --out p.coworkbundle`.
+
 **Fork from here** starts a new Claude Code conversation from any message; the original is
 not changed, and a fork of a Code tab session is listed in that app's Code tab. Every copy and fork is listed in **History** with **Undo**.
 

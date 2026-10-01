@@ -140,7 +140,39 @@ struct ProjectsPage: View {
                     }
                 }
             }
+            if !services.coworkProjects.isEmpty {
+                SectionLabel(title: "Cowork projects")
+                Card(inset: 44) {
+                    ForEach(services.coworkProjects) { project in
+                        Row(title: project.name, detail: coworkLine(project)) {
+                            RowSymbol(name: "rectangle.stack")
+                        } trailing: {
+                            Button("Copy to…") { services.beginProjectCopy(project) }
+                                .buttonStyle(.secondary)
+                                .help("Copy this project and its conversations into another Claude")
+                        }
+                        .contextMenu {
+                            Button("Copy to Another Claude…") { services.beginProjectCopy(project) }
+                            if let folder = project.space.folders.first {
+                                Divider()
+                                Button("Show Folder in Finder") {
+                                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: folder)])
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
+        .task(id: services.generation) { services.loadCoworkProjects() }
+    }
+
+    private func coworkLine(_ project: CoworkProject) -> String {
+        let install = services.installs.first { install in
+            (services.snapshot.accounts[install.id] ?? []).contains { $0.id == project.account.id }
+        }
+        let count = "\(project.sessions.count) conversation\(project.sessions.count == 1 ? "" : "s")"
+        return install.map { "\(count) in \($0.name)" } ?? count
     }
 
     private func line(_ project: ProjectSummary) -> String {
