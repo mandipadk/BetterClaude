@@ -37,12 +37,12 @@ for route in "${ROUTES[@]}"; do
     if [ -n "${ACTIVATE:-}" ]; then
       # Through Launch Services, which brings the app to the front; a process started from a
       # shell can't take focus on its own.
-      open -n --env BC_FIXTURE_ROOT="$WORK/mac" --env BC_UI_ROUTE="$route" --env BC_APPEARANCE="$appearance" \
+      open -n --env BC_FIXTURE_ROOT="$WORK/mac" --env BC_UI_ROUTE="$route" --env BC_APPEARANCE="$appearance" --env BC_TIPS="${TIPS:-}" \
         "$ROOT/dist/debug/BetterClaude.app"
       sleep 1
       pid="$(pgrep -n -f "dist/debug/BetterClaude.app/Contents/MacOS/BetterClaude")"
     else
-      BC_FIXTURE_ROOT="$WORK/mac" BC_UI_ROUTE="$route" BC_APPEARANCE="$appearance" "$APP" >/dev/null 2>&1 &
+      BC_FIXTURE_ROOT="$WORK/mac" BC_UI_ROUTE="$route" BC_APPEARANCE="$appearance" BC_TIPS="${TIPS:-}" "$APP" >/dev/null 2>&1 &
       pid=$!
     fi
     sleep "${SETTLE:-3}"

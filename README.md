@@ -114,7 +114,7 @@ by project and conversation, from the tokens every reply used weighed at list pr
 arrives when an account passes 80% or 95% of a limit, once per window, naming the account
 with the most room left.
 
-**Your Month…** puts a month with every Claude on one card: conversations, prompts, days
+**Your Month…** on Usage, and on Home in a month's first days, puts a month with every Claude on one card: conversations, prompts, days
 active and the longest run of them, the hours you work, models, the tools Claude used most,
 projects (names hidden unless you choose), and what it came to. Copy it or save it as an
 image.
@@ -161,14 +161,14 @@ summary no longer mentions, with a button to add them to the project's `CLAUDE.m
 
 ### What a conversation changed
 
-**What It Changed…** in a conversation's ⋯ menu lists every file it edited or created,
+**Show Changes…** in the toolbar, the ⋯ menu or ⌘K lists every file a conversation edited or created,
 each compared with the copy Claude Code saved before the conversation first touched it.
 Put back any or all of them in one step: what's there now is saved first, files the
 conversation created are taken away, and Undo in History reverses the whole thing. It works
 long after the session ended, and after Claude Code's cleanup for versions Better Claude
 kept. Claude's `conversation_changes` tool gives Claude the same list.
 
-**Watch It Change…** plays one of those files through the conversation: from before it,
+**Play** plays one of those files through the conversation: from before it,
 through each version Claude Code saved, to now, each change shown as a diff beside what was
 asked in the turn that made it. Scrub or press Play.
 

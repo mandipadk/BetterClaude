@@ -12,6 +12,12 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "1.0.0": [
+            Item(symbol: "house", title: "Better Claude 1.0",
+                 detail: "A new look, five places, Home, ⌘K, a reader that starts with the conversation, project and install pages in tabs, and Settings in one window."),
+            Item(symbol: "lightbulb", title: "Tips, once",
+                 detail: "Two short tips introduce ⌘K and the details beside a conversation, once each. Welcome is two pages now, and ends on Home."),
+        ],
         "0.33.0": [
             Item(symbol: "gearshape", title: "Settings, all in one place",
                  detail: "General, Notifications, Claude Access, API Key and Updates. All seven notifications are together, and whether each Claude can search your history is on one screen."),

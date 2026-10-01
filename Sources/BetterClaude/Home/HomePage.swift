@@ -1,5 +1,6 @@
 import CoworkKit
 import SwiftUI
+import TipKit
 
 /// What the features found, for Home's "Worth a look". The quick ones are read live; the ones
 /// that read the index are worked out off the main actor and kept until the next refresh.
@@ -110,6 +111,9 @@ struct HomePage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 PageHeader(title: "Home", subtitle: summary)
+                TipView(PaletteTip())
+                    .tipBackground(Theme.groupFill)
+                    .padding(.top, Theme.Space.l)
                 if wide {
                     HStack(alignment: .top, spacing: 28) {
                         left.frame(maxWidth: .infinity, alignment: .top)

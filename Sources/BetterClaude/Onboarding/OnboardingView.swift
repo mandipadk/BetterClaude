@@ -16,14 +16,13 @@ struct OnboardingView: View {
     @State private var forward = true
     let onFinish: () -> Void
 
-    private let pageCount = 3
+    private let pageCount = 2
 
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
                 switch page {
                 case 0: WelcomePage().transition(pageTransition)
-                case 1: WhatItDoesPage().transition(pageTransition)
                 default:
                     SetupPage(keepAutomatically: $keepAutomatically, showInMenuBar: $showInMenuBar,
                               openAtLogin: $openAtLogin)
@@ -89,6 +88,8 @@ struct OnboardingView: View {
     private func finish() {
         if openAtLogin { try? SMAppService.mainApp.register() }
         onboardingCompleted = true
+        // Your real data is the tour: Home, with what needs you and what's worth a look.
+        services.destination = .home
         onFinish()
     }
 }
@@ -167,51 +168,6 @@ private struct IconFan: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(installs.map(\.name).joined(separator: ", "))
-    }
-}
-
-private struct WhatItDoesPage: View {
-    var body: some View {
-        VStack(spacing: Theme.Space.xxl) {
-            PageHeading(title: "What Better Claude does",
-                        subtitle: "It reads what every Claude on this Mac keeps, and never changes a thing without asking.")
-            LazyVGrid(columns: [GridItem(.fixed(300), spacing: 16), GridItem(.fixed(300), spacing: 16)], spacing: 16) {
-                Promise(symbol: "arrow.right.circle", title: "Continue anywhere",
-                        detail: "Carry a conversation to another Claude or to Claude Code, and undo it any time.")
-                Promise(symbol: "archivebox", title: "Keep",
-                        detail: "Claude Code deletes conversations after 30 days. Better Claude keeps a copy.")
-                Promise(symbol: "magnifyingglass", title: "Find",
-                        detail: "Every conversation and everything Claude made, searchable in one place.")
-                Promise(symbol: "internaldrive", title: "Tidy up",
-                        detail: "See what Claude keeps on disk, and free what's safe to.")
-            }
-        }
-    }
-}
-
-private struct Promise: View {
-    let symbol: String
-    let title: String
-    let detail: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: symbol)
-                .font(.system(size: 17))
-                .foregroundStyle(.secondary)
-                .frame(width: 24, height: 22)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(Theme.Font.headline)
-                Text(detail)
-                    .font(Theme.Font.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(16)
-        .frame(height: 104, alignment: .top)
-        .groupSurface(cornerRadius: 18)
     }
 }
 

@@ -1,5 +1,6 @@
 import CoworkKit
 import SwiftUI
+import TipKit
 
 /// Reads a conversation without opening Claude.
 struct ReaderView: View {
@@ -49,6 +50,11 @@ struct ReaderView: View {
                     ReaderHeader(conversation: conversation, install: reader.install,
                                  readable: reader.readable)
                         .padding(.bottom, Theme.Space.xl)
+                }
+                if reader.conversation?.external == nil {
+                    TipView(ReaderTip())
+                        .tipBackground(Theme.groupFill)
+                        .padding(.bottom, Theme.Space.l)
                 }
                 let entries = reader.visibleEntries
                 // While finding, only matching messages show, and markers between them would mislead.
