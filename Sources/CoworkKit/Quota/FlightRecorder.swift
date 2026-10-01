@@ -119,9 +119,11 @@ public enum CacheBreaks {
         public let projects: [(name: String, extra: Double, breaks: Int)]
         /// Whether this Mac's sessions mostly keep the cache for an hour, rather than five minutes.
         public let hourLong: Bool
+        /// The longest gap, and which conversation it was in.
+        public var longest: Break?
     }
 
-    public static func summary(index: HistoryIndex, since: Date) async throws -> Summary {
+    public static func summary(index: HistoryIndex, since: Date, until: Date = .distantFuture) async throws -> Summary {
         let rows = try await index.rows("""
             SELECT u.model, u.timestamp, u.input, u.output, u.cache_read, u.cache_write_5m, u.cache_write_1h,
                    u.conversation_id, c.project_path
@@ -137,7 +139,7 @@ public enum CacheBreaks {
             let isLast = index == rows.count - 1 || rows[index + 1].text(7) != row.text(7)
             guard isLast, let id = row.text(7) else { continue }
             if let project = row.text(8) { projectOf[id] = URL(fileURLWithPath: Projects.root(of: project)).lastPathComponent }
-            all += detect(conversationID: id, rows: Array(rows[start...index])).filter { $0.at >= since }
+            all += detect(conversationID: id, rows: Array(rows[start...index])).filter { $0.at >= since && $0.at < until }
             start = index + 1
         }
         var byProject: [String: (Double, Int)] = [:]
@@ -147,7 +149,7 @@ public enum CacheBreaks {
         }
         return Summary(breaks: all.count, tokens: all.reduce(0) { $0 + $1.tokens }, extra: all.reduce(0) { $0 + $1.extra },
                        projects: byProject.map { ($0.key, $0.value.0, $0.value.1) }.sorted { $0.1 > $1.1 },
-                       hourLong: hourWrites >= fiveWrites)
+                       hourLong: hourWrites >= fiveWrites, longest: all.max { $0.gap < $1.gap })
     }
 
     /// When a conversation's cache goes cold: an hour or five minutes after its last reply,

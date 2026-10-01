@@ -5,7 +5,6 @@ import SwiftUI
 struct MainWindow: View {
     @Environment(AppServices.self) private var services
     @State private var showsOnboarding = false
-    @FocusState private var searchFocused: Bool
 
     static var firstRun: Bool {
         #if DEBUG
@@ -21,11 +20,16 @@ struct MainWindow: View {
         @Bindable var services = services
         NavigationSplitView {
             Sidebar()
-                .navigationSplitViewColumnWidth(min: 220, ideal: 244, max: 320)
+                .frame(minWidth: 208)
+                .navigationSplitViewColumnWidth(min: 208, ideal: 208, max: 260)
+                .toolbar(removing: .sidebarToggle)
         } detail: {
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .navigationTitle("")
+                .background(Theme.Surface.window.ignoresSafeArea())
+                // The toolbar's bottom edge.
+                .overlay(alignment: .top) { Rectangle().fill(Theme.Surface.line).frame(height: 0.5) }
+                .navigationTitle(services.windowTitle)
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
@@ -38,18 +42,16 @@ struct MainWindow: View {
                     .help("Forward (⌘])")
                     .keyboardShortcut("]", modifiers: .command)
             }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    services.refresh()
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+            if ![.conversations, .usage, .library].contains(services.destination),
+               !(services.destination == .projects && services.projectPages.selectedID != nil) {
+                ToolbarItem(placement: .primaryAction) {
+                    SearchPill(prompt: "Search or ask") { services.showsPalette = true }
                 }
-                .help("Look for new conversations (⌘R)")
-                .keyboardShortcut("r", modifiers: .command)
+                .sharedBackgroundVisibility(.hidden)
             }
         }
-        .searchable(text: $services.query, placement: .toolbar, prompt: "Search, or ⌘↩ to ask")
-        .searchFocused($searchFocused)
+        .toolbarBackground(Theme.Surface.bar, for: .windowToolbar)
+        .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
         .overlay {
             if services.showsPalette {
                 ZStack(alignment: .top) {
@@ -75,10 +77,13 @@ struct MainWindow: View {
             .accessibilityHidden(true)
         }
         .background {
-            // ⌘F finds conversations from anywhere in the window.
+            // ⌘F finds in the conversation you're reading, or opens ⌘K elsewhere.
             Button("") {
-                services.destination = .conversations
-                searchFocused = true
+                if services.destination == .conversations, services.reader.conversation != nil {
+                    services.reader.showsFind = true
+                } else {
+                    services.showsPalette = true
+                }
             }
             .keyboardShortcut("f", modifiers: .command)
             .opacity(0)
@@ -162,9 +167,10 @@ struct MainWindow: View {
             EmptyView()
         } else if services.previewsMenuBarPanel {
             MenuBarPanel()
-                .background(.regularMaterial, in: .rect(cornerRadius: Theme.Radius.panel))
-                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.panel).strokeBorder(Theme.hairline))
+                .clipShape(.rect(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.Surface.line))
                 .shadow(color: .black.opacity(0.2), radius: 20, y: 8)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             destinationView
@@ -221,110 +227,150 @@ struct Sidebar: View {
     @Environment(AppServices.self) private var services
     @Environment(UpdateModel.self) private var updates
 
-    /// Pages that live under a sidebar row keep that row selected: Kept is part of This Mac,
-    /// Files and Memory of Projects, Prompts of Library, Running and Ask of Home.
-    private var sidebarSelection: Binding<SidebarDestination?> {
-        Binding {
-            switch services.destination {
-            case .kept, .storage, .secrets, .history: return .thisMac
-            case .files, .memory: return .projects
-            case .prompts: return .library
-            case .running, .ask: return .home
-            default: return services.destination
-            }
-        } set: { services.destination = $0 }
+    /// Pages that live under a sidebar row keep that row selected.
+    private var selected: SidebarDestination? {
+        switch services.destination {
+        case .kept, .storage, .secrets, .history: return .thisMac
+        case .files, .memory: return .projects
+        case .prompts: return .library
+        case .running, .ask: return .home
+        default: return services.destination
+        }
     }
 
     var body: some View {
-        @Bindable var services = services
-        List(selection: sidebarSelection) {
-            Section {
-                Label("Home", systemImage: "house")
-                    .badge(services.pulse.needingYou.count)
-                    .tag(SidebarDestination.home)
-                Label("Conversations", systemImage: "bubble.left.and.bubble.right")
-                    .tag(SidebarDestination.conversations)
-                Label("Projects", systemImage: "folder")
-                    .tag(SidebarDestination.projects)
-                Label("Usage", systemImage: "chart.bar.xaxis")
-                    .tag(SidebarDestination.usage)
-                Label("Library", systemImage: "books.vertical")
-                    .tag(SidebarDestination.library)
-            }
-
-            if !services.installs.isEmpty {
-                Section("Sources") {
-                    ForEach(services.installs) { install in
-                        InstallRow(install: install,
-                                   isRunning: services.isRunning(install),
-                                   count: services.conversationCount(in: install))
-                            .tag(SidebarDestination.install(install.id))
-                            .contextMenu {
-                                Button("Show Conversations") {
-                                    services.filter = .install(install.id)
-                                    services.destination = .conversations
-                                }
-                                if install.appURL != nil {
-                                    Button(services.isRunning(install) ? "Show \(install.name)" : "Open \(install.name)") {
-                                        services.open(install)
-                                    }
-                                }
-                                Button("Show in Finder") {
-                                    NSWorkspace.shared.activateFileViewerSelecting([install.dataRoot])
-                                }
-                            }
+        VStack(alignment: .leading, spacing: 1) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 1) {
+                    item(.home, "Home", "house", count: services.pulse.needingYou.count, attention: true)
+                    item(.conversations, "Conversations", "bubble.left.and.bubble.right")
+                    item(.projects, "Projects", "folder")
+                    item(.usage, "Usage", "chart.bar.xaxis")
+                    item(.library, "Library", "books.vertical")
+                    if !services.installs.isEmpty {
+                        Text("Sources")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.Surface.secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.top, 14)
+                            .padding(.bottom, 5)
+                            .accessibilityAddTraits(.isHeader)
+                        ForEach(services.installs) { install in
+                            sourceRow(install)
+                        }
                     }
                 }
+                .padding(.horizontal, 10)
+                .padding(.top, 2)
             }
+            .scrollIndicators(.never)
+            item(.thisMac, "This Mac", "laptopcomputer", count: services.secrets.open.count, attention: true)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 12)
+            footer
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Theme.Surface.sidebar.ignoresSafeArea())
+    }
 
-            Section {
-                Label("This Mac", systemImage: "laptopcomputer")
-                    .badge(services.secrets.open.count)
-                    .tag(SidebarDestination.thisMac)
+    private func item(_ destination: SidebarDestination, _ title: String, _ symbol: String,
+                      count: Int = 0, attention: Bool = false) -> some View {
+        SidebarRow(isSelected: selected == destination, action: { services.destination = destination }) {
+            Image(systemName: symbol)
+                .font(.system(size: 13.5))
+                .foregroundStyle(Theme.accent)
+                .frame(width: 18)
+            Text(title)
+            Spacer(minLength: 6)
+            if count > 0 {
+                Text("\(count)")
+                    .font(.system(size: 12, weight: attention ? .semibold : .regular))
+                    .foregroundStyle(attention ? Theme.attention : Theme.Surface.secondary)
+                    .monospacedDigit()
             }
         }
-        .listStyle(.sidebar)
-        .bottomBar {
-            if let version = updates.waiting {
-                Button { updates.showWaiting() } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.down.circle.fill").foregroundStyle(Theme.accent)
-                        Text("Better Claude \(version) is ready")
-                            .font(Theme.Font.callout)
-                        Spacer()
-                        Text("Update…").font(Theme.Font.callout).foregroundStyle(Theme.accent)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-            } else if let progress = services.index.progress {
-                HStack(spacing: 8) {
-                    ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
-                        .controlSize(.small)
-                        .frame(width: 60)
-                    Text("Reading \(progress.done) of \(progress.total) conversations…")
-                        .font(Theme.Font.callout)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-            } else if services.isLoading && !services.hasLoaded {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Looking for Claude on this Mac…")
-                        .font(Theme.Font.callout)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+    }
+
+    private func sourceRow(_ install: Install) -> some View {
+        let count = services.conversationCount(in: install)
+        return SidebarRow(isSelected: selected == .install(install.id), action: { services.destination = .install(install.id) }) {
+            InstallIcon(install: install, size: 22)
+                .frame(width: 18, height: 18)
+            Text(install.name).lineLimit(1)
+            Spacer(minLength: 6)
+            if count > 0 {
+                Text("\(count)").font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary).monospacedDigit()
             }
         }
+        .help(services.isRunning(install) ? "\(install.name) is open" : install.name)
+        .contextMenu {
+            Button("Show Conversations") {
+                services.filter = .install(install.id)
+                services.destination = .conversations
+            }
+            if install.appURL != nil {
+                Button(services.isRunning(install) ? "Show \(install.name)" : "Open \(install.name)") { services.open(install) }
+            }
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([install.dataRoot]) }
+        }
+    }
+
+    @ViewBuilder
+    private var footer: some View {
+        if let version = updates.waiting {
+            Button { updates.showWaiting() } label: {
+                HStack(spacing: 8) {
+                    Text("Better Claude \(version) is ready").font(.system(size: 12))
+                        .foregroundStyle(Theme.Surface.secondary)
+                    Spacer()
+                    Text("Update…").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.accent)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 14)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+        } else if let progress = services.index.progress {
+            HStack(spacing: 8) {
+                ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
+                    .controlSize(.small).frame(width: 48)
+                Text("Reading \(progress.done) of \(progress.total)…")
+                    .font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary).monospacedDigit().lineLimit(1)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 14)
+        } else if services.isLoading && !services.hasLoaded {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Looking for Claude on this Mac…").font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 14)
+        }
+    }
+}
+
+/// A sidebar row: 28pt tall, 8pt corners, a neutral highlight when selected.
+struct SidebarRow<Content: View>: View {
+    let isSelected: Bool
+    let action: () -> Void
+    @ViewBuilder let content: Content
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) { content }
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.Surface.primary)
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background(isSelected ? Theme.Surface.selection : hovering ? Theme.Surface.fill.opacity(0.6) : .clear,
+                            in: .rect(cornerRadius: 8, style: .continuous))
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
     }
 }
 

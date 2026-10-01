@@ -27,6 +27,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         BackupSheet.migrateLastBackup()
+        // The sidebar is narrower in this design; forget the width an older version saved.
+        if !UserDefaults.standard.bool(forKey: "sidebarWidthReset2") {
+            UserDefaults.standard.removeObject(forKey: "NSSplitView Subview Frames main, SidebarNavigationSplitView")
+            UserDefaults.standard.set(true, forKey: "sidebarWidthReset2")
+        }
         AppTips.configure()
         NSAppleEventManager.shared().setEventHandler(
             self, andSelector: #selector(handleQuit(_:reply:)),
@@ -120,6 +125,8 @@ struct BetterClaudeApp: App {
             CommandGroup(after: .sidebar) {
                 Button("Command Palette…") { services.showsPalette.toggle() }
                     .keyboardShortcut("k", modifiers: .command)
+                Button("Look for New Conversations") { services.refresh() }
+                    .keyboardShortcut("r", modifiers: .command)
                 Divider()
                 Button("Home") { services.destination = .home }
                     .keyboardShortcut("1", modifiers: .command)

@@ -28,8 +28,8 @@ final class ProjectsModel {
         Task {
             projects = (try? await Projects.list(index: index)) ?? []
             loaded = true
-            if selectedID == nil || !projects.contains(where: { $0.id == selectedID }) {
-                selectedID = projects.first?.id
+            if let selectedID, !projects.contains(where: { $0.id == selectedID }) {
+                self.selectedID = nil
             } else {
                 loadDetail()
             }
@@ -79,68 +79,68 @@ struct ProjectsPage: View {
     @Environment(AppServices.self) private var services
 
     var body: some View {
-        @Bindable var model = services.projectPages
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Projects").font(Theme.Font.title)
-                    Text(model.loaded ? "\(model.projects.count) folders Claude has worked in" : "Reading…")
-                        .font(Theme.Font.callout)
-                        .foregroundStyle(.secondary)
-                    HStack(spacing: 14) {
-                        Button("Files Claude Changed") { services.destination = .files }
-                        Button("Memory") { services.destination = .memory }
-                    }
-                    .buttonStyle(.plain)
-                    .font(Theme.Font.callout.weight(.medium))
-                    .foregroundStyle(Theme.accent)
-                    .padding(.top, 6)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
-                List(selection: $model.selectedID) {
-                    ForEach(model.projects) { project in
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(project.name).font(Theme.Font.body).lineLimit(1)
-                            Text(line(project))
-                                .font(Theme.Font.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        .padding(.vertical, 4)
-                        .tag(project.id)
-                        .contextMenu {
-                            Button("Show Conversations") {
-                                services.filter = .project(project.path)
-                                services.destination = .conversations
-                            }
-                            Button("Show in Finder") {
-                                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: project.path)])
-                            }
-                            Button("Copy Path") {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(project.path, forType: .string)
-                            }
-                        }
-                    }
-                }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
+        let model = services.projectPages
+        Group {
+            if model.selectedID != nil, let detail = model.detail {
+                ProjectDetailView(detail: detail)
+            } else if model.selectedID != nil {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.Surface.window)
+            } else {
+                list
             }
-            .frame(width: 300)
-            Rectangle().fill(Theme.hairline).frame(width: 1)
-            Group {
-                if let detail = model.detail {
-                    ProjectDetailView(detail: detail)
-                } else {
-                    EmptyState(systemImage: "folder", title: model.loaded ? "No projects yet" : "Reading…",
-                               message: "Folders Claude Code and the Code tab worked in show up here, with everything about each.")
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .task(id: services.index.generation) { model.load(index: services.index.index) }
+    }
+
+    private var list: some View {
+        let model = services.projectPages
+        return PageScroll(maxWidth: 820) {
+            PageTitle(title: "Projects",
+                      subtitle: model.loaded ? "\(model.projects.count) folder\(model.projects.count == 1 ? "" : "s") Claude has worked in, newest first." : "Reading…")
+            SectionLabel(title: "Every project", top: 22)
+            Card(inset: 44) {
+                Button { services.destination = .memory } label: {
+                    Row(title: "Everywhere", detail: "The CLAUDE.md and memory every session reads") {
+                        RowSymbol(name: "globe")
+                    } trailing: { Chevron() }
+                }
+                .buttonStyle(.plain)
+                Button { services.destination = .files } label: {
+                    Row(title: "Files Claude changed", detail: "Every file, with its versions and the conversations behind them") {
+                        RowSymbol(name: "doc.text")
+                    } trailing: { Chevron() }
+                }
+                .buttonStyle(.plain)
+            }
+            SectionLabel(title: "Folders")
+            Card(inset: 44) {
+                ForEach(model.projects) { project in
+                    Button { services.openProject(project.id) } label: {
+                        Row(title: project.name, detail: line(project)) {
+                            RowSymbol(name: "folder")
+                        } trailing: {
+                            if project.cost > 0 { RowValue(text: UsagePage.dollars(project.cost)) }
+                            Chevron()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button("Open") { services.openProject(project.id) }
+                        Button("Show Conversations") {
+                            services.filter = .project(project.path)
+                            services.destination = .conversations
+                        }
+                        Button("New Session in Claude Code") { services.newSession(in: project.path) }
+                        Divider()
+                        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: project.path)]) }
+                        Button("Copy Path") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(project.path, forType: .string)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private func line(_ project: ProjectSummary) -> String {
@@ -167,120 +167,166 @@ private struct ProjectDetailView: View {
     @Environment(AppServices.self) private var services
     let detail: ProjectDetail
     @AppStorage("projectTab") private var tab: ProjectTab = .overview
+    @State private var health: MemoryHealth?
 
     var body: some View {
         let summary = detail.summary
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .center, spacing: Theme.Space.m) {
-                    Image(systemName: "folder")
-                        .font(.system(size: 22))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 44, height: 44)
-                        .groupSurface(cornerRadius: 11)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(summary.name).font(Theme.Font.display)
-                        Text(facts(summary))
-                            .font(Theme.Font.callout)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                    Spacer()
-                    Button("Show in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: summary.path)])
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!FileManager.default.fileExists(atPath: summary.path))
-                }
-                Picker("Show", selection: $tab) {
-                    ForEach(ProjectTab.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                .padding(.top, Theme.Space.l)
-
-                switch tab {
-                case .overview: overview(summary)
-                case .conversations: conversations(summary)
-                case .files: files
-                case .memory: memory
+        PageScroll {
+            HStack(alignment: .center, spacing: 14) {
+                Image(systemName: "folder")
+                    .font(.system(size: 21))
+                    .foregroundStyle(Theme.Surface.secondary)
+                    .frame(width: 48, height: 48)
+                    .background(Theme.Surface.group, in: .rect(cornerRadius: 11, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(Theme.Surface.line, lineWidth: 0.5))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(summary.name).font(.system(size: 22, weight: .bold)).foregroundStyle(Theme.Surface.primary)
+                    Text(facts(summary)).font(.system(size: 13)).foregroundStyle(Theme.Surface.secondary).lineLimit(2)
                 }
             }
-            .padding(.horizontal, 28)
-            .padding(.top, 24)
-            .padding(.bottom, 48)
-            .frame(maxWidth: 760, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Segmented(options: ProjectTab.allCases.map { ($0, $0.title) }, selection: $tab)
+                .padding(.top, 22)
+            switch tab {
+            case .overview: overview(summary)
+            case .conversations: conversations(summary)
+            case .files: files
+            case .memory: memory
+            }
         }
-        // Each project opens at its top.
         .id(detail.summary.id)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button("Show Conversations") {
+                        services.filter = .project(summary.path)
+                        services.destination = .conversations
+                    }
+                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: summary.path)]) }
+                    Button("Copy Path") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(summary.path, forType: .string)
+                    }
+                } label: { Label("More", systemImage: "ellipsis") }
+                .menuIndicator(.hidden)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button("New Session in Claude Code") { services.newSession(in: summary.path) }
+                    .buttonStyle(PrimaryButton(height: 30))
+                    .disabled(!FileManager.default.fileExists(atPath: summary.path))
+            }
+            .sharedBackgroundVisibility(.hidden)
+        }
+        .task(id: summary.id) {
+            let folder = detail.memory.first { $0.lastPathComponent == "memory" }
+            health = folder.flatMap(MemoryHealth.check)
+        }
     }
 
     private func facts(_ summary: ProjectSummary) -> String {
         var line = services.snapshot.paths.abbreviating(summary.path) + ". "
         line += summary.conversations == 1 ? "1 conversation" : "\(summary.conversations) conversations"
         if !summary.places.isEmpty { line += " in " + ListFormatter.localizedString(byJoining: Array(summary.places.prefix(2))) }
-        if summary.cost > 0 { line += ", \(dollars(summary.cost)) at list prices" }
         if let last = summary.lastActivity { line += ", last active \(last.listStamp.lowercasedIfWordLocal)" }
         return line + "."
     }
 
     @ViewBuilder
     private func overview(_ summary: ProjectSummary) -> some View {
-        if detail.activity.contains(where: { $0.conversations > 0 }) {
-            GroupLabel(title: "Activity")
-            ActivityGrid(days: detail.activity)
-                .padding(14)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .groupSurface()
-        }
-        CorrectionsSection(project: summary.path)
-        if !services.projectPages.decisions.isEmpty {
-            DetailSection(title: "Decided", subtitle: "What was settled in this project's conversations, newest first.") {
-                VStack(alignment: .leading, spacing: Theme.Space.m) {
-                    ForEach(services.projectPages.decisions.prefix(12)) { decision in
-                        DecisionRow(decision: decision)
+        HStack(alignment: .top, spacing: 24) {
+            VStack(alignment: .leading, spacing: 0) {
+                CorrectionsSection(project: summary.path)
+                SectionLabel(title: "Memory")
+                Card(inset: 44) {
+                    let claudeMD = detail.memory.first { $0.lastPathComponent == "CLAUDE.md" }
+                    if let claudeMD {
+                        Button { NSWorkspace.shared.open(claudeMD) } label: {
+                            Row(title: "CLAUDE.md", detail: lineCount(claudeMD)) { RowSymbol(name: "doc.text") } trailing: { Chevron() }
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Row(title: "CLAUDE.md", detail: "None yet. What you add from here goes in one.") { RowSymbol(name: "doc.text") } trailing: { EmptyView() }
                     }
-                }
-            }
-        }
-        if !detail.pullRequests.isEmpty {
-            GroupLabel(title: "Pull requests")
-            RowGroup {
-                ForEach(detail.pullRequests) { pull in
-                    GroupRow(title: pull.name, detail: "From \(pull.conversationTitle)") {
-                        if let url = URL(string: pull.url) {
-                            Link("Open", destination: url).font(Theme.Font.callout)
+                    if let health {
+                        Row(title: "Memory notes",
+                            detail: health.unlinked.isEmpty ? "Every note is linked from MEMORY.md"
+                                : "\(health.unlinked.count) that Claude never sees",
+                            detailColor: health.unlinked.isEmpty ? Theme.Surface.secondary : Theme.attention) {
+                            RowSymbol(name: "brain")
+                        } trailing: {
+                            if !health.unlinked.isEmpty {
+                                Button(health.unlinked.count == 1 ? "Link It" : "Link Them") {
+                                    _ = try? health.link(health.unlinked)
+                                    self.health = MemoryHealth.check(folder: health.index.deletingLastPathComponent())
+                                }
+                                .buttonStyle(.secondary)
+                            }
                         }
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .top)
+            VStack(alignment: .leading, spacing: 0) {
+                SectionLabel(title: "Decided")
+                Card {
+                    if services.projectPages.decisions.isEmpty {
+                        Row(title: "Nothing settled yet", detail: "Decisions made in this project's conversations show up here.")
+                    }
+                    ForEach(services.projectPages.decisions.prefix(8)) { decision in
+                        Button {
+                            if let conversation = services.snapshot.conversations.first(where: { $0.id == decision.conversationID }) {
+                                services.show(conversation)
+                            }
+                        } label: {
+                            Row(title: decision.text,
+                                detail: [decision.conversationTitle, decision.date?.listStamp.lowercasedIfWordLocal].compactMap { $0 }.joined(separator: ", ")) {
+                                Chevron()
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu { Button("Not a Decision") { services.projectPages.dismiss(decision) } }
+                    }
+                }
+                if !detail.pullRequests.isEmpty {
+                    SectionLabel(title: "Pull requests")
+                    Card {
+                        ForEach(detail.pullRequests) { pull in
+                            Button { if let url = URL(string: pull.url) { NSWorkspace.shared.open(url) } } label: {
+                                Row(title: pull.name, detail: "From \(pull.conversationTitle)") { Chevron() }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .top)
         }
+    }
+
+    private func lineCount(_ url: URL) -> String {
+        let lines = (try? String(contentsOf: url, encoding: .utf8))?.split(separator: "\n", omittingEmptySubsequences: false).count ?? 0
+        let edited = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        return "\(lines) lines" + (edited.map { ", edited \($0.listStamp.lowercasedIfWordLocal)" } ?? "")
     }
 
     @ViewBuilder
     private func conversations(_ summary: ProjectSummary) -> some View {
-        GroupLabel(title: detail.conversations.count == 1 ? "1 conversation" : "\(detail.conversations.count) conversations",
-                   link: "Show in Conversations", action: {
+        SectionLabel(title: detail.conversations.count == 1 ? "1 conversation" : "\(detail.conversations.count) conversations",
+                     link: "Show in Conversations", action: {
             services.filter = .project(summary.path)
             services.destination = .conversations
         })
-        RowGroup {
+        Card {
             ForEach(detail.conversations) { conversation in
                 Button {
                     services.filter = .project(summary.path)
                     services.destination = .conversations
                     services.selectedConversationID = conversation.id
                 } label: {
-                    GroupRow(title: conversation.title,
-                             detail: conversation.branch.map { "\(conversation.place), on \($0)" } ?? conversation.place) {
-                        if conversation.cost > 0 {
-                            Text(dollars(conversation.cost)).font(Theme.Font.callout).foregroundStyle(.secondary).monospacedDigit()
-                        }
-                        Text(conversation.lastActivity?.listStamp ?? "")
-                            .font(Theme.Font.callout).foregroundStyle(.secondary)
-                        RowChevron()
+                    Row(title: conversation.title,
+                        detail: conversation.branch.map { "\(conversation.place), on \($0)" } ?? conversation.place) {
+                        if conversation.cost > 0 { RowValue(text: dollars(conversation.cost)) }
+                        RowValue(text: conversation.lastActivity?.listStamp ?? "")
+                        Chevron()
                     }
                 }
                 .buttonStyle(.plain)
@@ -292,16 +338,14 @@ private struct ProjectDetailView: View {
     private var files: some View {
         if detail.files.isEmpty {
             Text("Claude Code hasn't kept versions of any file it changed here.")
-                .font(Theme.Font.body).foregroundStyle(.secondary).padding(.top, Theme.Space.xl)
+                .font(.system(size: 13)).foregroundStyle(Theme.Surface.secondary).padding(.top, 24)
         } else {
-            GroupLabel(title: "Files Claude changed")
-            RowGroup {
+            SectionLabel(title: "Files Claude changed")
+            Card {
                 ForEach(detail.files) { file in
                     Button { services.showFile(file.path) } label: {
-                        GroupRow(title: relative(file.path),
-                                 detail: file.conversations == 1 ? "1 conversation" : "\(file.conversations) conversations") {
-                            RowChevron()
-                        }
+                        Row(title: relative(file.path),
+                            detail: file.conversations == 1 ? "1 conversation" : "\(file.conversations) conversations") { Chevron() }
                     }
                     .buttonStyle(.plain)
                     .contextMenu { FileActions(path: file.path) }
@@ -314,15 +358,13 @@ private struct ProjectDetailView: View {
     private var memory: some View {
         if detail.memory.isEmpty {
             Text("Claude isn't told anything about this project yet: it has no CLAUDE.md or memory.")
-                .font(Theme.Font.body).foregroundStyle(.secondary).padding(.top, Theme.Space.xl)
+                .font(.system(size: 13)).foregroundStyle(Theme.Surface.secondary).padding(.top, 24)
         } else {
-            GroupLabel(title: "What Claude is told about this project", link: "Memory", action: {
-                services.destination = .memory
-            })
-            RowGroup {
+            SectionLabel(title: "What Claude is told about this project", link: "All Memory", action: { services.destination = .memory })
+            Card {
                 ForEach(detail.memory, id: \.self) { url in
-                    GroupRow(title: url.lastPathComponent == "memory" ? "Claude Code's memory for this project" : relative(url.path)) {
-                        Button("Open") { NSWorkspace.shared.open(url) }.buttonStyle(.bordered)
+                    Row(title: url.lastPathComponent == "memory" ? "Claude Code's memory for this project" : relative(url.path)) {
+                        Button("Open") { NSWorkspace.shared.open(url) }.buttonStyle(.secondary)
                     }
                     .contextMenu { FileActions(path: url.path) }
                 }
@@ -340,76 +382,59 @@ private struct ProjectDetailView: View {
     }
 }
 
-/// Eight weeks of days, a column per week, shaded by how many conversations were active.
-struct ActivityGrid: View {
-    let days: [(day: Date, conversations: Int)]
-
-    var body: some View {
-        let peak = max(1, days.map(\.conversations).max() ?? 1)
-        let columns = stride(from: 0, to: days.count, by: 7).map { Array(days[$0..<min($0 + 7, days.count)]) }
-        HStack(alignment: .top, spacing: 4) {
-            ForEach(columns.indices, id: \.self) { column in
-                VStack(spacing: 4) {
-                    ForEach(columns[column], id: \.day) { day in
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(day.conversations == 0 ? Theme.subtleFill
-                                  : Theme.accent.opacity(0.25 + 0.75 * Double(day.conversations) / Double(peak)))
-                            .frame(width: 14, height: 14)
-                            .help("\(day.day.formatted(date: .abbreviated, time: .omitted)): \(day.conversations) conversation\(day.conversations == 1 ? "" : "s")")
-                    }
-                }
-            }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(days.filter { $0.conversations > 0 }.count) active days in the last eight weeks")
-    }
-}
-
 /// Things you keep telling Claude in this project, offered as lines for its CLAUDE.md.
 private struct CorrectionsSection: View {
     @Environment(AppServices.self) private var services
     let project: String
     @State private var confirming = false
+    @State private var editing: String?
 
     var body: some View {
         let model = services.projectPages
         if !model.corrections.isEmpty || model.added != nil {
-            DetailSection(title: "What you keep correcting",
-                          subtitle: "Things you've told Claude in more than one conversation here. In CLAUDE.md, the next session starts knowing them.") {
-                VStack(alignment: .leading, spacing: Theme.Space.m) {
-                    if let added = model.added {
-                        Text("Added \(added) line\(added == 1 ? "" : "s") to CLAUDE.md. Undo it from History.")
-                            .font(Theme.Font.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(model.corrections) { suggestion in
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Toggle("", isOn: Binding(
-                                get: { model.chosen.contains(suggestion.id) },
-                                set: { on in if on { model.chosen.insert(suggestion.id) } else { model.chosen.remove(suggestion.id) } }))
-                                .toggleStyle(.checkbox)
-                                .labelsHidden()
-                            VStack(alignment: .leading, spacing: 4) {
+            SectionLabel(title: "You keep telling Claude")
+            Card {
+                if let added = model.added {
+                    Row(title: "Added \(added) line\(added == 1 ? "" : "s") to CLAUDE.md", detail: "Undo it from History.")
+                }
+                ForEach(model.corrections) { suggestion in
+                    HStack(spacing: 10) {
+                        Toggle("", isOn: Binding(
+                            get: { model.chosen.contains(suggestion.id) },
+                            set: { on in if on { model.chosen.insert(suggestion.id) } else { model.chosen.remove(suggestion.id) } }))
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                        VStack(alignment: .leading, spacing: 1) {
+                            if editing == suggestion.id {
                                 TextField("Line for CLAUDE.md", text: Binding(
-                                    get: { model.rule(suggestion) },
-                                    set: { model.wording[suggestion.id] = $0 }))
-                                    .textFieldStyle(.roundedBorder)
-                                    .font(Theme.Font.body)
-                                Text(said(suggestion))
-                                    .font(Theme.Font.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
+                                    get: { model.rule(suggestion) }, set: { model.wording[suggestion.id] = $0 }))
+                                    .textFieldStyle(.plain)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .onSubmit { editing = nil }
+                            } else {
+                                Text(model.rule(suggestion)).font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(Theme.Surface.primary).lineLimit(2)
+                                    .onTapGesture(count: 2) { editing = suggestion.id }
                             }
+                            Text("\(suggestion.conversations) conversations")
+                                .font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary)
+                                .help(said(suggestion))
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    if !model.corrections.isEmpty {
-                        HStack {
-                            Spacer()
-                            Button("Add \(model.chosen.count) to CLAUDE.md…") { confirming = true }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(model.chosen.isEmpty)
-                        }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .contextMenu { Button("Edit Wording") { editing = suggestion.id } }
+                }
+                if !model.corrections.isEmpty {
+                    HStack {
+                        Spacer()
+                        Button("Add \(model.chosen.count) to CLAUDE.md…") { confirming = true }
+                            .buttonStyle(.primary)
+                            .disabled(model.chosen.isEmpty)
                     }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
                 }
             }
             .confirmationDialog("Add \(model.chosen.count) line\(model.chosen.count == 1 ? "" : "s") to this project's CLAUDE.md?",

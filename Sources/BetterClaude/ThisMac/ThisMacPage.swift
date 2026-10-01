@@ -7,6 +7,7 @@ import SwiftUI
 struct ThisMacPage: View {
     @Environment(AppServices.self) private var services
     @AppStorage(BackupSheet.lastBackupKey) private var lastBackup: Double = 0
+    @State private var lastChange: ImportReceipt?
 
     var body: some View {
         ScrollView {
@@ -16,7 +17,9 @@ struct ThisMacPage: View {
                 GroupLabel(title: "Conversations")
                 RowGroup(inset: 44) {
                     link("Kept", symbol: "archivebox", value: keptValue, to: .kept)
-                    link("History", symbol: "clock.arrow.circlepath", value: "Everything Better Claude changed, with Undo", to: .history)
+                    link("Activity", symbol: "clock.arrow.circlepath",
+                         value: lastChange.map { "\($0.title ?? "A change"), \($0.timestamp.listStamp.lowercasedIfWordLocal)" }
+                            ?? "Everything Better Claude changed, with Undo", to: .history)
                 }
 
                 GroupLabel(title: "Safety")
@@ -33,7 +36,7 @@ struct ThisMacPage: View {
                             services.destination = .kept
                             services.pendingBackupSheet = true
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.secondary)
                     }
                     Button { services.destination = .secrets } label: {
                         GroupRow(title: "Secrets", detail: "Keys and tokens pasted into conversations") {
@@ -47,14 +50,31 @@ struct ThisMacPage: View {
                     GroupRow(title: "Other Macs", detail: "Read another Mac's backup here, without changing anything") {
                         symbol("laptopcomputer")
                     } trailing: {
-                        Button("Open a Backup…") { services.openOtherMac() }.buttonStyle(.bordered)
+                        Button("Open a Backup…") { services.openOtherMac() }.buttonStyle(.secondary)
                     }
                 }
 
-                GroupLabel(title: "Space and memory")
+                GroupLabel(title: "Space")
                 RowGroup(inset: 44) {
-                    link("Storage", symbol: "internaldrive", value: "What Claude keeps here, and what can go", to: .storage)
-                    link("Memory", symbol: "brain", value: "CLAUDE.md and memory, for every project", to: .memory)
+                    Button { services.destination = .storage } label: {
+                        HStack(spacing: Theme.Space.m) {
+                            symbol("internaldrive")
+                            VStack(alignment: .leading, spacing: 7) {
+                                Text("Storage").font(Theme.Font.bodyMedium)
+                                if let share = reclaimableShare {
+                                    ThinMeter(value: share).frame(maxWidth: 290)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            storageValue
+                            RowChevron()
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .frame(minHeight: 44)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 28)
@@ -62,6 +82,13 @@ struct ThisMacPage: View {
             .padding(.bottom, 40)
             .frame(maxWidth: 720, alignment: .leading)
             .frame(maxWidth: .infinity)
+        }
+        .task(id: services.generation) {
+            if services.secrets.swept == nil, !services.secrets.sweeping { services.secrets.sweep(services.snapshot) }
+            if services.storage.categories.isEmpty, !services.storage.isMeasuring {
+                services.storage.measure(services.snapshot, generation: services.generation)
+            }
+            lastChange = await Task.detached { (try? Undo.receipts())?.filter(\.completed).max { $0.timestamp < $1.timestamp } }.value
         }
     }
 
@@ -82,6 +109,27 @@ struct ThisMacPage: View {
             .font(.system(size: 15))
             .foregroundStyle(.secondary)
             .frame(width: 18)
+    }
+
+    @ViewBuilder
+    /// How much of what Claude keeps here could go, which is what the meter shows.
+    private var reclaimableShare: Double? {
+        let categories = services.storage.categories
+        let total = categories.reduce(Int64(0)) { $0 + $1.bytes }
+        guard total > 0 else { return nil }
+        return Double(categories.filter { $0.safety == .reclaimable }.reduce(Int64(0)) { $0 + $1.bytes }) / Double(total)
+    }
+
+    @ViewBuilder
+    private var storageValue: some View {
+        let categories = services.storage.categories
+        let total = categories.reduce(Int64(0)) { $0 + $1.bytes }
+        let free = categories.filter { $0.safety == .reclaimable }.reduce(Int64(0)) { $0 + $1.bytes }
+        if total > 0 {
+            Text("\(total.fileSize), \(free.fileSize) can go").font(Theme.Font.callout).foregroundStyle(.secondary)
+        } else {
+            Text("What Claude keeps here, and what can go").font(Theme.Font.callout).foregroundStyle(.secondary)
+        }
     }
 
     private var keptValue: String {

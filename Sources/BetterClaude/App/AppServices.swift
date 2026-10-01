@@ -70,6 +70,28 @@ final class AppServices {
               projectID: projectPages.selectedID)
     }
 
+    /// Opens a project's page, or the list of them, so Back returns to where you were.
+    func openProject(_ id: String?) {
+        guard id != projectPages.selectedID else { return }
+        remember(currentPlace)
+        projectPages.selectedID = id
+    }
+
+    /// Starts a new Claude Code session in a folder, in Terminal.
+    func newSession(in folder: String) {
+        let support = snapshot.paths.betterClaudeSupport
+        let script = support.appendingPathComponent("Resume/new-\(Int(Date().timeIntervalSince1970)).command")
+        let quoted = "'" + folder.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        do {
+            try FileManager.default.createDirectory(at: script.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("#!/bin/zsh -l\ncd \(quoted) && exec claude\n".utf8).write(to: script, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+            NSWorkspace.shared.open(script)
+        } catch {
+            errorMessage = "Couldn't open Terminal: \(error.localizedDescription)"
+        }
+    }
+
     private func remember(_ place: Place) {
         if backPlaces.last != place { backPlaces.append(place) }
         if backPlaces.count > 50 { backPlaces.removeFirst(backPlaces.count - 50) }
@@ -93,7 +115,7 @@ final class AppServices {
         defer { restoringPlace = false }
         destination = place.destination
         filter = place.filter
-        if let project = place.projectID { projectPages.selectedID = project }
+        projectPages.selectedID = place.projectID
         selectedConversationID = place.conversationID
     }
     var filter: ConversationFilter = .all
@@ -450,6 +472,17 @@ final class AppServices {
 
     /// The command palette, over the window.
     var showsPalette = false
+
+    /// What the toolbar says beside back and forward. Pages with their own big title say nothing.
+    var windowTitle: String {
+        switch destination {
+        case .conversations, nil: return filterTitle
+        case .library: return "Library"
+        case .projects:
+            return projectPages.selectedID.flatMap { id in projectPages.projects.first { $0.id == id }?.name } ?? ""
+        default: return ""
+        }
+    }
     /// The reader's inspector, and which tab it shows. Both are remembered.
     var showsInspector = UserDefaults.standard.object(forKey: "showsInspector") as? Bool ?? false {
         didSet { UserDefaults.standard.set(showsInspector, forKey: "showsInspector") }

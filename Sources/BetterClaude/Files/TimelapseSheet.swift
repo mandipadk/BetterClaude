@@ -111,7 +111,7 @@ struct TimelapseSheet: View {
 
             HStack {
                 Button("Close") { model.stop(); onClose() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.secondary)
                     .keyboardShortcut(.cancelAction)
                 Spacer()
             }
@@ -130,7 +130,7 @@ struct TimelapseSheet: View {
                 Button { model.playing ? model.stop() : model.play() } label: {
                     Image(systemName: model.playing ? "pause.fill" : "play.fill").frame(width: 18)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.secondary)
                 .keyboardShortcut(.space, modifiers: [])
                 .help(model.playing ? "Pause" : "Play through every step")
                 Slider(value: Binding(get: { Double(model.step) }, set: { model.step = Int($0.rounded()) }),

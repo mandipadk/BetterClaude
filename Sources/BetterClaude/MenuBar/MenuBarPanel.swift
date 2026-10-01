@@ -10,27 +10,37 @@ struct MenuBarPanel: View {
     /// Conversations whose messages match, from the index.
     @State private var found: [ConversationRef]?
     @FocusState private var searchFocused: Bool
+    @State private var listHeight: CGFloat = 0
+
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Rectangle().fill(Theme.hairline).frame(height: 1)
+        VStack(alignment: .leading, spacing: 0) {
             search
-            Rectangle().fill(Theme.hairline).frame(height: 1)
-            if query.isEmpty, !services.pulse.needingYou.isEmpty || !services.pulse.working.isEmpty {
-                running
-                Rectangle().fill(Theme.hairline).frame(height: 1)
-            }
-            if query.isEmpty, !services.usage.quotas.isEmpty {
-                limits
-                Rectangle().fill(Theme.hairline).frame(height: 1)
+            if query.isEmpty {
+                let waiting = services.pulse.needingYou
+                if !waiting.isEmpty {
+                    heading("Needs you")
+                    ForEach(waiting.prefix(3)) { session in sessionRow(session) }
+                }
+                let now = services.pulse.sessions.filter { $0.state != .needsYou }
+                if !now.isEmpty {
+                    heading("Now")
+                    ForEach(now.prefix(3)) { session in sessionRow(session) }
+                }
+                let quotas = services.usage.quotas.filter { $0.window(.weekly) != nil }
+                if !quotas.isEmpty {
+                    heading("Limits")
+                    ForEach(quotas.prefix(3)) { quota in limitRow(quota) }
+                }
             }
             results
-                .frame(maxHeight: 360)
-            Rectangle().fill(Theme.hairline).frame(height: 1)
+            Rectangle().fill(Theme.Surface.line).frame(height: 0.5).padding(.horizontal, -8).padding(.top, 6)
             footer
         }
-        .frame(width: 340)
+        .padding(8)
+        .frame(width: 330)
+        .background(Theme.Surface.window)
         .task {
             if !services.hasLoaded { services.refresh() }
             searchFocused = true
@@ -49,87 +59,88 @@ struct MenuBarPanel: View {
         }
     }
 
-    private var header: some View {
-        HStack(spacing: 8) {
-            BMark(size: 16)
-            Text("Better Claude").font(Theme.Font.headline)
-            Spacer()
-            if services.isLoading {
-                ProgressView().controlSize(.mini)
-            }
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 44)
+    private func heading(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Theme.Surface.secondary)
+            .padding(.horizontal, 10)
+            .padding(.top, 10)
+            .padding(.bottom, 4)
     }
 
     private var search: some View {
         HStack(spacing: 7) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Find a conversation", text: $query)
+            Image(systemName: "magnifyingglass").font(.system(size: 12.5)).foregroundStyle(Theme.Surface.secondary)
+            TextField("Search or ask", text: $query)
                 .textFieldStyle(.plain)
-                .font(Theme.Font.body)
+                .font(.system(size: 13))
                 .focused($searchFocused)
                 .onSubmit { if let first = matches.first { open(first) } }
         }
-        .padding(.horizontal, 14)
-        .frame(height: 38)
+        .padding(.horizontal, 12)
+        .frame(height: 30)
+        .background(Theme.Surface.fill, in: .capsule)
+        .padding(.horizontal, 2)
+        .padding(.top, 2)
+        .padding(.bottom, 4)
     }
 
-    /// How much of each account's week is used, the tightest first.
-    private var limits: some View {
-        Button { showInWindow { services.destination = .usage } } label: {
-            VStack(alignment: .leading, spacing: 5) {
-                ForEach(services.usage.quotas.prefix(3)) { quota in
-                    let weekly = quota.window(.weekly)?.percent ?? 0
-                    HStack(spacing: 8) {
-                        Text(quota.account.displayName)
-                            .font(Theme.Font.callout)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Spacer(minLength: 8)
-                        Capsule().fill(Theme.subtleFill)
-                            .frame(width: 60, height: 5)
-                            .overlay(alignment: .leading) {
-                                Capsule().fill(Theme.accentBright)
-                                    .frame(width: max(3, 60 * min(1, weekly / 100)), height: 5)
-                            }
-                        Text("\(Int(weekly.rounded()))% of the week")
-                            .font(Theme.Font.callout)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                            .frame(width: 96, alignment: .trailing)
+    private func sessionRow(_ session: LiveSession) -> some View {
+        let conversation = services.conversation(forSession: session.sessionID)
+        let detail = services.pulse.notes[session.sessionID]?.message ?? conversation?.title ?? session.cwd
+        return Button { services.pulse.show(session) } label: {
+            HStack(spacing: 10) {
+                Group {
+                    if session.isInDesktop, let claude = services.installs.first(where: \.isDesktop) {
+                        InstallIcon(install: claude, size: 22)
+                    } else if let code = services.installs.first(where: { $0.kind == .claudeCode }) {
+                        InstallIcon(install: code, size: 22)
                     }
                 }
+                .frame(width: 18, height: 18)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(session.name ?? session.projectName).font(.system(size: 13)).foregroundStyle(Theme.Surface.primary).lineLimit(1)
+                    Text(detail).font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 6)
+                if session.state == .needsYou {
+                    Text(HomePage.minutes(since: session.since)).font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.attention)
+                } else {
+                    Text(session.state == .working ? "Working" : "Done").font(.system(size: 12))
+                        .foregroundStyle(Theme.Surface.secondary)
+                }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
             .contentShape(.rect)
         }
         .buttonStyle(PanelRowStyle())
-        .accessibilityLabel("Usage")
     }
 
-    /// Claude Code sessions waiting for you, then the ones working.
-    private var running: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Running now")
-                .font(Theme.Font.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
-            ForEach((services.pulse.needingYou + services.pulse.working).prefix(4)) { session in
-                LiveSessionRow(session: session, compact: true)
-                    .padding(.horizontal, 14)
+    private func limitRow(_ quota: AccountQuota) -> some View {
+        let weekly = quota.window(.weekly)?.percent ?? 0
+        return Button { showInWindow { services.destination = .usage } } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(quota.account.displayName).font(.system(size: 13)).foregroundStyle(Theme.Surface.primary).lineLimit(1)
+                    Spacer()
+                    Text("\(Int(weekly.rounded()))%").font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary).monospacedDigit()
+                }
+                ThinMeter(value: weekly / 100)
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .contentShape(.rect)
         }
-        .padding(.bottom, 4)
+        .buttonStyle(PanelRowStyle())
     }
 
     private var matches: [ConversationRef] {
         if let found { return found }
         let needle = query.trimmingCharacters(in: .whitespaces)
         let all = services.snapshot.conversations.filter { !$0.isArchived }
-        guard !needle.isEmpty else { return Array(all.prefix(8)) }
+        guard !needle.isEmpty else { return Array(all.prefix(5)) }
         return Array(all.filter {
             $0.title.localizedCaseInsensitiveContains(needle)
                 || ($0.projectName?.localizedCaseInsensitiveContains(needle) ?? false)
@@ -140,20 +151,15 @@ struct MenuBarPanel: View {
     private var results: some View {
         let list = matches
         VStack(alignment: .leading, spacing: 0) {
-            Text(query.isEmpty ? "Recent" : list.isEmpty ? "Nothing matches" : "Matches")
-                .font(Theme.Font.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
-                .padding(.bottom, 4)
+            heading(query.isEmpty ? "Recent" : list.isEmpty ? "Nothing matches" : "Matches")
             if list.isEmpty, !query.isEmpty {
                 Button {
                     showInWindow { services.query = query; services.search.search(query, immediately: true) }
                 } label: {
-                    Label("Search inside messages in Better Claude", systemImage: "text.magnifyingglass")
-                        .font(Theme.Font.body)
+                    Label("Search every message in Better Claude", systemImage: "text.magnifyingglass")
+                        .font(.system(size: 13))
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 14)
+                        .padding(.horizontal, 10)
                         .frame(height: 30)
                         .contentShape(.rect)
                 }
@@ -170,43 +176,33 @@ struct MenuBarPanel: View {
                             .buttonStyle(PanelRowStyle())
                         }
                     }
-                    .padding(.bottom, 6)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
                 }
+                // As tall as its rows, up to a limit, so a short list leaves no empty space.
+                .frame(height: min(listHeight, 300))
+                .scrollBounceBehavior(.basedOnSize)
             }
         }
     }
 
     private var footer: some View {
-        VStack(spacing: 0) {
-            Button { showInWindow {} } label: {
-                HStack {
-                    Text("Open Better Claude")
-                    Spacer()
-                    KeyCaps(keys: ["⌘", "O"])
-                }
-                .font(Theme.Font.body)
-                .padding(.horizontal, 14)
-                .frame(height: 30)
-                .contentShape(.rect)
-            }
-            .buttonStyle(PanelRowStyle())
-            .keyboardShortcut("o", modifiers: .command)
-            Button { AppDelegate.quit() } label: {
-                HStack {
-                    Text("Quit Better Claude")
-                    Spacer()
-                    KeyCaps(keys: ["⌥", "⌘", "Q"])
-                }
-                .font(Theme.Font.body)
-                .padding(.horizontal, 14)
-                .frame(height: 30)
-                .contentShape(.rect)
-            }
-            .buttonStyle(PanelRowStyle())
-            // The same keys as everywhere else: ⌘Q only closes the window to the menu bar.
-            .keyboardShortcut("q", modifiers: [.command, .option])
+        HStack(spacing: 14) {
+            Button("Open Better Claude") { showInWindow {} }
+                .keyboardShortcut("o", modifiers: .command)
+            Spacer()
+            Button("Settings…") { NSApp.activate(); openSettings() }
+                .keyboardShortcut(",", modifiers: .command)
+            // With the window closed there's no menu bar to quit from, so it's here.
+            Button("Quit") { AppDelegate.quit() }
+                .keyboardShortcut("q", modifiers: [.command, .option])
+                .help("Quit Better Claude (⌥⌘Q)")
         }
-        .padding(.vertical, 5)
+        .buttonStyle(.plain)
+        .font(.system(size: 12.5))
+        .foregroundStyle(Theme.Surface.secondary)
+        .padding(.horizontal, 10)
+        .padding(.top, 9)
+        .padding(.bottom, 3)
     }
 
     private func open(_ conversation: ConversationRef) {
@@ -226,23 +222,16 @@ private struct PanelConversationRow: View {
     let install: Install?
 
     var body: some View {
-        HStack(spacing: 9) {
-            if let install { InstallIcon(install: install, size: 20) }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(conversation.title).font(Theme.Font.body).lineLimit(1)
-                Text(conversation.projectName ?? install?.name ?? "")
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+        HStack(spacing: 10) {
+            Group { if let install { InstallIcon(install: install, size: 22) } }
+                .frame(width: 18, height: 18)
+            Text(conversation.title).font(.system(size: 13)).foregroundStyle(Theme.Surface.primary).lineLimit(1)
             Spacer(minLength: 6)
             Text(conversation.lastActivity.listStamp)
-                .font(Theme.Font.caption)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
+                .font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary).monospacedDigit()
         }
-        .padding(.horizontal, 14)
-        .frame(height: 40)
+        .padding(.horizontal, 10)
+        .frame(height: 32)
         .contentShape(.rect)
     }
 }
@@ -254,10 +243,9 @@ struct PanelRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(configuration.isPressed ? Color.primary.opacity(0.12)
-                          : hovering ? Theme.subtleFill : .clear)
-                    .padding(.horizontal, 5)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(configuration.isPressed ? Theme.Surface.selection
+                          : hovering ? Theme.Surface.fill : .clear)
             }
             .onHover { hovering = $0 }
     }

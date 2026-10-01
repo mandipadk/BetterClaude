@@ -1,7 +1,8 @@
 import CoworkKit
 import SwiftUI
 
-/// What one conversation did to your files, and putting chosen files back as they were before it.
+/// What one conversation did to your files: each file's change, played step by step if you
+/// like, and putting chosen files back as they were before it.
 @MainActor
 @Observable
 final class RewindModel: Identifiable {
@@ -12,16 +13,32 @@ final class RewindModel: Identifiable {
     private(set) var changes: ConversationChanges?
     private(set) var phase: Phase = .loading
     var chosen: Set<String> = []
-    var selected: String?
+    private(set) var selected: String?
+    /// Before the conversation to now, for the selected file.
     private(set) var diff: LineDiff?
+    /// Lines added and removed, by file, once worked out.
+    private(set) var counts: [String: (added: Int, removed: Int)] = [:]
+    /// Choosing which files to put back.
+    var choosing = false
 
-    init(conversation: ConversationRef) {
+    // Playing: the selected file through the conversation, one saved version at a time.
+    private(set) var timelapse: Timelapse?
+    /// The step shown; nil shows the whole change.
+    private(set) var step: Int?
+    private(set) var playing = false
+    private let startsPlaying: Bool
+    private var index: HistoryIndex?
+    private var player: Task<Void, Never>?
+
+    init(conversation: ConversationRef, playing: Bool = false) {
         self.conversation = conversation
         id = conversation.id
+        startsPlaying = playing
     }
 
     func load(index: HistoryIndex?) {
         guard let index else { phase = .failed("The history index isn't ready yet."); return }
+        self.index = index
         Task {
             do {
                 let changes = try await ConversationRewind.changes(conversationID: conversation.id, index: index)
@@ -31,6 +48,15 @@ final class RewindModel: Identifiable {
                 phase = .ready
                 select(changes.files.first { $0.canPutBack && !$0.created }?.path
                        ?? changes.files.first(where: \.canPutBack)?.path ?? changes.files.first?.path)
+                let files = changes.files
+                counts = await Task.detached(priority: .utility) {
+                    var counts: [String: (added: Int, removed: Int)] = [:]
+                    for file in files {
+                        if let diff = ConversationRewind.diff(for: file) { counts[file.path] = (diff.added, diff.removed) }
+                    }
+                    return counts
+                }.value
+                if startsPlaying { play() }
             } catch {
                 phase = .failed(String(describing: error))
             }
@@ -38,16 +64,50 @@ final class RewindModel: Identifiable {
     }
 
     func select(_ path: String?) {
+        stop()
         selected = path
+        step = nil
+        timelapse = nil
         guard let file = changes?.files.first(where: { $0.path == path }) else { diff = nil; return }
         Task {
-            diff = await Task.detached(priority: .userInitiated) { Self.diff(for: file) }.value
+            diff = await Task.detached(priority: .userInitiated) { ConversationRewind.diff(for: file) }.value
+            guard let index, let path else { return }
+            let made = try? await Timelapse.load(conversationID: conversation.id, path: path, index: index)
+            if selected == path { timelapse = made }
         }
     }
 
-    nonisolated static func diff(for file: ConversationChanges.File) -> LineDiff? {
-        // From now to before: what putting it back would do.
-        ConversationRewind.diff(for: file, backwards: true)
+    /// Edits there are to step through.
+    var steps: Int { max(0, (timelapse?.frames.count ?? 1) - 1) }
+
+    var shownDiff: LineDiff? {
+        if let step, step > 0, let change = timelapse?.change(into: step) { return change }
+        return diff
+    }
+
+    var stepCaption: String? {
+        guard let step, step > 0, let frame = timelapse?.frames[safe: step] else { return nil }
+        guard let prompt = frame.prompt else { return "After the next turn" }
+        let flat = prompt.replacingOccurrences(of: "\n", with: " ")
+        return "After “\(flat.count > 90 ? String(flat.prefix(90)) + "…" : flat)”"
+    }
+
+    func play() {
+        guard steps > 0 else { return }
+        if (step ?? steps) >= steps { step = 0 }
+        playing = true
+        player = Task {
+            while !Task.isCancelled, let current = step, current < steps {
+                step = current + 1
+                try? await Task.sleep(for: .milliseconds(1_400))
+            }
+            playing = false
+        }
+    }
+
+    func stop() {
+        player?.cancel()
+        playing = false
     }
 
     func putBack() {
@@ -62,6 +122,11 @@ final class RewindModel: Identifiable {
     }
 }
 
+extension Array {
+    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
+}
+
+/// Changes: a file list, the change as a diff, Play to step through it, and Put Back.
 struct RewindSheet: View {
     @Environment(AppServices.self) private var services
     @Bindable var model: RewindModel
@@ -69,169 +134,226 @@ struct RewindSheet: View {
     @State private var confirming = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.l) {
-            HStack(spacing: Theme.Space.m) {
-                GlyphTile(systemImage: "clock.arrow.circlepath", size: 44)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Changes").font(Theme.Font.title)
-                    Text("Every file it edited or created, compared with how it was before. Put any of them back; Undo in History reverses it.")
-                        .font(Theme.Font.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Changes").font(.system(size: 16, weight: .bold)).foregroundStyle(Theme.Surface.primary)
+            Text(subtitle).font(.system(size: 13)).foregroundStyle(Theme.Surface.secondary).padding(.top, 3)
 
-            switch model.phase {
-            case .loading:
-                ProgressView().frame(maxWidth: .infinity, minHeight: 200)
-            case .failed(let message):
-                Text(message).font(Theme.Font.body).foregroundStyle(.secondary)
-            case .done(let count):
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Put back \(count) file\(count == 1 ? "" : "s").").font(Theme.Font.headline)
-                    Text("What was there is saved. To reverse it, choose Undo on this change in History.")
-                        .font(Theme.Font.body)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)
-            case .ready:
-                if let changes = model.changes, !changes.files.isEmpty {
-                    HStack(alignment: .top, spacing: Theme.Space.l) {
-                        fileList(changes)
-                            .frame(width: 300)
-                        preview
-                            .frame(maxWidth: .infinity, alignment: .topLeading)
+            Group {
+                switch model.phase {
+                case .loading:
+                    ProgressView().frame(maxWidth: .infinity, minHeight: 300)
+                case .failed(let message):
+                    Text(message).font(.system(size: 13)).foregroundStyle(Theme.Surface.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 160, alignment: .topLeading)
+                case .done(let count):
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Put back \(count) file\(count == 1 ? "" : "s").").font(.system(size: 13, weight: .semibold))
+                        Text("What was there is saved first. Undo in History reverses it.")
+                            .font(.system(size: 13)).foregroundStyle(Theme.Surface.secondary)
                     }
-                    .frame(height: 420)
-                } else {
-                    Text("This conversation didn't edit or create any files.")
-                        .font(Theme.Font.body)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)
-                }
-            }
-
-            HStack {
-                if case .done = model.phase {
-                    Spacer()
-                    Button("Done") { onClose() }
-                        .buttonStyle(.borderedProminent)
-                        .keyboardShortcut(.defaultAction)
-                } else {
-                    Button("Close") { onClose() }
-                        .buttonStyle(.bordered)
-                        .keyboardShortcut(.cancelAction)
-                    if case .ready = model.phase {
-                        Button("Play…") {
-                            let conversation = model.conversation, file = model.selected
-                            onClose()
-                            // One sheet at a time: the next opens once this one has gone.
-                            Task {
-                                try? await Task.sleep(for: .milliseconds(350))
-                                services.watching = TimelapseModel(conversation: conversation, file: file)
-                            }
+                    .frame(maxWidth: .infinity, minHeight: 160, alignment: .topLeading)
+                case .ready:
+                    if let changes = model.changes, !changes.files.isEmpty {
+                        HStack(alignment: .top, spacing: 16) {
+                            fileList(changes).frame(width: 200)
+                            detail.frame(maxWidth: .infinity, alignment: .topLeading)
                         }
-                        .buttonStyle(.bordered)
-                        .help("Watch the selected file change, one edit at a time")
-                    }
-                    Spacer()
-                    if case .ready = model.phase, !model.chosen.isEmpty {
-                        Button("Put Back \(model.chosen.count) File\(model.chosen.count == 1 ? "" : "s")…") { confirming = true }
-                            .buttonStyle(.borderedProminent)
-                            .keyboardShortcut(.defaultAction)
+                        .frame(height: contentHeight(changes))
+                    } else {
+                        Text("This conversation didn't edit or create any files Claude Code kept versions of.")
+                            .font(.system(size: 13)).foregroundStyle(Theme.Surface.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 160, alignment: .topLeading)
                     }
                 }
             }
+            .padding(.top, 16)
+
+            footer.padding(.top, 20)
         }
-        .padding(Theme.Space.xl)
-        .frame(width: 940)
+        .padding(.horizontal, 24)
+        .padding(.top, 22)
+        .padding(.bottom, 18)
+        .frame(width: 760)
+        .background(Theme.Surface.window)
         .onAppear { model.load(index: services.index.index) }
-        .confirmationDialog("Put back \(model.chosen.count) file\(model.chosen.count == 1 ? "" : "s") as they were before this conversation?",
-                            isPresented: $confirming) {
+        .onDisappear { model.stop() }
+        .confirmationDialog("Put back \(model.chosen.count) file\(model.chosen.count == 1 ? "" : "s")?",
+                            isPresented: $confirming, titleVisibility: .visible) {
             Button("Put Back") { model.putBack() }
+            Button("Cancel", role: .cancel) {}
         } message: {
             Text("What's there now is saved first, and files the conversation created are taken away. Undo in History reverses all of it.")
         }
+    }
+
+    private var subtitle: String {
+        let count = model.changes?.files.count ?? 0
+        let title = model.conversation.title
+        let short = title.count > 48 ? String(title.prefix(48)) + "…" : title
+        return count == 0 ? "What “\(short)” did to your files" : "What “\(short)” did to \(count) file\(count == 1 ? "" : "s")"
     }
 
     private func fileList(_ changes: ConversationChanges) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(changes.files) { file in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Toggle("", isOn: Binding(
-                            get: { model.chosen.contains(file.path) },
-                            set: { on in if on { model.chosen.insert(file.path) } else { model.chosen.remove(file.path) } }))
-                            .toggleStyle(.checkbox)
-                            .labelsHidden()
-                            .disabled(!file.canPutBack)
+                    HStack(alignment: .top, spacing: 8) {
+                        if model.choosing {
+                            Toggle("", isOn: Binding(
+                                get: { model.chosen.contains(file.path) },
+                                set: { on in if on { model.chosen.insert(file.path) } else { model.chosen.remove(file.path) } }))
+                                .toggleStyle(.checkbox)
+                                .labelsHidden()
+                                .disabled(!file.canPutBack)
+                        }
                         VStack(alignment: .leading, spacing: 1) {
                             Text(URL(fileURLWithPath: file.path).lastPathComponent)
-                                .font(Theme.Font.body)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Theme.Surface.primary)
                                 .lineLimit(1)
-                            Text(status(file))
-                                .font(Theme.Font.caption)
-                                .foregroundStyle(file.changedSince ? Theme.attention : .secondary)
-                                .lineLimit(1)
+                            if file.changedSince {
+                                Text("Changed again since").font(.system(size: 11.5)).foregroundStyle(Theme.attention)
+                            }
                         }
-                        Spacer(minLength: 0)
+                        Spacer(minLength: 4)
+                        Text(countText(file))
+                            .font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary).monospacedDigit()
                     }
-                    .padding(.vertical, 5)
-                    .padding(.horizontal, 8)
-                    .background(model.selected == file.path ? Theme.subtleFill : .clear, in: .rect(cornerRadius: Theme.Radius.control))
-                    .contentShape(Rectangle())
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(model.selected == file.path ? Theme.Surface.selection : .clear,
+                                in: .rect(cornerRadius: 8, style: .continuous))
+                    .contentShape(.rect)
                     .onTapGesture { model.select(file.path) }
                     .help(file.path)
+                    .contextMenu { FileActions(path: file.path) }
                 }
             }
         }
+        .scrollIndicators(.automatic)
     }
 
-    private var preview: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.s) {
-            if let path = model.selected {
-                Text(abbreviated(path))
-                    .font(Theme.Font.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if let file = model.changes?.files.first(where: { $0.path == path }), file.created {
-                    Text(file.existsNow ? "The conversation created this file. Putting it back takes it away, keeping a copy for Undo."
-                                        : "The conversation created this file, and it's already gone.")
-                        .font(Theme.Font.callout)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let diff = model.diff, !diff.isEmpty { DiffView(diff: diff) }
-                } else if let diff = model.diff {
-                    if diff.isEmpty {
-                        Text("It's the same now as before this conversation.")
-                            .font(Theme.Font.body)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Putting it back brings back \(diff.added) line\(diff.added == 1 ? "" : "s") and takes out \(diff.removed).")
-                            .font(Theme.Font.callout)
-                            .monospacedDigit()
-                        DiffView(diff: diff)
-                    }
+    /// As tall as the longer of the file list and the change, within reason.
+    private func contentHeight(_ changes: ConversationChanges) -> CGFloat {
+        let list = CGFloat(changes.files.count) * 34
+        let lines = CGFloat(min(model.shownDiff?.lines.count ?? 4, 30)) * 14.4 + 18
+        let play: CGFloat = model.steps > 0 ? 44 : 0
+        return min(440, max(150, max(list, lines + play + (model.stepCaption == nil ? 0 : 26))))
+    }
+
+    private func countText(_ file: ConversationChanges.File) -> String {
+        if file.created { return "new" }
+        guard let count = model.counts[file.path] else { return "" }
+        return "+\(count.added) −\(count.removed)"
+    }
+
+    private var detail: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let caption = model.stepCaption {
+                Text(caption).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Theme.Surface.primary)
+                    .lineLimit(2)
+            }
+            if let diff = model.shownDiff {
+                if diff.isEmpty {
+                    Text(model.step == nil ? "It's the same now as before this conversation." : "No change to this file in that turn.")
+                        .font(.system(size: 13)).foregroundStyle(Theme.Surface.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 } else {
-                    Text("There's no text to compare for this file.")
-                        .font(Theme.Font.body)
-                        .foregroundStyle(.secondary)
+                    DiffWell(diff: diff)
+                }
+            } else if model.selected != nil {
+                Text("There's no text to compare for this file.")
+                    .font(.system(size: 13)).foregroundStyle(Theme.Surface.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+            if model.steps > 0 {
+                HStack(spacing: 10) {
+                    Button { model.playing ? model.stop() : model.play() } label: {
+                        Label(model.playing ? "Pause" : "Play", systemImage: model.playing ? "pause.fill" : "play.fill")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(.secondary)
+                    .keyboardShortcut(.space, modifiers: [])
+                    ThinMeter(value: Double(model.step ?? model.steps) / Double(model.steps))
+                    Text("\(model.step ?? model.steps) of \(model.steps)")
+                        .font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary).monospacedDigit()
+                        .fixedSize()
                 }
             }
-            Spacer(minLength: 0)
         }
     }
 
-    private func status(_ file: ConversationChanges.File) -> String {
-        if file.before == nil { return "No copy saved before it changed" }
-        if file.before?.copy == nil, file.before?.didNotExist == false { return "Its copy was cleaned up" }
-        if file.changedSince { return "Changed again since" }
-        if file.created { return file.existsNow ? "Created by it" : "Created by it, gone now" }
-        return file.existsNow ? "Edited" : "Edited, gone now"
+    private var footer: some View {
+        HStack(spacing: 8) {
+            if let path = model.selected, case .ready = model.phase {
+                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+                    .buttonStyle(.quiet)
+                    .disabled(!FileManager.default.fileExists(atPath: path))
+            }
+            Spacer()
+            if model.choosing {
+                Button("Cancel") { model.choosing = false }.buttonStyle(.secondary)
+                Button("Put Back \(model.chosen.count) File\(model.chosen.count == 1 ? "" : "s")…") { confirming = true }
+                    .buttonStyle(.primary)
+                    .disabled(model.chosen.isEmpty)
+                    .keyboardShortcut(.defaultAction)
+            } else {
+                Button("Done") { model.stop(); onClose() }
+                    .buttonStyle(.secondary)
+                    .keyboardShortcut(.cancelAction)
+                if case .ready = model.phase, let puttable = model.changes?.puttable, !puttable.isEmpty {
+                    Button("Put Back \(model.chosen.count) File\(model.chosen.count == 1 ? "" : "s")…") { model.choosing = true }
+                        .buttonStyle(.primary)
+                }
+            }
+        }
+    }
+}
+
+/// A change as text: removed lines in red, added in green, the rest quiet. Mono, in a well.
+struct DiffWell: View {
+    let diff: LineDiff
+    @State private var contentHeight: CGFloat = 0
+
+    var body: some View {
+        ScrollView([.vertical, .horizontal]) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(diff.lines.prefix(600)) { line in
+                    Text(prefix(line.kind) + line.text)
+                        .foregroundStyle(color(line.kind))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .font(.system(size: 12, design: .monospaced))
+            .lineSpacing(5)
+            .textSelection(.enabled)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+        }
+        .defaultScrollAnchor(.topLeading)
+        // Long lines still scroll sideways; a bar that's always there would cover the last line.
+        .scrollIndicators(.never, axes: .horizontal)
+        .frame(height: contentHeight > 0 ? min(contentHeight, 470) : nil)
+        .background(Theme.Surface.fill, in: .rect(cornerRadius: 8, style: .continuous))
     }
 
-    private func abbreviated(_ path: String) -> String {
-        let home = HostPaths.current.home.path
-        return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
+    private func prefix(_ kind: LineDiff.Line.Kind) -> String {
+        switch kind {
+        case .added: return "+ "
+        case .removed: return "− "
+        case .context: return "  "
+        case .gap: return "  ⋯"
+        }
+    }
+
+    private func color(_ kind: LineDiff.Line.Kind) -> Color {
+        switch kind {
+        case .added: return Color(nsColor: .systemGreen)
+        case .removed: return Color(nsColor: .systemRed)
+        case .context, .gap: return Theme.Surface.secondary
+        }
     }
 }

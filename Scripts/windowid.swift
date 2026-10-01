@@ -35,7 +35,9 @@ let matches = windows.compactMap { info -> (Int, Double, Double, Double, Double,
     return (number, width * height, x, y, width, height)
 }
 
-guard let best = matches.max(by: { $0.1 < $1.1 }) else {
+// `--smallest` picks a secondary window, such as Settings, over the main one.
+let smallest = CommandLine.arguments.contains("--smallest")
+guard let best = smallest ? matches.min(by: { $0.1 < $1.1 }) : matches.max(by: { $0.1 < $1.1 }) else {
     FileHandle.standardError.write(Data("no window found for \(appName)\n".utf8))
     exit(2)
 }

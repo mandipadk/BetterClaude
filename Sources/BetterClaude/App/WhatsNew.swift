@@ -12,6 +12,14 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "1.1.0": [
+            Item(symbol: "macwindow", title: "Every screen, redrawn",
+                 detail: "Home, Conversations, Changes, Usage, Library, projects, This Mac and the menu bar now follow one design: more room between sections, quieter selection, and the same rows and buttons everywhere."),
+            Item(symbol: "arrow.uturn.forward", title: "Continue, in one row",
+                 detail: "Where to carry on is a row of tiles with each Claude's room left. Pick Claude Code and it asks which project."),
+            Item(symbol: "clock.arrow.circlepath", title: "Changes, in one sheet",
+                 detail: "Each file Claude changed with its diff beside it, Play underneath, and Put Back for the files you choose."),
+        ],
         "1.0.0": [
             Item(symbol: "house", title: "Better Claude 1.0",
                  detail: "A new look, five places, Home, ⌘K, a reader that starts with the conversation, project and install pages in tabs, and Settings in one window."),

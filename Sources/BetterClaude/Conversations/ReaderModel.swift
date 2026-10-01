@@ -25,6 +25,8 @@ final class ReaderModel {
     /// forked in place.
     private(set) var forkPoints: [String: BranchPoint] = [:]
     var findQuery = ""
+    /// The find bar, shown with ⌘F.
+    var showsFind = false
     /// What happened during the conversation, placed between its messages.
     private(set) var markers: [TimelineMarker] = []
     /// Claims Claude itself made that the transcript doesn't back, by the time they were made.

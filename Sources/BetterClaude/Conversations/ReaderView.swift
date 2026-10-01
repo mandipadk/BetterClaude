@@ -49,18 +49,18 @@ struct ReaderView: View {
                 if let conversation = reader.conversation {
                     ReaderHeader(conversation: conversation, install: reader.install,
                                  readable: reader.readable)
-                        .padding(.bottom, Theme.Space.xl)
+                        .padding(.bottom, 22)
                 }
                 if reader.conversation?.external == nil {
                     TipView(ReaderTip())
-                        .tipBackground(Theme.groupFill)
+                        .tipBackground(Theme.Surface.group)
                         .padding(.bottom, Theme.Space.l)
                 }
                 let entries = reader.visibleEntries
                 // While finding, only matching messages show, and markers between them would mislead.
                 let anchors = reader.findQuery.isEmpty
                     ? TimelineMarkers.anchors(reader.markers, times: entries.map(\.time)) : [:]
-                LazyVStack(alignment: .leading, spacing: Theme.Space.xl) {
+                LazyVStack(alignment: .leading, spacing: 18) {
                     ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                         ForEach(anchors[index] ?? []) { marker in MarkerLine(marker: marker) }
                         switch entry {
@@ -93,12 +93,13 @@ struct ReaderView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, 36)
-            .padding(.top, 24)
-            .padding(.bottom, 56)
-            .frame(maxWidth: 760, alignment: .leading)
+            .padding(.horizontal, 34)
+            .padding(.top, 22)
+            .padding(.bottom, 48)
+            .frame(maxWidth: 748, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .background(Theme.Surface.window)
         .id(reader.conversation?.id)
     }
 }
@@ -117,22 +118,23 @@ struct ReaderHeader: View {
 
     var body: some View {
         @Bindable var reader = services.reader
-        VStack(alignment: .leading, spacing: Theme.Space.l) {
-            HStack(alignment: .top, spacing: Theme.Space.m) {
-                Text(conversation.title)
-                    .font(Theme.Font.title)
-                    .lineLimit(3)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
+        VStack(alignment: .leading, spacing: 3) {
+            Text(conversation.title)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Theme.Surface.primary)
+                .lineLimit(3)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
             Text(context)
-                .font(Theme.Font.callout)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 12.5))
+                .foregroundStyle(Theme.Surface.secondary)
                 .lineLimit(1)
-
-            FindField(text: $reader.findQuery)
-                .frame(maxWidth: 260)
+            if reader.showsFind {
+                FindField(text: $reader.findQuery)
+                    .frame(maxWidth: 260)
+                    .padding(.top, 12)
+                    .onKeyPress(.escape) { reader.findQuery = ""; reader.showsFind = false; return .handled }
+            }
         }
     }
 }
@@ -239,11 +241,12 @@ struct MessageView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(message.role == .user ? "You" : "Claude")
-                    .font(Theme.Font.headline)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(Theme.Surface.primary)
                 if let time = message.timestamp {
                     Text(time.formatted(.dateTime.hour().minute()))
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.Surface.secondary)
                         .monospacedDigit()
                 }
                 Spacer(minLength: 0)
@@ -261,20 +264,21 @@ struct MessageView: View {
             }
             if message.role == .user {
                 Text(message.text)
-                    .font(Theme.Font.reading)
-                    .lineSpacing(3)
+                    .font(.system(size: 14))
+                    .lineSpacing(5)
+                    .foregroundStyle(Theme.Surface.primary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Theme.subtleFill, in: .rect(cornerRadius: Theme.Radius.tile, style: .continuous))
+                    .padding(.vertical, 9)
+                    .background(Theme.Surface.fill, in: .rect(cornerRadius: 14, style: .continuous))
             } else {
                 MarkdownView(message.text)
                     .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(claims) { claim in
                 Text(claimSentence(claim))
-                    .font(Theme.Font.callout)
+                    .font(.system(size: 12.5))
                     .foregroundStyle(Theme.attention)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -316,20 +320,41 @@ struct MarkerLine: View {
             services.inspectorTab = tab
             services.showsInspector = true
         } label: {
-            HStack(spacing: 10) {
-                Rectangle().fill(Theme.hairline).frame(height: 1)
-                HStack(spacing: 6) {
-                    Image(systemName: symbol).font(.system(size: 11)).foregroundStyle(.secondary)
+            if case .subagents(let count, let descriptions, let cost) = marker.kind {
+                // A burst of sub-agents: one grouped row, like a message of its own.
+                HStack(spacing: 12) {
+                    Image(systemName: "arrow.triangle.branch").font(.system(size: 13))
+                        .foregroundStyle(Theme.Surface.secondary).frame(width: 18)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(count == 1 ? "A sub-agent looked around" : "\(count) sub-agents looked around")
+                            .font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.Surface.primary)
+                        if !descriptions.isEmpty {
+                            Text(descriptions.joined(separator: ", ")).font(.system(size: 12))
+                                .foregroundStyle(Theme.Surface.secondary).lineLimit(1)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    if cost >= 0.01 { RowValue(text: Self.dollars(cost)) }
+                    Chevron()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Theme.Surface.group, in: .rect(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.Surface.line, lineWidth: 0.5))
+                .contentShape(.rect)
+            } else {
+                HStack(spacing: 12) {
+                    Rectangle().fill(Theme.Surface.line).frame(height: 0.5)
                     Text(sentence)
-                        .font(Theme.Font.callout)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.Surface.secondary)
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
+                        .layoutPriority(1)
+                    Rectangle().fill(Theme.Surface.line).frame(height: 0.5)
                 }
-                .layoutPriority(1)
-                Rectangle().fill(Theme.hairline).frame(height: 1)
+                .contentShape(.rect)
             }
-            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .help(help)
@@ -400,14 +425,10 @@ struct ToolsLine: View {
     var body: some View {
         var seen = Set<String>()
         let unique = names.filter { seen.insert($0).inserted }
-        return HStack(spacing: 7) {
-            Image(systemName: "wrench.and.screwdriver")
-                .font(.system(size: 11))
-            Text(names.count == 1 ? "Used \(unique[0])" : "Used \(names.count) tools: \(unique.prefix(4).joined(separator: ", "))")
-                .lineLimit(1)
-        }
-        .font(Theme.Font.callout)
-        .foregroundStyle(.secondary)
+        return Text(names.count == 1 ? "Used \(unique[0])" : "Used \(names.count) tools: \(unique.prefix(4).joined(separator: ", "))")
+            .lineLimit(1)
+            .font(.system(size: 12))
+            .foregroundStyle(Theme.Surface.tertiary)
     }
 }
 
@@ -475,7 +496,7 @@ struct CompactionMarker: View {
                 Spacer().frame(width: 16)
                 if let project = conversation?.projectPath {
                     Button(added ? "Added to CLAUDE.md" : "Add to CLAUDE.md…") { confirming = true }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.secondary)
                         .disabled(added)
                         .confirmationDialog("Add \(forgotten.count == 1 ? "this" : "these \(forgotten.count)") to this project's CLAUDE.md?", isPresented: $confirming) {
                             Button("Add") {
@@ -490,7 +511,7 @@ struct CompactionMarker: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(forgotten.map { "- \($0.text)" }.joined(separator: "\n"), forType: .string)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.secondary)
             }
         }
         .padding(Theme.Space.m)

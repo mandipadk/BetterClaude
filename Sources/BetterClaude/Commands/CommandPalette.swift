@@ -17,7 +17,7 @@ struct PaletteCommand: Identifiable {
             case .actions: return "Actions"
             case .conversations: return "Conversations"
             case .projects: return "Projects"
-            case .ask: return "Ask your history"
+            case .ask: return "Search and ask"
             }
         }
     }
@@ -48,7 +48,7 @@ extension SidebarDestination {
         case .prompts: return "Prompts"
         case .library: return "Library"
         case .install: return "Install"
-        case .history: return "History"
+        case .history: return "Activity"
         case .kept: return "Kept"
         case .storage: return "Storage"
         case .memory: return "Memory"
@@ -111,13 +111,13 @@ enum CommandRegistry {
                 })
             }
             if !external {
-                commands.append(.init(id: "changes", title: "Show Changes…", symbol: "clock.arrow.circlepath",
+                commands.append(.init(id: "changes", title: "Show Changes…", symbol: "clock.arrow.circlepath", keys: "⇧⌘C",
                                       aliases: ["rewind", "undo edits", "diff", "what changed", "put back"], group: .conversation) {
                     services.rewinding = RewindModel(conversation: conversation)
                 })
                 commands.append(.init(id: "play", title: "Play Changes…", symbol: "play",
                                       aliases: ["timelapse", "time-lapse", "watch"], group: .conversation) {
-                    services.watching = TimelapseModel(conversation: conversation)
+                    services.rewinding = RewindModel(conversation: conversation, playing: true)
                 })
             }
             if !missing {
@@ -209,9 +209,18 @@ enum CommandRegistry {
             return (command, s)
         }
         scored += matchingProjects.sorted { $0.1 > $1.1 }.prefix(4)
+        if q.count > 1 {
+            let words = query.trimmingCharacters(in: .whitespaces)
+            scored.append((PaletteCommand(id: "search", title: "Search every message for “\(words)”", symbol: "text.magnifyingglass",
+                                          group: .ask) {
+                services.filter = .all
+                services.destination = .conversations
+                services.query = words
+            }, 1))
+        }
         if case .available = services.ask.availability, q.count > 2 {
             let question = query.trimmingCharacters(in: .whitespaces)
-            scored.append((PaletteCommand(id: "ask", title: "“\(question)”", symbol: "sparkle.magnifyingglass",
+            scored.append((PaletteCommand(id: "ask", title: "Ask “\(question)”", symbol: "sparkle.magnifyingglass",
                                           keys: "⌘↩", group: .ask) { services.askHistory(question) }, 0))
         }
         // Groups keep their order; inside each, the best match leads.

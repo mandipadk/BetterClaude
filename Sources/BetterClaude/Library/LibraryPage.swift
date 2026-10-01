@@ -2,102 +2,233 @@ import AppKit
 import CoworkKit
 import SwiftUI
 
-/// Everything Claude has made: files it wrote, images, code it gave you, and what you gave
-/// it — each with the conversation it came from.
+/// Everything Claude has made, as a gallery: documents, images, code it gave you, what you
+/// gave it, and the prompts you keep typing, each with the conversation it came from.
 struct LibraryPage: View {
     @Environment(AppServices.self) private var services
+    @AppStorage("libraryPreview") private var showsPreview = false
 
     var body: some View {
+        @Bindable var library = services.library
         HStack(spacing: 0) {
-            LibraryColumn()
-                .frame(width: 380)
-            Rectangle().fill(Theme.hairline).frame(width: 1)
-            ArtifactPreview()
-                .frame(maxWidth: .infinity)
+            Group {
+                if library.filter == .prompts {
+                    LibraryPrompts()
+                } else {
+                    LibraryGallery()
+                }
+            }
+            .frame(maxWidth: .infinity)
+            if showsPreview, library.filter != .prompts, library.selected != nil {
+                Rectangle().fill(Theme.Surface.line).frame(width: 0.5)
+                ArtifactPreview()
+                    .frame(width: 320)
+                    .background(Theme.Surface.bar)
+            }
         }
+        .background(Theme.Surface.window)
         .task(id: services.generation) {
             if services.hasLoaded { services.library.gather(from: services.snapshot, generation: services.generation) }
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Segmented(options: LibraryFilter.allCases.map { ($0, $0.title) }, selection: $library.filter)
+            }
+            .sharedBackgroundVisibility(.hidden)
+            ToolbarItem(placement: .primaryAction) {
+                Button { showsPreview.toggle() } label: { Label("Preview", systemImage: "sidebar.right") }
+                    .help("Show or hide the preview")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                SearchPill(prompt: "Search", width: 150) { services.showsPalette = true }
+            }
+            .sharedBackgroundVisibility(.hidden)
+        }
+        .sheet(item: Binding(get: { services.prompts.drafting.map(SkillSheet.Item.init) },
+                             set: { if $0 == nil { services.prompts.drafting = nil } })) { item in
+            SkillSheet(draft: item.draft) { services.prompts.drafting = nil }
+                .environment(services)
         }
     }
 }
 
-private struct LibraryColumn: View {
+/// Tiles, newest first, grouped by when Claude made them.
+private struct LibraryGallery: View {
     @Environment(AppServices.self) private var services
 
     var body: some View {
-        @Bindable var library = services.library
+        let library = services.library
         let artifacts = library.visible
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Library").font(Theme.Font.title)
-                    Text(countText(artifacts.count))
-                        .font(Theme.Font.callout)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                    Button("Prompts You Keep Typing") { services.destination = .prompts }
-                        .buttonStyle(.plain)
-                        .font(Theme.Font.callout.weight(.medium))
-                        .foregroundStyle(Theme.accent)
-                        .padding(.top, 6)
-                }
-                Picker("Show", selection: $library.filter) {
-                    ForEach(LibraryFilter.allCases) { filter in
-                        Text(filter.title).tag(filter)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                FindField(text: $library.query, prompt: "Search the library")
+        if library.summary == nil {
+            VStack(spacing: 10) {
+                ProgressView()
+                Text("Gathering what Claude made…").font(.system(size: 12.5)).foregroundStyle(Theme.Surface.secondary)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 14)
-            .padding(.bottom, 10)
-
-            if library.summary == nil {
-                VStack(spacing: 10) {
-                    ProgressView()
-                    Text("Gathering what Claude made…")
-                        .font(Theme.Font.callout)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if artifacts.isEmpty {
-                EmptyState(systemImage: "square.stack", title: "Nothing here",
-                           message: library.query.isEmpty
-                               ? "Nothing of this kind has been made in any conversation yet."
-                               : "Nothing in the library matches “\(library.query)”.")
-            } else if library.filter == .images {
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], spacing: 8) {
-                        ForEach(artifacts) { artifact in
-                            ImageTile(artifact: artifact, isSelected: library.selectedID == artifact.id) {
-                                library.selectedID = artifact.id
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if artifacts.isEmpty {
+            EmptyState(systemImage: "books.vertical", title: "Nothing here yet",
+                       message: "What Claude makes in your conversations, documents, images and code, collects here.")
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Self.groups(artifacts).prefix(library.filter == .everything ? 2 : 99), id: \.title) { group in
+                        SectionLabel(title: group.title, top: group.title == Self.groups(artifacts).first?.title ? 0 : 26)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 14, alignment: .top)],
+                                  alignment: .leading, spacing: 18) {
+                            ForEach(group.items) { artifact in
+                                LibraryTile(artifact: artifact, isSelected: library.selectedID == artifact.id)
+                                    .onTapGesture { library.selectedID = artifact.id }
+                                    .onTapGesture(count: 2) { open(artifact) }
+                                    .contextMenu { LibraryItemActions(artifact: artifact) }
                             }
-                            .contextMenu { LibraryItemActions(artifact: artifact) }
                         }
                     }
-                    .padding(12)
-                }
-            } else {
-                List(selection: $library.selectedID) {
-                    ForEach(artifacts) { artifact in
-                        ArtifactRow(artifact: artifact).tag(artifact.id).listRowSeparator(.hidden)
-                            .contextMenu { LibraryItemActions(artifact: artifact) }
+                    if library.filter == .everything, !services.prompts.prompts.isEmpty {
+                        SectionLabel(title: "Prompts you keep typing", link: "All", action: { services.library.filter = .prompts })
+                        Card {
+                            ForEach(services.prompts.prompts.prefix(3)) { prompt in PromptRow(prompt: prompt) }
+                        }
                     }
                 }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
-                .environment(\.defaultMinListRowHeight, 44)
+                .padding(.horizontal, 28)
+                .padding(.top, 26)
+                .padding(.bottom, 30)
             }
+            .onAppear { if !services.prompts.loaded { services.prompts.load(paths: services.snapshot.paths) } }
         }
     }
 
-    private func countText(_ count: Int) -> String {
-        guard let summary = services.library.summary else { return "Looking through every conversation…" }
-        let conversations = summary.conversationsScanned
-        return "\(count) \(count == 1 ? "item" : "items") from \(conversations) conversations"
+    private func open(_ artifact: Artifact) {
+        if let url = artifact.fileURL { NSWorkspace.shared.open(url) }
+    }
+
+    static func groups(_ artifacts: [Artifact]) -> [(title: String, items: [Artifact])] {
+        let calendar = Calendar.current
+        let now = Date()
+        var order: [String] = []
+        var buckets: [String: [Artifact]] = [:]
+        for artifact in artifacts.sorted(by: { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }) {
+            let date = artifact.createdAt ?? .distantPast
+            let title: String
+            if calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear) { title = "This week" }
+            else if calendar.isDate(date, equalTo: now, toGranularity: .month) { title = "Earlier this month" }
+            else if date == .distantPast { title = "Undated" }
+            else { title = date.formatted(.dateTime.month(.wide).year()) }
+            if buckets[title] == nil { order.append(title) }
+            buckets[title, default: []].append(artifact)
+        }
+        return order.map { ($0, buckets[$0] ?? []) }
+    }
+}
+
+/// One thing Claude made: a preview of it, its name, and where it came from.
+private struct LibraryTile: View {
+    let artifact: Artifact
+    let isSelected: Bool
+    @State private var thumbnail: NSImage?
+    @State private var text: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack(alignment: .topLeading) {
+                Theme.Surface.group
+                preview
+            }
+            .aspectRatio(4 / 3, contentMode: .fit)
+            .clipShape(.rect(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(isSelected ? Theme.accentBright : Theme.Surface.line, lineWidth: isSelected ? 2.5 : 0.5)
+            }
+            Text(artifact.title)
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(Theme.Surface.primary)
+                .lineLimit(1)
+                .padding(.top, 7)
+            Text(artifact.kind == .upload ? "You added it, \(artifact.conversationTitle)" : artifact.conversationTitle)
+                .font(.system(size: 11.5))
+                .foregroundStyle(Theme.Surface.secondary)
+                .lineLimit(1)
+        }
+        .contentShape(.rect)
+        .task(id: artifact.id) { await load() }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
+    }
+
+    @ViewBuilder
+    private var preview: some View {
+        if let thumbnail {
+            Image(nsImage: thumbnail).resizable().aspectRatio(contentMode: .fill)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let text {
+            Text(text)
+                .font(artifact.kind == .code ? .system(size: 9.5, design: .monospaced) : .system(size: 9.5))
+                .foregroundStyle(Theme.Surface.secondary)
+                .lineSpacing(2)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else if let url = artifact.fileURL {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 40, height: 40)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func load() async {
+        if let code = artifact.inlineContent {
+            text = String(code.split(separator: "\n", omittingEmptySubsequences: false).prefix(14).joined(separator: "\n"))
+        } else if let url = artifact.fileURL {
+            if artifact.kind == .image || [.upload, .other].contains(artifact.kind) {
+                thumbnail = await Thumbnails.load(url, size: 480)
+            }
+            if thumbnail == nil, [.document, .data].contains(artifact.kind) {
+                text = await Task.detached {
+                    guard let handle = try? FileHandle(forReadingFrom: url),
+                          let data = try? handle.read(upToCount: 1_200) else { return nil }
+                    return String(decoding: data, as: UTF8.self)
+                }.value
+            }
+        }
+    }
+}
+
+/// A prompt you keep typing: what it says, how often, and making it a skill.
+private struct PromptRow: View {
+    @Environment(AppServices.self) private var services
+    let prompt: PromptLibrary.Prompt
+
+    var body: some View {
+        Row(title: "“\(prompt.text.split(separator: "\n").first.map(String.init) ?? prompt.text)”",
+            detail: "Used \(prompt.uses) times\(prompt.projects.isEmpty ? "" : " in \(prompt.projects.count) project\(prompt.projects.count == 1 ? "" : "s")")") {
+            Button("Copy") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(prompt.text, forType: .string)
+            }
+            .buttonStyle(.secondary)
+            Button("Make a Skill…") { services.prompts.drafting = SkillFactory.draft(from: prompt.text) }
+                .buttonStyle(.secondary)
+        }
+    }
+}
+
+/// Prompts you keep typing, each a click from being a skill.
+private struct LibraryPrompts: View {
+    @Environment(AppServices.self) private var services
+
+    var body: some View {
+        let prompts = services.prompts
+        PageScroll {
+            SectionLabel(title: "Prompts you keep typing", top: 0)
+            if prompts.loaded && prompts.prompts.isEmpty {
+                Card { Row(title: "None yet", detail: "Prompts you've typed more than once show up here.") }
+            } else {
+                Card {
+                    ForEach(prompts.prompts.prefix(40)) { prompt in PromptRow(prompt: prompt) }
+                }
+            }
+        }
+        .onAppear { if !prompts.loaded { prompts.load(paths: services.snapshot.paths) } }
     }
 }
 
@@ -196,14 +327,13 @@ private struct ArtifactPreview: View {
     var body: some View {
         if let artifact = services.library.selected {
             ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Space.l) {
+                VStack(alignment: .leading, spacing: 14) {
                     header(artifact)
                     content(artifact)
                 }
-                .padding(.horizontal, 36)
-                .padding(.top, 24)
-                .padding(.bottom, 48)
-                .frame(maxWidth: 760, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .id(artifact.id)
@@ -216,44 +346,37 @@ private struct ArtifactPreview: View {
 
     private func header(_ artifact: Artifact) -> some View {
         let conversation = services.snapshot.conversations.first { $0.id == artifact.conversationID }
-        return VStack(alignment: .leading, spacing: Theme.Space.l) {
-            HStack(alignment: .top, spacing: Theme.Space.m) {
-                Text(artifact.title)
-                    .font(Theme.Font.display)
-                    .lineLimit(3)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(artifact.title)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.Surface.primary)
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+            HStack(spacing: 8) {
                 if let url = artifact.fileURL {
-                    Button("Open") { NSWorkspace.shared.open(url) }.buttonStyle(.borderedProminent)
+                    Button("Open") { NSWorkspace.shared.open(url) }.buttonStyle(.primary)
                 } else if let code = artifact.inlineContent {
                     Button("Copy Code") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(code, forType: .string)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.primary)
                 }
-                MoreMenu { LibraryItemActions(artifact: artifact) }
-            }
-            HStack(alignment: .top, spacing: 28) {
                 if let conversation {
-                    Button { services.show(conversation) } label: {
-                        Fact(label: "From") {
-                            Text(conversation.title).foregroundStyle(Theme.accent)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .help("Open the conversation")
+                    Button("Open Conversation") { services.show(conversation) }.buttonStyle(.secondary)
                 }
-                if !artifact.container.isEmpty {
-                    Fact(label: "In") { Text(artifact.container) }
-                }
-                Fact(label: "Kind") { Text(kindName(artifact)) }
-                Fact(label: "Size") { Text(Int64(artifact.bytes).fileSize) }
-                if let date = artifact.createdAt {
-                    Fact(label: "Made") { Text(date.listStamp) }
-                }
-                Spacer(minLength: 0)
+                Menu { LibraryItemActions(artifact: artifact) } label: { Image(systemName: "ellipsis") }
+                    .menuStyle(.button).buttonStyle(.secondary).menuIndicator(.hidden).fixedSize()
             }
+            VStack(alignment: .leading, spacing: 7) {
+                if let conversation { KV("From", conversation.title) }
+                if !artifact.container.isEmpty { KV("In", artifact.container) }
+                KV("Kind", kindName(artifact))
+                KV("Size", Int64(artifact.bytes).fileSize)
+                if let date = artifact.createdAt { KV("Made", date.listStamp) }
+            }
+            .padding(.top, 4)
         }
     }
 

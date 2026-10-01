@@ -13,12 +13,12 @@ extension View {
 
     /// The one thing to do next in a sheet or onboarding: the system's prominent button.
     func prominentAction() -> some View {
-        buttonStyle(.borderedProminent).controlSize(.large)
+        buttonStyle(PrimaryButton(height: 32))
     }
 
     /// A quiet action beside a prominent one.
     func quietAction() -> some View {
-        buttonStyle(.bordered).controlSize(.large)
+        buttonStyle(SecondaryButton(height: 32))
     }
 
     /// A bar pinned to the bottom of a scrolling view; content scrolling beneath it softens

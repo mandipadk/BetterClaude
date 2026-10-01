@@ -11,12 +11,14 @@ struct ContinueSheet: View {
     let onClose: () -> Void
 
     @State private var forward = true
+    @State private var showOptions = false
+    @State private var chooseHeight: CGFloat = 170
 
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
                 switch model.step {
-                case .choose: ChooseStep(model: model).transition(stepTransition)
+                case .choose: ChooseStep(model: model, showOptions: $showOptions, contentHeight: $chooseHeight).transition(stepTransition)
                 case .review: ReviewStep(model: model).transition(stepTransition)
                 case .working: WorkingStep(model: model).transition(stepTransition)
                 case .done: DoneStep(model: model).transition(stepTransition)
@@ -28,7 +30,9 @@ struct ContinueSheet: View {
 
             actionBar
         }
-        .frame(width: 660, height: 580)
+        .frame(width: 620, height: model.step == .choose ? min(chooseHeight + 62, 600) : 460)
+        .animation(reduceMotion ? nil : Theme.Motion.snappy, value: chooseHeight)
+        .background(Theme.Surface.window)
         .onDisappear { model.cleanUp() }
     }
 
@@ -41,7 +45,13 @@ struct ContinueSheet: View {
     // MARK: Actions
 
     private var actionBar: some View {
-        HStack(spacing: Theme.Space.m) {
+        HStack(spacing: 8) {
+            if model.step == .choose {
+                Button(showOptions ? "Fewer Options" : "More Options") {
+                    withAnimation(Theme.Motion.snappy) { showOptions.toggle() }
+                }
+                .buttonStyle(.quiet)
+            }
             if let failure = model.failure, model.step == .choose || model.step == .review {
                 Label(failure, systemImage: "exclamationmark.triangle.fill")
                     .font(Theme.Font.callout)
@@ -91,9 +101,9 @@ struct ContinueSheet: View {
                 Button("Close", action: onClose).prominentAction().keyboardShortcut(.defaultAction)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 16)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
+        .padding(.horizontal, 24)
+        .padding(.top, 8)
+        .padding(.bottom, 18)
     }
 
     private var openTitle: String {
@@ -123,62 +133,83 @@ struct ContinueSheet: View {
 private struct ChooseStep: View {
     @Environment(AppServices.self) private var services
     @Bindable var model: ContinueModel
-    @State private var showOptions = false
+    @Binding var showOptions: Bool
+    @Binding var contentHeight: CGFloat
+    @State private var pickingProject = false
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Space.xl) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Continue “\(model.conversation.title)”")
-                        .font(Theme.Font.title)
-                        .lineLimit(2)
-                    Text("Pick where to carry it. The original stays where it is.")
-                        .font(Theme.Font.body)
-                        .foregroundStyle(.secondary)
-                }
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Continue “\(model.conversation.title)”")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Theme.Surface.primary)
+                    .lineLimit(2)
+                Text("Pick where to carry on. Nothing leaves this Mac.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.Surface.secondary)
+                    .padding(.top, 3)
 
-                let accounts = accountDestinations
-                if !accounts.isEmpty {
-                    VStack(alignment: .leading, spacing: Theme.Space.s) {
-                        Text("In Claude").font(Theme.Font.section)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
-                            ForEach(accounts, id: \.destination) { item in
-                                InstallTile(install: item.install, detail: item.detail, room: item.room,
-                                            isSelected: model.destination == item.destination,
-                                            isOpen: services.isRunning(item.install)) {
-                                    model.destination = item.destination
-                                }
-                            }
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10, alignment: .top), count: 3),
+                          alignment: .leading, spacing: 10) {
+                    ForEach(accountDestinations, id: \.destination) { item in
+                        DestinationTile(install: item.install,
+                                        detail: services.isRunning(item.install) ? roomLine(item.room, open: true) : roomLine(item.room, open: false, fallback: item.detail),
+                                        isSelected: model.destination == item.destination) {
+                            pickingProject = false
+                            model.destination = item.destination
+                        }
+                    }
+                    if let code = services.installs.first(where: { $0.kind == .claudeCode }) {
+                        DestinationTile(install: code, detail: projectLine,
+                                        isSelected: pickingProject || isProject) {
+                            pickingProject = true
+                            if !isProject, let first = projectChoices.first { model.destination = .project(path: first) }
                         }
                     }
                 }
+                .padding(.top, 16)
 
-                VStack(alignment: .leading, spacing: Theme.Space.s) {
-                    Text("In a Claude Code project").font(Theme.Font.section)
-                    VStack(spacing: 2) {
+                if pickingProject || isProject {
+                    SectionLabel(title: "In which project", top: 20)
+                    Card(inset: 44) {
                         ForEach(projectChoices, id: \.self) { path in
-                            ProjectRow(path: path, isSelected: model.destination == .project(path: path),
-                                       home: services.snapshot.paths) {
-                                model.destination = .project(path: path)
+                            Button { model.destination = .project(path: path) } label: {
+                                Row(title: URL(fileURLWithPath: path).lastPathComponent,
+                                    detail: services.snapshot.paths.abbreviating(URL(fileURLWithPath: path).deletingLastPathComponent().path)) {
+                                    RowSymbol(name: "folder")
+                                } trailing: {
+                                    if model.destination == .project(path: path) {
+                                        Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.accent)
+                                    }
+                                }
+                                .background(model.destination == .project(path: path) ? Theme.Surface.selection : .clear)
                             }
+                            .buttonStyle(.plain)
                         }
+                        Button { chooseFolder() } label: {
+                            Row(title: "Choose a Folder…") { RowSymbol(name: "folder.badge.plus") } trailing: { EmptyView() }
+                        }
+                        .buttonStyle(.plain)
                     }
-                    Button("Choose a Folder…") { chooseFolder() }
-                        .buttonStyle(.bordered)
                 }
 
-                DisclosureGroup(isExpanded: $showOptions) {
-                    VStack(alignment: .leading, spacing: Theme.Space.m) {
+                if showOptions {
+                    SectionLabel(title: "Options", top: 20)
+                    Card {
                         if model.isCowork {
-                            ExplainedToggle(title: "Include files you uploaded",
-                                            detail: "Documents and images you attached. They can be large.",
-                                            isOn: $model.includeUploads)
-                            ExplainedToggle(title: "Include files Claude made",
-                                            detail: "Everything in the conversation's outputs folder.",
-                                            isOn: $model.includeOutputs)
+                            Toggle(isOn: $model.includeUploads) {
+                                Text("Include files you uploaded")
+                                Text("Documents and images you attached. They can be large.")
+                            }
+                            .padding(.horizontal, 14).padding(.vertical, 10)
+                            Toggle(isOn: $model.includeOutputs) {
+                                Text("Include files Claude made")
+                                Text("Everything in the conversation's outputs folder.")
+                            }
+                            .padding(.horizontal, 14).padding(.vertical, 10)
                         }
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Your name and email").font(Theme.Font.body)
+                            Text("Your name and email").font(.system(size: 13, weight: .medium))
                             Picker("Your name and email", selection: $model.profile) {
                                 Text("Keep them, it's my own Claude").tag(RedactionProfile.sameUser)
                                 Text("Remove them, it's someone else's account").tag(RedactionProfile.crossUser)
@@ -187,18 +218,36 @@ private struct ChooseStep: View {
                             .labelsHidden()
                             .pickerStyle(.radioGroup)
                         }
+                        .padding(.horizontal, 14).padding(.vertical, 10)
                     }
-                    .padding(.top, Theme.Space.s)
-                } label: {
-                    Text("More options")
-                        .font(Theme.Font.body)
-                        .foregroundStyle(.secondary)
-                        .contentShape(.rect)
-                        .onTapGesture { withAnimation(Theme.Motion.snappy) { showOptions.toggle() } }
+                    .toggleStyle(.switch)
                 }
             }
-            .padding(24)
+            .padding(.horizontal, 24)
+            .padding(.top, 22)
+            .padding(.bottom, 12)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
         }
+        .scrollBounceBehavior(.basedOnSize)
+        .onAppear {
+            if model.destination == nil, let first = accountDestinations.first { model.destination = first.destination }
+        }
+    }
+
+    private var isProject: Bool {
+        if case .project = model.destination { return true }
+        return false
+    }
+
+    private var projectLine: String {
+        if case .project(let path) = model.destination { return URL(fileURLWithPath: path).lastPathComponent }
+        return "Pick a project"
+    }
+
+    private func roomLine(_ room: Double?, open: Bool, fallback: String = "") -> String {
+        let left = room.map { "\(Int($0.rounded()))% of the week left" }
+        if open { return left.map { $0.replacingOccurrences(of: " of the week", with: "") + ", open now" } ?? "Open now" }
+        return left ?? fallback
     }
 
     struct AccountChoice {
@@ -254,90 +303,34 @@ private struct ChooseStep: View {
     }
 }
 
-/// A destination install as a tile, like picking an app in Parallex.
-private struct InstallTile: View {
+/// A place to continue in, as a tile: its icon, its name, and how much room it has.
+private struct DestinationTile: View {
     let install: Install
     let detail: String
-    let room: Double?
     let isSelected: Bool
-    let isOpen: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 6) {
-                InstallIcon(install: install, size: 44)
-                Text(install.name).font(Theme.Font.bodyMedium).lineLimit(1)
-                Text(isOpen ? "Open now" : detail)
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            VStack(alignment: .leading, spacing: 3) {
+                InstallIcon(install: install, size: 40)
+                    .frame(width: 36, height: 36)
+                Text(install.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.Surface.primary)
+                    .lineLimit(1).padding(.top, 8)
+                Text(detail).font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary).lineLimit(1)
                     .truncationMode(.middle)
-                if let room {
-                    Text("\(Int(room.rounded()))% of its limit left")
-                        .font(Theme.Font.caption.weight(.medium))
-                        .foregroundStyle(room < 20 ? Theme.attention : Theme.accent)
-                        .monospacedDigit()
-                }
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 8)
-            .frame(maxWidth: .infinity)
-            .background(Theme.groupFill,
-                        in: .rect(cornerRadius: Theme.Radius.panel, style: .continuous))
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.Surface.group, in: .rect(cornerRadius: 12, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
-                    .strokeBorder(isSelected ? Theme.accentFill : .clear, lineWidth: 2)
-            }
-            .overlay(alignment: .topTrailing) {
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(.white, Theme.accent)
-                        .padding(7)
-                        .transition(.scale.combined(with: .opacity))
-                }
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(isSelected ? Theme.accentBright : Theme.Surface.line, lineWidth: isSelected ? 2 : 0.5)
             }
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .animation(Theme.Motion.snappy, value: isSelected)
-        .accessibilityLabel("\(install.name), \(detail)" + (room.map { ", \(Int($0.rounded())) percent of its limit left" } ?? ""))
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-}
-
-private struct ProjectRow: View {
-    let path: String
-    let isSelected: Bool
-    let home: HostPaths
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: "folder.fill")
-                    .foregroundStyle(isSelected ? Theme.accent : .secondary)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(URL(fileURLWithPath: path).lastPathComponent).font(Theme.Font.body)
-                    Text(home.abbreviating(URL(fileURLWithPath: path).deletingLastPathComponent().path))
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark").foregroundStyle(Theme.accent).fontWeight(.semibold)
-                }
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 40)
-            .background(isSelected ? Color.primary.opacity(0.08) : .clear,
-                        in: .rect(cornerRadius: Theme.Radius.control))
-            .contentShape(.rect)
-        }
-        .buttonStyle(HoverRowStyle())
+        .accessibilityLabel("\(install.name), \(detail)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

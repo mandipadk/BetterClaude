@@ -2,63 +2,185 @@ import Charts
 import CoworkKit
 import SwiftUI
 
-/// Every account's plan limits, where the week is heading, and what used it.
+/// Every account's plan limits, where the week is heading, and what used it: the answer
+/// first, then the evidence.
 struct UsagePage: View {
     @Environment(AppServices.self) private var services
-    @Environment(\.openSettings) private var openSettings
+    @State private var period: UsagePeriod = .thisWeek
+    @State private var data = UsageData()
 
     var body: some View {
         let usage = services.usage
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Usage").font(Theme.Font.display)
-                        Text(headline(usage.quotas))
-                            .font(Theme.Font.body)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
-                    Button("Your Month…") { services.lookingBack = MonthModel() }
-                        .buttonStyle(.bordered)
-                        .help("A month with Claude on one card, to look back on or save as an image")
-                }
-                .padding(.bottom, Theme.Space.xl)
-
-                if usage.loaded && usage.quotas.isEmpty {
-                    DetailSection(title: "No readings yet") {
-                        Text("Claude records how much of your limits you've used while it's open. Once Claude or Claude Code has been used on this Mac, your limits show up here.")
-                            .font(Theme.Font.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                ForEach(usage.quotas) { quota in
-                    AccountUsageSection(quota: quota, items: usage.spend[quota.account.id] ?? [])
-                }
-                WeekSection()
-                CacheBreaksSection()
-                ModelDriftSection()
-                if !usage.quotas.isEmpty {
-                    Button("Notifications Before You Hit a Limit…") { openSettings() }
-                        .buttonStyle(.link)
-                        .font(Theme.Font.callout)
-                        .padding(.top, Theme.Space.l)
-                    Text("The percentages are Claude's own. Which projects and conversations used them is estimated from the tokens each reply used, weighed at API list prices, since plan limits aren't published as a formula.")
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, Theme.Space.l)
+        PageScroll {
+            PageTitle(title: "Usage", subtitle: headline(usage.quotas))
+            if usage.loaded && usage.quotas.isEmpty {
+                SectionLabel(title: "No readings yet")
+                Card {
+                    Row(title: "Claude records your limits while it's open",
+                        detail: "Once Claude or Claude Code has been used on this Mac, every account's limits show up here.")
                 }
             }
-            .padding(.horizontal, 32)
-            .padding(.top, 24)
-            .padding(.bottom, 48)
-            .frame(maxWidth: 720, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 24, alignment: .top), GridItem(.flexible(), spacing: 24, alignment: .top)],
+                      alignment: .leading, spacing: 0) {
+                ForEach(usage.quotas) { quota in
+                    VStack(alignment: .leading, spacing: 0) {
+                        SectionLabel(title: quota.account.displayName, detail: places(quota))
+                        Card {
+                            HStack(alignment: .top, spacing: 24) {
+                                if let window = quota.window(.fiveHour) { half("Five hours", window: window, quota: quota) }
+                                if let window = quota.window(.weekly) { half("This week", window: window, quota: quota) }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                        }
+                    }
+                }
+            }
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 24, alignment: .top), count: 3),
+                      alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 0) {
+                    SectionLabel(title: "What used it")
+                    Card {
+                        let total = data.projects.reduce(0) { $0 + $1.cost }
+                        if data.projects.isEmpty { Row(title: "Nothing yet", detail: period.emptyLine) }
+                        ForEach(data.projects.prefix(5), id: \.name) { project in
+                            let share = total > 0 ? project.cost / total : 0
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Text(project.name).font(.system(size: 13)).foregroundStyle(Theme.Surface.primary).lineLimit(1)
+                                    Spacer()
+                                    RowValue(text: "\(Int((share * 100).rounded()))%")
+                                }
+                                ThinMeter(value: share)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 11)
+                        }
+                    }
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    SectionLabel(title: "Coming back after a break")
+                    Card {
+                        if let breaks = data.breaks, breaks.breaks > 0 {
+                            Row(title: "\(breaks.breaks) repl\(breaks.breaks == 1 ? "y" : "ies") rewrote an expired cache",
+                                detail: breaks.projects.first.map { "Mostly \($0.name)" }) {
+                                RowValue(text: Self.dollars(breaks.extra))
+                            }
+                            if let longest = breaks.longest {
+                                Row(title: "Longest break", detail: title(of: longest.conversationID)) {
+                                    RowValue(text: MarkerLine.duration(longest.gap))
+                                }
+                            }
+                        } else {
+                            Row(title: "No expired caches", detail: "Every reply read the conversation from the cache.")
+                        }
+                    }
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    SectionLabel(title: "Models")
+                    Card {
+                        let total = data.models.reduce(0) { $0 + $1.cost }
+                        if data.models.isEmpty { Row(title: "Nothing yet", detail: period.emptyLine) }
+                        ForEach(data.models.prefix(4), id: \.name) { model in
+                            Row(title: humanModelName(model.name),
+                                detail: data.drifted.contains(model.name) ? "Switched to on its own" : nil,
+                                detailColor: Theme.attention) {
+                                RowValue(text: total > 0 ? "\(Int((model.cost / total * 100).rounded()))%" : "")
+                            }
+                        }
+                    }
+                }
+            }
+            if !data.heaviest.isEmpty {
+                SectionLabel(title: "Heaviest conversations")
+                Card {
+                    let total = data.heaviest.reduce(0) { $0 + $1.cost }
+                    ForEach(data.heaviest.prefix(5)) { item in
+                        Button {
+                            if let conversation = services.snapshot.conversations.first(where: { $0.id == item.conversationID }) {
+                                services.show(conversation)
+                            }
+                        } label: {
+                            Row(title: item.title, detail: item.place) {
+                                RowValue(text: Self.dollars(item.cost))
+                                Chevron()
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .help(total > 0 ? "\(Int((item.cost / total * 100).rounded()))% of the period" : "")
+                    }
+                }
+            }
+            WeekSection()
+            Text("Percentages are Claude's own. What used them is estimated from each reply's tokens at API list prices, since plan limits aren't published as a formula.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(Theme.Surface.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 24)
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Segmented(options: UsagePeriod.allCases.map { ($0, $0.title) }, selection: $period)
+            }
+            .sharedBackgroundVisibility(.hidden)
+            ToolbarItem(placement: .primaryAction) {
+                Button("Your Month") { services.lookingBack = MonthModel() }
+                    .help("A month with Claude on one card, to look back on or save as an image")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                SearchPill(prompt: "Search", width: 150) { services.showsPalette = true }
+            }
+            .sharedBackgroundVisibility(.hidden)
         }
         .onAppear { usage.refresh(snapshot: services.snapshot, index: services.index.index) }
+        .task(id: "\(period.rawValue)#\(services.index.generation)#\(usage.quotas.count)") {
+            guard let index = services.index.index else { return }
+            data = await UsageData.load(index: index, period: period, quotas: usage.quotas)
+        }
+    }
+
+    private func half(_ label: String, window: QuotaWindow, quota: AccountQuota) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(label).font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary)
+            Figure(value: "\(Int(window.percent.rounded()))", unit: "%").padding(.top, 4)
+            ThinMeter(value: window.percent / 100, mark: window.kind == .weekly ? forecastMark(quota) : nil)
+                .padding(.top, 7).padding(.bottom, 6)
+            Text(note(window, quota: quota)).font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func note(_ window: QuotaWindow, quota: AccountQuota) -> String {
+        if window.kind == .weekly, let forecast = quota.forecast {
+            switch forecast {
+            case .reachesLimit(let date): return "Full by \(date.formatted(.dateTime.weekday(.wide).hour()))"
+            case .leftAtReset(let left): return "Heading for \(Int((100 - left).rounded()))% by \((window.resetsAt ?? .now).formatted(.dateTime.weekday(.wide)))"
+            }
+        }
+        guard let reset = window.resetsAt else { return "Resets within five hours" }
+        return "Resets \(Calendar.current.isDateInToday(reset) ? reset.formatted(date: .omitted, time: .shortened) : reset.formatted(.dateTime.weekday(.wide).hour().minute()))"
+    }
+
+    private func forecastMark(_ quota: AccountQuota) -> Double? {
+        switch quota.forecast {
+        case .leftAtReset(let left)?: return max(0, min(1, (100 - left) / 100))
+        case .reachesLimit?: return 1
+        case nil: return nil
+        }
+    }
+
+    private func places(_ quota: AccountQuota) -> String? {
+        let names = quota.installIDs.compactMap { services.install($0)?.name }
+        return names.isEmpty ? nil : ListFormatter.localizedString(byJoining: names)
+    }
+
+    private func title(of conversationID: String) -> String {
+        services.snapshot.conversations.first { $0.id == conversationID }?.title ?? "A conversation"
+    }
+
+    static func dollars(_ value: Double) -> String {
+        value.formatted(.currency(code: "USD").precision(.fractionLength(value < 100 ? 2 : 0)))
     }
 
     /// The answer first: where the tightest account is heading.
@@ -70,6 +192,60 @@ struct UsagePage: View {
         }
         if quotas.isEmpty { return "Your plan limits in every account, where this week is heading, and what used it." }
         return quotas.count == 1 ? "Your account has room this week." : "Every account has room this week."
+    }
+}
+
+enum UsagePeriod: String, CaseIterable, Hashable {
+    case thisWeek, lastWeek, month
+
+    var title: String {
+        switch self {
+        case .thisWeek: return "This Week"
+        case .lastWeek: return "Last Week"
+        case .month: return Date().formatted(.dateTime.month(.wide))
+        }
+    }
+
+    var emptyLine: String {
+        switch self {
+        case .thisWeek: return "Nothing has used your limits this week."
+        case .lastWeek: return "Nothing used your limits last week."
+        case .month: return "Nothing has used your limits this month."
+        }
+    }
+
+    func range(now: Date = Date()) -> (Date, Date) {
+        let calendar = Calendar.current
+        let week = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now.addingTimeInterval(-7 * 86_400)
+        switch self {
+        case .thisWeek: return (week, .distantFuture)
+        case .lastWeek: return (week.addingTimeInterval(-7 * 86_400), week)
+        case .month: return (calendar.dateInterval(of: .month, for: now)?.start ?? week, .distantFuture)
+        }
+    }
+}
+
+/// What Usage shows for a stretch of time, read from the index.
+struct UsageData {
+    var projects: [(name: String, cost: Double, conversations: Int)] = []
+    var heaviest: [QuotaAttribution.Item] = []
+    var breaks: CacheBreaks.Summary?
+    var models: [(name: String, cost: Double)] = []
+    var drifted: Set<String> = []
+
+    static func load(index: HistoryIndex, period: UsagePeriod, quotas: [AccountQuota]) async -> UsageData {
+        let (since, until) = period.range()
+        var data = UsageData()
+        let accounts = Set(quotas.map(\.account.id))
+        let items = (try? await QuotaAttribution.items(index: index, accountIDs: accounts, since: since, until: until)) ?? []
+        data.heaviest = items
+        data.projects = QuotaAttribution.byProject(items)
+        data.breaks = try? await CacheBreaks.summary(index: index, since: since, until: until)
+        data.models = (try? await QuotaAttribution.models(index: index, since: since, until: until)) ?? []
+        if let drift = try? await ModelDrift.unexplained(index: index, since: since) {
+            data.drifted = Set(drift.map(\.change.to))
+        }
+        return data
     }
 }
 

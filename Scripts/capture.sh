@@ -48,7 +48,8 @@ for route in "${ROUTES[@]}"; do
     sleep "${SETTLE:-3}"
     # Bring it forward again, in case something took focus while it settled.
     [ -n "${ACTIVATE:-}" ] && open "$ROOT/dist/debug/BetterClaude.app" && sleep 1
-    id="$("$WORK/windowid" "Better Claude" --pid "$pid" 2>/dev/null)"
+    pick=""; case "$route" in settings*) pick="--smallest" ;; esac
+    id="$("$WORK/windowid" "Better Claude" --pid "$pid" $pick 2>/dev/null)"
     if [ -n "$id" ]; then
       screencapture -x -o -l "$id" "$OUT/$name.png" && echo "  $name"
     else

@@ -188,7 +188,7 @@ private struct FileDetail: View {
                             Text("Put back. The version from before is kept.")
                                 .font(Theme.Font.callout)
                             Spacer()
-                            Button("Undo") { files.undoLastRestore() }.buttonStyle(.bordered)
+                            Button("Undo") { files.undoLastRestore() }.buttonStyle(.secondary)
                         }
                         .id(restored.id)
                     }
@@ -214,7 +214,7 @@ private struct FileDetail: View {
                         Button(version.didNotExist ? "Remove the File…" : "Put This Version Back…") {
                             confirmingRestore = version
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.secondary)
                         .disabled(files.diff?.isEmpty == true)
                     }
                 }

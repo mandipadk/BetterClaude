@@ -115,9 +115,9 @@ private struct PromptDetail: View {
                         NSPasteboard.general.setString(prompt.text, forType: .string)
                         copied = true
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.secondary)
                     Button("Make a Skill…") { services.prompts.drafting = SkillFactory.draft(from: prompt.text) }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.primary)
                 }
                 Text("A skill is instructions Claude Code loads when they apply, so you can stop typing this.")
                     .font(Theme.Font.callout)
@@ -198,11 +198,11 @@ struct SkillSheet: View {
             HStack {
                 Spacer()
                 if done {
-                    Button("Done") { onClose() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                    Button("Done") { onClose() }.buttonStyle(.primary).keyboardShortcut(.defaultAction)
                 } else {
-                    Button("Cancel") { onClose() }.buttonStyle(.bordered).keyboardShortcut(.cancelAction)
+                    Button("Cancel") { onClose() }.buttonStyle(.secondary).keyboardShortcut(.cancelAction)
                     Button("Add to Claude Code") { add() }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.primary)
                         .disabled(!SkillFactory.isValidName(draft.name) || draft.description.isEmpty)
                 }
             }

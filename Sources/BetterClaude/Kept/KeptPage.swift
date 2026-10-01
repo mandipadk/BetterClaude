@@ -100,8 +100,8 @@ struct KeptPage: View {
                             .font(Theme.Font.callout)
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Button("Restore…") { chooseBackup() }.buttonStyle(.bordered)
-                        Button("Back Up…") { backup = .backUp }.buttonStyle(.borderedProminent)
+                        Button("Restore…") { chooseBackup() }.buttonStyle(.secondary)
+                        Button("Back Up…") { backup = .backUp }.buttonStyle(.primary)
                     }
                 }
 
@@ -262,9 +262,9 @@ struct KeptPage: View {
                             let fallback = services.installs.first { $0.kind == .claudeCode }?.id ?? ""
                             reading = services.kept.conversation(for: entry, fallbackInstall: fallback)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.secondary)
                         Button("Put Back…") { puttingBack = row }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.secondary)
                         .help("Put it back where Claude Code can resume it. You can undo this from History.")
                     }
                 }

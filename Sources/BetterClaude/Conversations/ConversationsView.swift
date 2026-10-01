@@ -1,56 +1,102 @@
 import CoworkKit
 import SwiftUI
 
-/// Every conversation on the Mac as one timeline, with the open one beside it.
+/// Every conversation on the Mac as one timeline, the open one beside it, and its details.
 struct ConversationsView: View {
     @Environment(AppServices.self) private var services
 
     var body: some View {
-        @Bindable var services = services
         HStack(spacing: 0) {
             TimelineColumn()
-                .frame(width: services.showsInspector ? 280 : 320)
-            Rectangle().fill(Theme.hairline).frame(width: 1)
+                .frame(width: 290)
+            Rectangle().fill(Theme.Surface.line).frame(width: 0.5)
             ReaderView()
                 .frame(maxWidth: .infinity)
             if services.showsInspector {
-                Rectangle().fill(Theme.hairline).frame(width: 1)
+                Rectangle().fill(Theme.Surface.line).frame(width: 0.5)
                 ReaderInspector()
-                    .frame(width: 290)
+                    .frame(width: 260)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
+        .background(Theme.Surface.window)
         .animation(Theme.Motion.snappy, value: services.showsInspector)
+        .toolbarTitleMenu { FilterMenu() }
         .toolbar {
             if let conversation = services.reader.conversation {
                 ToolbarItem(placement: .primaryAction) {
+                    Button { services.rewinding = RewindModel(conversation: conversation) } label: {
+                        Label("Changes", systemImage: "clock.arrow.circlepath").labelStyle(.titleAndIcon)
+                    }
+                    .disabled(conversation.external != nil)
+                    .help("What this conversation did to files (⇧⌘C)")
+                    .keyboardShortcut("c", modifiers: [.command, .shift])
+                }
+                ToolbarSpacer(.fixed)
+                ToolbarItemGroup(placement: .primaryAction) {
                     Menu {
-                        ConversationActions(conversation: conversation)
+                        ShareActions(conversation: conversation)
+                    } label: {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                    .menuIndicator(.hidden)
+                    .help("Export, hand off or replay")
+                    Menu {
+                        MoreActions(conversation: conversation)
                     } label: {
                         Label("More", systemImage: "ellipsis")
                     }
                     .menuIndicator(.hidden)
                     .help("More for this conversation")
                 }
+                ToolbarSpacer(.fixed)
                 ToolbarItem(placement: .primaryAction) {
-                    if conversation.external != nil {
-                        Button("Write a Handoff…") { services.beginHandoff(conversation) }
-                            .buttonStyle(.borderedProminent)
-                            .help("A one-page brief of this conversation, to continue it in a fresh one")
-                    } else {
-                        Button("Continue in…") { services.beginContinue(conversation) }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(conversation.isTranscriptMissing)
-                            .help("Carry this conversation to another Claude or to Claude Code")
+                    Group {
+                        if conversation.external != nil {
+                            Button("Write a Handoff…") { services.beginHandoff(conversation) }
+                        } else {
+                            Button("Continue in…") { services.beginContinue(conversation) }
+                                .disabled(conversation.isTranscriptMissing)
+                        }
                     }
+                    .buttonStyle(PrimaryButton(height: 30))
+                    .help("Carry this conversation to another Claude or to Claude Code")
                 }
+                .sharedBackgroundVisibility(.hidden)
             }
+            ToolbarSpacer(.fixed)
             ToolbarItem(placement: .primaryAction) {
                 Button { services.showsInspector.toggle() } label: {
-                    Label("Inspector", systemImage: "sidebar.right")
+                    Label("Details", systemImage: "sidebar.right")
                 }
                 .help("Show or hide details (⌥⌘I)")
                 .keyboardShortcut("i", modifiers: [.command, .option])
+            }
+            ToolbarItem(placement: .primaryAction) {
+                SearchPill(prompt: "Search", width: 150) { services.showsPalette = true }
+            }
+            .sharedBackgroundVisibility(.hidden)
+        }
+    }
+}
+
+/// Which conversations the timeline shows: all, one install's, or one project's.
+struct FilterMenu: View {
+    @Environment(AppServices.self) private var services
+
+    var body: some View {
+        Button("All conversations") { services.filter = .all }
+        Section("Sources") {
+            ForEach(services.installs.filter { services.conversationCount(in: $0) > 0 }) { install in
+                Button(install.name) { services.filter = .install(install.id) }
+            }
+        }
+        let projects = services.projects
+        if !projects.isEmpty {
+            Section("Projects") {
+                ForEach(projects, id: \.path) { project in
+                    Button(project.name) { services.filter = .project(project.path) }
+                }
             }
         }
     }
@@ -60,88 +106,67 @@ struct ConversationsView: View {
 
 struct TimelineColumn: View {
     @Environment(AppServices.self) private var services
+    @FocusState private var focused: Bool
 
     var body: some View {
-        @Bindable var services = services
         let conversations = services.visibleConversations
         VStack(alignment: .leading, spacing: 0) {
-            header(count: showsMessageHits ? services.search.hits.count : conversations.count)
             if showsMessageHits {
+                HStack {
+                    Text(countText(services.search.hits.count))
+                        .font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary)
+                    Spacer()
+                    Button("Clear") { services.query = "" }.buttonStyle(.accentLink)
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 12)
                 MessageHitsList()
             } else if conversations.isEmpty {
                 emptyTimeline
             } else {
-                List(selection: $services.selectedConversationID) {
-                    ForEach(TimelineGroup.group(conversations)) { group in
-                        // A plain row rather than a section header: section headers stick to
-                        // the top on their own opaque band, which breaks the one surface.
-                        Text(group.title)
-                            .font(Theme.Font.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.top, group.id == "Today" ? 0 : 10)
-                            .listRowSeparator(.hidden)
-                            .selectionDisabled()
-                            .accessibilityAddTraits(.isHeader)
-                        ForEach(group.conversations) { conversation in
-                            ConversationRow(conversation: conversation,
-                                            install: services.install(for: conversation),
-                                            live: services.pulse.session(forConversation: conversation.cliSessionId)?.state)
-                                .tag(conversation.id)
-                                .listRowSeparator(.hidden)
-                                .contextMenu { ConversationActions(conversation: conversation, asContextMenu: true) }
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(TimelineGroup.group(conversations)) { group in
+                                Text(group.title)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(Theme.Surface.secondary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.top, 12)
+                                    .padding(.bottom, 4)
+                                    .accessibilityAddTraits(.isHeader)
+                                ForEach(group.conversations) { conversation in
+                                    ConversationRow(conversation: conversation,
+                                                    install: services.install(for: conversation),
+                                                    live: services.pulse.session(forConversation: conversation.cliSessionId)?.state,
+                                                    isSelected: services.selectedConversationID == conversation.id)
+                                        .id(conversation.id)
+                                        .onTapGesture { services.selectedConversationID = conversation.id; focused = true }
+                                        .contextMenu { ConversationActions(conversation: conversation, asContextMenu: true) }
+                                }
+                            }
                         }
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 12)
                     }
+                    .focusable()
+                    .focused($focused)
+                    .focusEffectDisabled()
+                    .onKeyPress(.downArrow) { move(1, in: conversations, proxy: proxy) }
+                    .onKeyPress(.upArrow) { move(-1, in: conversations, proxy: proxy) }
                 }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
-                .environment(\.defaultMinListRowHeight, 44)
             }
         }
     }
 
-    private func header(count: Int) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Menu {
-                Button("All conversations") { services.filter = .all }
-                Section("Installs") {
-                    ForEach(services.installs.filter { services.conversationCount(in: $0) > 0 }) { install in
-                        Button(install.name) { services.filter = .install(install.id) }
-                    }
-                }
-                let projects = services.projects
-                if !projects.isEmpty {
-                    Section("Projects") {
-                        ForEach(projects.prefix(12), id: \.path) { project in
-                            Button(project.name) { services.filter = .project(project.path) }
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 5) {
-                    Text(services.filterTitle)
-                        .font(Theme.Font.title)
-                        .lineLimit(1)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.secondary)
-                }
-                .contentShape(.rect)
-            }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .fixedSize()
-            .accessibilityLabel("Show \(services.filterTitle)")
-
-            Text(countText(count))
-                .font(Theme.Font.callout)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-                .contentTransition(.numericText())
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 14)
-        .padding(.bottom, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
+    private func move(_ step: Int, in conversations: [ConversationRef], proxy: ScrollViewProxy) -> KeyPress.Result {
+        let ordered = TimelineGroup.group(conversations).flatMap(\.conversations)
+        guard !ordered.isEmpty else { return .ignored }
+        let index = ordered.firstIndex { $0.id == services.selectedConversationID } ?? (step > 0 ? -1 : ordered.count)
+        let next = ordered[min(max(index + step, 0), ordered.count - 1)]
+        services.selectedConversationID = next.id
+        proxy.scrollTo(next.id)
+        return .handled
     }
 
     private func countText(_ count: Int) -> String {
@@ -200,8 +225,8 @@ struct TimelineGroup: Identifiable {
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
            calendar.isDate(date, inSameDayAs: yesterday) { return "Yesterday" }
         let days = calendar.dateComponents([.day], from: date, to: now).day ?? 0
-        if days < 7 { return "Previous 7 days" }
-        if days < 30 { return "Previous 30 days" }
+        if days < 7 { return "This week" }
+        if days < 30 { return "This month" }
         if calendar.isDate(date, equalTo: now, toGranularity: .year) {
             return date.formatted(.dateTime.month(.wide))
         }
@@ -214,51 +239,50 @@ struct ConversationRow: View {
     let install: Install?
     /// Set while Claude Code is running this conversation.
     var live: LiveSession.State?
+    var isSelected = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Group {
-                if let install {
-                    InstallIcon(install: install, size: 22)
-                } else {
-                    Color.clear.frame(width: 22, height: 22)
-                }
+                if let install { InstallIcon(install: install, size: 22) } else { Color.clear }
             }
+            .frame(width: 18, height: 18)
             .padding(.top, 1)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(conversation.title)
-                        .font(Theme.Font.bodyMedium)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.Surface.primary)
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     switch live {
                     case .needsYou:
-                        Text("Needs you").font(Theme.Font.caption.weight(.semibold)).foregroundStyle(Theme.attention)
+                        Text("Needs you").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.attention)
                     case .working:
-                        Text("Working").font(Theme.Font.caption).foregroundStyle(.secondary)
+                        Text("Working").font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary)
                     default:
                         Text(conversation.lastActivity.listStamp)
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
+                            .font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary).monospacedDigit()
                     }
                 }
                 HStack(spacing: 4) {
+                    Text(secondLine)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.Surface.secondary)
+                        .lineLimit(1)
                     if conversation.isStarred {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
+                        Image(systemName: "star.fill").font(.system(size: 8)).foregroundStyle(Theme.Surface.tertiary)
                             .accessibilityLabel("Starred")
                     }
-                    Text(secondLine)
-                        .font(Theme.Font.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(isSelected ? Theme.Surface.selection : .clear, in: .rect(cornerRadius: 8, style: .continuous))
+        .contentShape(.rect)
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
     }
 
     private var secondLine: String {

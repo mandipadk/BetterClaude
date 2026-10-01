@@ -54,7 +54,7 @@ struct BackupSheet: View {
 
             if let result {
                 Text(result).font(Theme.Font.body)
-                HStack { Spacer(); Button("Done") { onClose() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction) }
+                HStack { Spacer(); Button("Done") { onClose() }.buttonStyle(.primary).keyboardShortcut(.defaultAction) }
             } else {
                 VStack(alignment: .leading, spacing: Theme.Space.s) {
                     SecureField("Password", text: $password)
@@ -71,15 +71,15 @@ struct BackupSheet: View {
                 if isBackUp {
                     HStack {
                         FactRow(label: "Saves to", value: destinationLabel, labelWidth: 70)
-                        Button("Change…") { chooseDestination() }.buttonStyle(.bordered)
+                        Button("Change…") { chooseDestination() }.buttonStyle(.secondary)
                     }
                 }
                 HStack {
-                    Button("Cancel") { onClose() }.buttonStyle(.bordered).keyboardShortcut(.cancelAction)
+                    Button("Cancel") { onClose() }.buttonStyle(.secondary).keyboardShortcut(.cancelAction)
                     Spacer()
                     if working { ProgressView().controlSize(.small) }
                     Button(isBackUp ? "Back Up" : "Restore") { run() }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.primary)
                         .keyboardShortcut(.defaultAction)
                         .disabled(!canRun || working)
                 }

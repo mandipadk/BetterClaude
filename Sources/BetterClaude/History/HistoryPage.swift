@@ -46,7 +46,7 @@ struct HistoryPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("History").font(Theme.Font.display)
+                    Text("Activity").font(Theme.Font.display)
                     Text("Everything Better Claude has changed on this Mac, and a way to take each back.")
                         .font(Theme.Font.callout)
                         .foregroundStyle(.secondary)
@@ -145,7 +145,7 @@ struct HistoryRow: View {
                     .foregroundStyle(.secondary)
             } else {
                 Button("Undo…", action: onUndo)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.secondary)
                     .opacity(hovering ? 1 : 0.8)
             }
         }

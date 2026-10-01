@@ -96,7 +96,7 @@ struct StoragePage: View {
                                     }
                                     Spacer()
                                     Button("Put Back") { storage.putBack(removal) { services.refresh() } }
-                                        .buttonStyle(.bordered)
+                                        .buttonStyle(.secondary)
                                 }
                                 .padding(.vertical, 5)
                             }
@@ -199,7 +199,7 @@ struct StoragePage: View {
                             .monospacedDigit()
                         if category.safety != .yours {
                             Button("Move to Trash") { confirming = category }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(.secondary)
                                 .disabled(running)
                         } else {
                             Color.clear.frame(width: 118, height: 1)

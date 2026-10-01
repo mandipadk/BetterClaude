@@ -241,40 +241,40 @@ struct CodeWell: View {
         return names[tag] ?? tag.capitalized
     }
 
+    @State private var hovering = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(Self.languageName(language))
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
+        ScrollView(.horizontal, showsIndicators: false) {
+            Text(text)
+                .font(.system(size: 12, design: .monospaced))
+                .lineSpacing(4)
+                .foregroundStyle(Theme.Surface.primary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: true, vertical: true)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Surface.fill, in: .rect(cornerRadius: 8, style: .continuous))
+        .overlay(alignment: .topTrailing) {
+            if hovering || copied {
                 Button(copied ? "Copied" : "Copy") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
                     copied = true
                     Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
                 }
-                .buttonStyle(.plain)
-                .font(Theme.Font.caption)
-                .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            Rectangle().fill(Theme.hairline).frame(height: 1)
-            ScrollView(.horizontal, showsIndicators: false) {
-                Text(text)
-                    .font(Theme.Font.code)
-                    .lineSpacing(2)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: true, vertical: true)
-                    .padding(12)
+                .buttonStyle(.secondary)
+                .padding(6)
+                .help("Copy this \(Self.languageName(language)) code")
             }
         }
-        .background(Color(nsColor: .textBackgroundColor).opacity(0.6),
-                    in: .rect(cornerRadius: Theme.Radius.tile, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Theme.Radius.tile, style: .continuous)
-                .strokeBorder(Theme.hairline)
+        .onHover { hovering = $0 }
+        .contextMenu {
+            Button("Copy Code") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+            }
         }
     }
 }

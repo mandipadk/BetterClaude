@@ -20,10 +20,10 @@ enum InspectorTab: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .info: return "info.circle"
-        case .activity: return "arrow.triangle.branch"
+        case .activity: return "waveform.path.ecg"
         case .cost: return "chart.bar.xaxis"
         case .changes: return "clock.arrow.circlepath"
-        case .checks: return "checkmark.circle"
+        case .checks: return "checkmark"
         }
     }
 }
@@ -36,20 +36,16 @@ struct ReaderInspector: View {
     var body: some View {
         @Bindable var services = services
         VStack(alignment: .leading, spacing: 0) {
-            Picker("Show", selection: $services.inspectorTab) {
-                ForEach(InspectorTab.allCases) { tab in
-                    Image(systemName: tab.symbol).help(tab.title).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 14)
-            .padding(.top, 12)
-            .padding(.bottom, 10)
+            Segmented(options: InspectorTab.allCases.map { ($0, $0.symbol) }, selection: $services.inspectorTab,
+                      symbols: true, fill: true)
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
             if let conversation = services.reader.conversation, services.reader.state == .ready {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: Theme.Space.m) {
-                        Text(services.inspectorTab.title).font(Theme.Font.headline)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(services.inspectorTab.title).font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.Surface.primary)
+                            .padding(.top, 16)
                         content(conversation)
                     }
                     .padding(.horizontal, 16)
@@ -58,10 +54,14 @@ struct ReaderInspector: View {
                 }
                 .id("\(conversation.id)#\(services.inspectorTab.rawValue)")
             } else {
-                ContentUnavailableView("No Conversation", systemImage: "sidebar.right",
-                                       description: Text("Pick a conversation to see its details."))
+                Text("Pick a conversation to see its details.")
+                    .font(.system(size: 12.5)).foregroundStyle(Theme.Surface.secondary)
+                    .padding(16)
             }
+            Spacer(minLength: 0)
         }
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Theme.Surface.bar)
     }
 
     @ViewBuilder
@@ -70,6 +70,10 @@ struct ReaderInspector: View {
         switch services.inspectorTab {
         case .info:
             ConversationFacts(conversation: conversation, install: services.reader.install, readable: services.reader.readable)
+            if !external {
+                InspectorLanes(conversation: conversation)
+                InspectorFiles(conversation: conversation)
+            }
         case .activity:
             if external { unavailable("Sub-agents are recorded by Claude Code only.") } else {
                 SubagentsView(conversation: conversation, alwaysOpen: true, compact: true)
@@ -112,33 +116,159 @@ struct ConversationFacts: View {
     let conversation: ConversationRef
     let install: Install?
     let readable: ReadableConversation?
+    @State private var cost: Double?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let install { FactRow(label: "Source", value: install.name, labelWidth: 92) }
-            if let project = conversation.projectName { FactRow(label: "Project", value: project, labelWidth: 92) }
-            if let model = readable?.model ?? conversation.model {
-                FactRow(label: "Model", value: humanModelName(model), labelWidth: 92)
-            }
-            FactRow(label: "Last active", value: conversation.lastActivity.formatted(date: .abbreviated, time: .shortened), labelWidth: 92)
-            if let readable { FactRow(label: "Messages", value: "\(readable.messageCount)", labelWidth: 92) }
-            if let deletion = ReaderHeader.deletionText(conversation, services: services) { FactRow(label: "Deleted", value: deletion, labelWidth: 92) }
+            if let install { KV("Source", install.name) }
+            if let project = conversation.projectName { KV("Project", project) }
+            if let model = readable?.model ?? conversation.model { KV("Model", humanModelName(model)) }
+            if let readable { KV("Messages", "\(readable.messageCount)") }
+            if let cost, cost > 0 { KV("Cost", cost.formatted(.currency(code: "USD").precision(.fractionLength(2)))) }
+            if let deletion = ReaderHeader.deletionText(conversation, services: services) { KV("Deleted", deletion) }
             if let readable {
                 ForEach(readable.pullRequests, id: \.self) { pull in
-                    HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
-                        Text("Pull request").font(Theme.Font.callout).foregroundStyle(.secondary).frame(width: 92, alignment: .leading)
-                        Link(pull.name, destination: pull.url).font(Theme.Font.callout).foregroundStyle(Theme.accent).lineLimit(1)
+                    HStack {
+                        Text("Pull request").foregroundStyle(Theme.Surface.secondary)
+                        Spacer()
+                        Link(pull.name.split(separator: "#").last.map { "#\($0)" } ?? pull.name, destination: pull.url)
+                            .foregroundStyle(Theme.accent)
                     }
+                    .font(.system(size: 12))
                 }
                 ForEach(ReaderHeader.related(readable, services: services), id: \.conversation.id) { item in
-                    HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
-                        Text(item.label).font(Theme.Font.callout).foregroundStyle(.secondary).frame(width: 92, alignment: .leading)
+                    HStack {
+                        Text(item.label).foregroundStyle(Theme.Surface.secondary)
+                        Spacer()
                         Button(item.conversation.title) { services.selectedConversationID = item.conversation.id }
-                            .buttonStyle(.plain).font(Theme.Font.callout).foregroundStyle(Theme.accent).lineLimit(1)
+                            .buttonStyle(.plain).foregroundStyle(Theme.accent).lineLimit(1)
+                    }
+                    .font(.system(size: 12))
+                }
+            }
+            if services.kept.entries.contains(where: { $0.sessionId == conversation.cliSessionId }) { KV("Kept", "Yes") }
+        }
+        .task(id: conversation.id) {
+            guard conversation.external == nil, let index = services.index.index else { return }
+            cost = (try? await FlightRecord.load(conversationID: conversation.id, index: index))?.totalCost
+        }
+    }
+}
+
+/// A fact in the inspector: its name on the left, the value on the right.
+struct KV: View {
+    let label: String
+    let value: String
+    init(_ label: String, _ value: String) { self.label = label; self.value = value }
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label).foregroundStyle(Theme.Surface.secondary)
+            Spacer(minLength: 8)
+            Text(value).foregroundStyle(Theme.Surface.primary).lineLimit(1).truncationMode(.middle)
+        }
+        .font(.system(size: 12))
+        .monospacedDigit()
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Who was working when, small: the conversation and each sub-agent as a thin lane.
+struct InspectorLanes: View {
+    @Environment(AppServices.self) private var services
+    let conversation: ConversationRef
+    @State private var lanes: [(label: String, start: Double, length: Double, main: Bool)] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+        if !lanes.isEmpty {
+            VStack(alignment: .leading, spacing: 7) {
+                Text("Who was working when").font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.Surface.primary).padding(.top, 10).padding(.bottom, 1)
+                ForEach(Array(lanes.enumerated()), id: \.offset) { _, lane in
+                    HStack(spacing: 8) {
+                        Text(lane.label).font(.system(size: 11.5)).foregroundStyle(Theme.Surface.secondary)
+                            .lineLimit(1).frame(width: 76, alignment: .leading)
+                        GeometryReader { geometry in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Theme.Surface.fill)
+                                Capsule().fill(lane.main ? Theme.accentBright : Theme.Surface.tertiary)
+                                    .frame(width: max(5, geometry.size.width * lane.length))
+                                    .offset(x: geometry.size.width * lane.start)
+                            }
+                        }
+                        .frame(height: 5)
                     }
                 }
             }
         }
+        }
+            .task(id: conversation.id) {
+                guard let index = services.index.index else { return }
+                let runs = ((try? await Subagents.runs(conversationID: conversation.id, index: index)) ?? [])
+                    .filter { $0.started != nil }
+                guard !runs.isEmpty else { lanes = []; return }
+                let replies = (try? await FlightRecord.load(conversationID: conversation.id, index: index))?.replies.map(\.timestamp) ?? []
+                let starts = runs.compactMap(\.started) + replies
+                let ends = runs.map { $0.ended ?? $0.started! } + replies
+                guard let first = starts.min(), let last = ends.max() else { return }
+                let span = max(60, last.timeIntervalSince(first))
+                var made: [(String, Double, Double, Bool)] = []
+                if let a = replies.min(), let b = replies.max() {
+                    made.append(("Claude", a.timeIntervalSince(first) / span, b.timeIntervalSince(a) / span, true))
+                }
+                for run in runs.prefix(6) {
+                    let start = run.started!
+                    let end = run.ended ?? start
+                    made.append((run.title, start.timeIntervalSince(first) / span, end.timeIntervalSince(start) / span, false))
+                }
+                lanes = made
+            }
+    }
+}
+
+/// The files a conversation changed, with how many lines each gained and lost.
+struct InspectorFiles: View {
+    @Environment(AppServices.self) private var services
+    let conversation: ConversationRef
+    @State private var files: [(name: String, path: String, change: String)] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+        if !files.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Files changed").font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.Surface.primary).padding(.top, 10).padding(.bottom, 1)
+                ForEach(files.prefix(8), id: \.path) { file in
+                    HStack {
+                        Text(file.name).foregroundStyle(Theme.Surface.primary).lineLimit(1)
+                        Spacer()
+                        Text(file.change).foregroundStyle(Theme.Surface.secondary).monospacedDigit()
+                    }
+                    .font(.system(size: 12))
+                    .contentShape(.rect)
+                    .onTapGesture { services.rewinding = RewindModel(conversation: conversation) }
+                    .help(file.path)
+                }
+                if files.count > 8 {
+                    Button("All \(files.count) files…") { services.rewinding = RewindModel(conversation: conversation) }
+                        .buttonStyle(.accentLink)
+                }
+            }
+        }
+        }
+            .task(id: conversation.id) {
+                guard let index = services.index.index,
+                      let changes = try? await ConversationRewind.changes(conversationID: conversation.id, index: index) else { files = []; return }
+                let list = changes.files
+                files = await Task.detached(priority: .utility) {
+                    list.map { file in
+                        let name = URL(fileURLWithPath: file.path).lastPathComponent
+                        if file.created { return (name, file.path, "new") }
+                        let diff = ConversationRewind.diff(for: file)
+                        return (name, file.path, diff.map { "+\($0.added) −\($0.removed)" } ?? "")
+                    }
+                }.value
+            }
     }
 }
 
@@ -169,9 +299,9 @@ struct ChangesSummary: View {
                     }
                     HStack(spacing: Theme.Space.s) {
                         Button("Show Changes…") { services.rewinding = RewindModel(conversation: conversation) }
-                        Button("Play…") { services.watching = TimelapseModel(conversation: conversation) }
+                        Button("Play…") { services.rewinding = RewindModel(conversation: conversation, playing: true) }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.secondary)
                 }
             } else {
                 ProgressView().controlSize(.small)

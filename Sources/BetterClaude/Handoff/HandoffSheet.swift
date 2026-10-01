@@ -99,17 +99,17 @@ struct HandoffSheet: View {
             .background(Theme.subtleFill, in: .rect(cornerRadius: Theme.Radius.tile))
             HStack(spacing: Theme.Space.s) {
                 Button("Close") { model.cancel(); onClose() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.secondary)
                     .keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("Save…") { save() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.secondary)
                     .disabled(model.brief.isEmpty)
                 Button("Copy") { copy() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.secondary)
                     .disabled(model.brief.isEmpty)
                 Button("Start in Claude Code") { startInClaudeCode() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.primary)
                     .disabled(model.isWriting || model.brief.isEmpty)
                     .help("Opens Terminal in the conversation's folder and starts Claude Code with this brief")
             }

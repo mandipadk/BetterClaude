@@ -40,12 +40,12 @@ struct OtherMacSheet: View {
             }
             HStack {
                 Button("Cancel") { onClose() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.secondary)
                     .keyboardShortcut(.cancelAction)
                 Spacer()
                 if working { ProgressView().controlSize(.small) }
                 Button("Open") { open() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.primary)
                     .keyboardShortcut(.defaultAction)
                     .disabled(working || password.isEmpty || name.trimmingCharacters(in: .whitespaces).isEmpty)
             }

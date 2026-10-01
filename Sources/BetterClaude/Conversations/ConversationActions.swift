@@ -24,7 +24,7 @@ struct ConversationActions: View {
         }
         if !external {
             Button("Show Changes…") { services.rewinding = RewindModel(conversation: conversation) }
-            Button("Play Changes…") { services.watching = TimelapseModel(conversation: conversation) }
+            Button("Play Changes…") { services.rewinding = RewindModel(conversation: conversation, playing: true) }
         }
         Button("Replay on Another Model…") { services.replaying = ReplayModel(conversation: conversation) }
             .disabled(missing)
@@ -43,6 +43,48 @@ struct ConversationActions: View {
             Button("Export as Markdown…") { services.reader.exportMarkdown() }
             Button("Export as Web Page…") { services.reader.exportWebPage() }
         }
+        Button("Show in Finder") { services.revealInFinder(conversation) }
+        Button("Copy Link") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString("betterclaude://conversation/\(conversation.id)", forType: .string)
+        }
+        if let install = services.install(for: conversation), install.appURL != nil {
+            Divider()
+            Button("Open in \(install.name)") { services.open(install) }
+        }
+    }
+}
+
+/// The toolbar's Share menu: everything that makes something to give someone.
+struct ShareActions: View {
+    @Environment(AppServices.self) private var services
+    let conversation: ConversationRef
+
+    var body: some View {
+        Button("Export as Markdown…") { services.reader.exportMarkdown() }
+        Button("Export as Web Page…") { services.reader.exportWebPage() }
+        Divider()
+        Button("Write a Handoff…") { services.beginHandoff(conversation) }.disabled(conversation.isTranscriptMissing)
+        Button("Replay on Another Model…") { services.replaying = ReplayModel(conversation: conversation) }
+            .disabled(conversation.isTranscriptMissing)
+    }
+}
+
+/// The toolbar's ⋯ menu: everything else.
+struct MoreActions: View {
+    @Environment(AppServices.self) private var services
+    let conversation: ConversationRef
+
+    var body: some View {
+        if let session = conversation.claudeCodeSession, !session.resolvedCwd.isEmpty,
+           !session.transcriptURL.path.hasPrefix(Vault.root.path) {
+            Button("Resume in Terminal") { services.resumeInTerminal(cwd: session.resolvedCwd, sessionId: session.sessionId) }
+        }
+        if conversation.external == nil {
+            Button("Play Changes…") { services.rewinding = RewindModel(conversation: conversation, playing: true) }
+        }
+        Button("Find in Conversation") { services.reader.showsFind = true }.keyboardShortcut("f")
+        Divider()
         Button("Show in Finder") { services.revealInFinder(conversation) }
         Button("Copy Link") {
             NSPasteboard.general.clearContents()

@@ -46,10 +46,10 @@ struct GalleryView: View {
                 DetailSection(title: "Buttons") {
                     VStack(alignment: .leading, spacing: Theme.Space.m) {
                         HStack(spacing: Theme.Space.s) {
-                            Button("Continue in…") {}.buttonStyle(.borderedProminent)
-                            Button("Show in Finder") {}.buttonStyle(.bordered)
+                            Button("Continue in…") {}.buttonStyle(.primary)
+                            Button("Show in Finder") {}.buttonStyle(.secondary)
                             Button("Not Now") {}.buttonStyle(.borderless)
-                            Button("Disabled") {}.buttonStyle(.borderedProminent).disabled(true)
+                            Button("Disabled") {}.buttonStyle(.primary).disabled(true)
                             MoreMenu { Button("Export as Markdown…") {} }
                         }
                         HStack(spacing: Theme.Space.s) {
@@ -65,15 +65,7 @@ struct GalleryView: View {
                                         detail: "A switch that's on, with one line of explanation.", isOn: $on)
                         ExplainedToggle(title: "When a model changes on its own",
                                         detail: "A switch that's off.", isOn: $off)
-                        Picker("", selection: $segment) {
-                            Text("Overview").tag(0)
-                            Text("Conversations").tag(1)
-                            Text("Files").tag(2)
-                            Text("Memory").tag(3)
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .fixedSize()
+                        Segmented(options: [(0, "Overview"), (1, "Conversations"), (2, "Files"), (3, "Memory")], selection: $segment)
                         ProgressView(value: 0.62).frame(width: 240)
                     }
                 }

@@ -44,10 +44,10 @@ struct MonthSheet: View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             HStack {
                 Button { model.step(-1, index: services.index.index) } label: { Image(systemName: "chevron.left") }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.secondary)
                     .help("The month before")
                 Button { model.step(1, index: services.index.index) } label: { Image(systemName: "chevron.right") }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.secondary)
                     .disabled(model.isCurrentMonth)
                     .help("The month after")
                 Spacer()
@@ -66,14 +66,14 @@ struct MonthSheet: View {
 
             HStack {
                 Button("Done") { onClose() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.secondary)
                     .keyboardShortcut(.cancelAction)
                 Spacer()
                 Button(copied ? "Copied" : "Copy Image") { copyImage() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.secondary)
                     .disabled(model.stats == nil)
                 Button("Save Image…") { saveImage() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.primary)
                     .disabled(model.stats == nil)
             }
         }

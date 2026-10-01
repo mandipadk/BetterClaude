@@ -5,27 +5,27 @@ import QuickLookThumbnailing
 
 /// What the Library shows at once.
 enum LibraryFilter: String, CaseIterable, Identifiable {
-    case everything, files, images, code, uploads
+    case everything, files, images, code, prompts
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .everything: return "Everything"
-        case .files: return "Files"
+        case .files: return "Documents"
         case .images: return "Images"
         case .code: return "Code"
-        case .uploads: return "Uploads"
+        case .prompts: return "Prompts"
         }
     }
 
     func includes(_ artifact: Artifact) -> Bool {
         switch self {
         case .everything: return true
-        case .files: return [.document, .data, .other].contains(artifact.kind)
+        case .files: return [.document, .data, .other, .upload].contains(artifact.kind)
         case .images: return artifact.kind == .image
         case .code: return artifact.kind == .code
-        case .uploads: return artifact.kind == .upload
+        case .prompts: return false
         }
     }
 }

@@ -13,7 +13,7 @@ struct MoreMenu<Content: View>: View {
             Image(systemName: "ellipsis")
         }
         .menuStyle(.button)
-        .buttonStyle(.bordered)
+        .buttonStyle(.secondary)
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel("More actions")
@@ -29,21 +29,21 @@ struct DetailSection<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.m) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(Theme.Font.section)
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.Surface.primary)
                 if let subtitle {
                     Text(subtitle)
-                        .font(Theme.Font.callout)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.Surface.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .padding(.horizontal, 4)
             content
         }
-        .padding(.vertical, Theme.Space.xl)
+        .padding(.top, 26)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
     }
 }
 

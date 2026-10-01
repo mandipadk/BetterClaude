@@ -234,16 +234,17 @@ public enum QuotaAttribution {
     }
 
     /// Every conversation that used tokens since `since`, heaviest first.
-    public static func items(index: HistoryIndex, accountIDs: Set<String>, since: Date) async throws -> [Item] {
+    public static func items(index: HistoryIndex, accountIDs: Set<String>, since: Date,
+                             until: Date = .distantFuture) async throws -> [Item] {
         guard !accountIDs.isEmpty else { return [] }
         let rows = try await index.rows("""
             SELECT c.id, c.title, c.project_path, c.kind, c.install_name, u.model,
                    SUM(u.input), SUM(u.output), SUM(u.cache_read), SUM(u.cache_write_5m), SUM(u.cache_write_1h),
                    COUNT(*)
             FROM usage u JOIN conversations c ON c.id = u.conversation_id
-            WHERE u.timestamp >= ? AND c.account_id IN (\(accountIDs.map { _ in "?" }.joined(separator: ",")))
+            WHERE u.timestamp >= ? AND u.timestamp < ? AND c.account_id IN (\(accountIDs.map { _ in "?" }.joined(separator: ",")))
             GROUP BY c.id, u.model
-            """, [.date(since)] + accountIDs.sorted().map(SQLiteValue.text))
+            """, [.date(since), .date(until)] + accountIDs.sorted().map(SQLiteValue.text))
         var byConversation: [String: Item] = [:]
         for row in rows {
             let id = row.text(0) ?? ""
@@ -257,6 +258,23 @@ public enum QuotaAttribution {
                                       replies: (previous?.replies ?? 0) + Int(row.int(11)))
         }
         return byConversation.values.sorted { $0.cost > $1.cost }
+    }
+
+    /// What each model's replies came to over a stretch, at list prices, largest first.
+    public static func models(index: HistoryIndex, since: Date, until: Date = .distantFuture) async throws -> [(name: String, cost: Double)] {
+        let rows = try await index.rows("""
+            SELECT model, SUM(input), SUM(output), SUM(cache_read), SUM(cache_write_5m), SUM(cache_write_1h)
+            FROM usage WHERE timestamp >= ? AND timestamp < ? AND model IS NOT NULL GROUP BY model
+            """, [.date(since), .date(until)])
+        var byName: [String: Double] = [:]
+        for row in rows {
+            let model = row.text(0) ?? ""
+            guard !model.isEmpty, !model.hasPrefix("<") else { continue }
+            let cost = Pricing.cost(model: model, input: row.int(1), output: row.int(2),
+                                    cacheRead: row.int(3), cacheWrite5m: row.int(4), cacheWrite1h: row.int(5))
+            byName[model, default: 0] += cost
+        }
+        return byName.map { ($0.key, $0.value) }.sorted { $0.1 > $1.1 }
     }
 
     /// The same, added up by project folder; conversations outside one are grouped by place.

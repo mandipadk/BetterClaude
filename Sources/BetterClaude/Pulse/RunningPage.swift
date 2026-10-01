@@ -241,7 +241,7 @@ private struct UnattendedSection: View {
                     services.destination = .conversations
                     services.selectedConversationID = conversation.id
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.secondary)
             }
         }
     }

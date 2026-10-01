@@ -35,13 +35,8 @@ struct InstallPage: View {
                 header.padding(.bottom, Theme.Space.l)
                 notices
                 if tabs.count > 1 {
-                    Picker("Show", selection: $tab) {
-                        ForEach(tabs) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                    .padding(.bottom, Theme.Space.s)
+                    Segmented(options: tabs.map { ($0, $0.title) }, selection: $tab)
+                        .padding(.bottom, Theme.Space.s)
                 }
                 switch tabs.contains(tab) ? tab : .conversations {
                 case .conversations:
@@ -55,7 +50,7 @@ struct InstallPage: View {
                             }
                         }
                         .menuStyle(.button)
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.secondary)
                         .fixedSize()
                         .padding(.top, Theme.Space.m)
                         .padding(.bottom, Theme.Space.s)
@@ -107,7 +102,7 @@ struct InstallPage: View {
             Spacer(minLength: Theme.Space.l)
             if install.appURL != nil {
                 Button(isRunning ? "Show" : "Open") { services.open(install) }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.primary)
                     .keyboardShortcut("o", modifiers: .command)
             }
             MoreMenu {
@@ -220,7 +215,7 @@ struct InstallPage: View {
                         services.filter = .install(install.id)
                         services.destination = .conversations
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.secondary)
                 }
             }
         }

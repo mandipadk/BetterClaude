@@ -211,6 +211,7 @@ enum DebugRoute {
                 if let filter = LibraryFilter(rawValue: argument) { services.library.filter = filter }
                 while services.library.summary == nil { try? await Task.sleep(for: .milliseconds(50)) }
                 services.library.selectedID = services.library.visible.first?.id
+                UserDefaults.standard.set(argument == "preview", forKey: "libraryPreview")
             case "panel":
                 services.previewsMenuBarPanel = true
             case "palette":
