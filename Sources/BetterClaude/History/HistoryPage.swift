@@ -175,6 +175,7 @@ struct HistoryRow: View {
         case .skill: return "wand.and.stars"
         case .fleet: return "square.on.square"
         case .memoryEdit: return "text.badge.plus"
+        case .codeTab: return "sidebar.left"
         default: return "arrow.right.circle"
         }
     }
@@ -188,6 +189,7 @@ struct HistoryRow: View {
         case .fleet: return "Copied into \(receipt.destination), \(when)"
         case .restore: return "Put back where Claude Code finds it, \(when)"
         case .memoryEdit: return "Added to \(URL(fileURLWithPath: receipt.destination).lastPathComponent), \(when)"
+        case .codeTab: return "Added to \(Self.place(of: receipt))'s Code tab, \(when)"
         default: return "Copied into \(Self.place(of: receipt)), \(when)"
         }
     }

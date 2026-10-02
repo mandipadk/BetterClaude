@@ -12,6 +12,10 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "1.4.3": [
+            Item(symbol: "sidebar.left", title: "Claude Code conversations go to a Code tab",
+                 detail: "Continuing a Claude Code conversation in another Claude now lists it in that Claude's Code tab, as the same conversation, ready to carry on. It's never turned into a Cowork task."),
+        ],
         "1.4.2": [
             Item(symbol: "arrow.right.doc.on.clipboard", title: "Copies into Claude show up again",
                  detail: "A Claude Code conversation copied into Claude Desktop was written without a field Claude now requires, so Claude didn't list it. Copies are written whole now, and How It's Counted finds any that Claude won't show: undo those in Activity and copy them again."),

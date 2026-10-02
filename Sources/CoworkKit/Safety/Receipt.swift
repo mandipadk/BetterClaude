@@ -19,6 +19,8 @@ public enum TransferDirection: String, Codable, Sendable {
     case fleet
     /// Lines added to a memory file Claude reads, such as CLAUDE.md or MEMORY.md.
     case memoryEdit
+    /// A Claude Code conversation listed in a Claude Desktop's Code tab.
+    case codeTab
 }
 
 /// SHA-256 helpers.

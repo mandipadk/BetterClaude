@@ -8,11 +8,14 @@ enum ContinueDestination: Hashable, Identifiable {
     case account(installID: String, AccountRef)
     /// A Claude Code project folder.
     case project(path: String)
+    /// A Claude Desktop's Code tab, for a Claude Code conversation.
+    case codeTab(installID: String)
 
     var id: String {
         switch self {
         case .account(_, let account): return "account:" + account.id
         case .project(let path): return "project:" + path
+        case .codeTab(let installID): return "codetab:" + installID
         }
     }
 }
@@ -49,6 +52,9 @@ final class ContinueModel: Identifiable {
 
     private(set) var isPlanning = false
     private(set) var plan: ImportPlan?
+    /// The plan when the destination is a Code tab.
+    private(set) var codeTabPlan: CodeTabMove.Plan?
+    private var codeTabInstallName = "Claude"
     private(set) var progress: String?
     private(set) var receipt: ImportReceipt?
     private(set) var failure: String?
@@ -81,6 +87,16 @@ final class ContinueModel: Identifiable {
 
     var isCowork: Bool { conversation.coworkSession != nil }
 
+    /// A Claude Code conversation carries on in a Code tab, never as a Cowork task.
+    var isClaudeCode: Bool { conversation.claudeCodeSession != nil }
+
+    /// Whether Continue can go ahead with what Review shows.
+    var canApply: Bool {
+        if let codeTabPlan { return codeTabPlan.isExecutable }
+        guard let plan else { return false }
+        return plan.isExecutable && (plan.conflicts.isEmpty || quitIfOpen)
+    }
+
     /// What the sheet calls the thing being carried.
     var subject: String { project?.name ?? conversation.title }
 
@@ -95,6 +111,10 @@ final class ContinueModel: Identifiable {
         guard let destination else { return }
         isPlanning = true
         failure = nil
+        if case .codeTab(let installID) = destination {
+            reviewCodeTab(installID: installID, snapshot: snapshot)
+            return
+        }
         let conversations = conversations
         let options = exportOptions
         let profile = profile
@@ -113,6 +133,38 @@ final class ContinueModel: Identifiable {
             case .failure(let error):
                 failure = Self.explain(error)
             }
+        }
+    }
+
+    private func reviewCodeTab(installID: String, snapshot: CatalogSnapshot) {
+        guard let session = conversation.claudeCodeSession, let install = snapshot.install(installID),
+              let root = install.codeTabRoot else {
+            isPlanning = false
+            failure = "That Claude doesn't have a Code tab."
+            return
+        }
+        var sourceRecord: URL?
+        if case .codeTab(let record, _) = conversation.origin { sourceRecord = record.metadataURL }
+        let destinationConfig = ParallexInstances.claudeCopies()
+            .first { $0.dataRoot.standardizedFileURL.path == install.dataRoot.standardizedFileURL.path }?
+            .claudeCodeConfigDir ?? HostPaths.current.claudeCodeConfigDir
+        let title = conversation.title
+        let lastActivity = conversation.lastActivity
+        codeTabInstallName = install.name
+        let id = session.sessionId, cwd = session.resolvedCwd
+        let transcript = session.transcriptURL, sourceConfig = session.configDir
+        let record = sourceRecord
+        Task {
+            let plan = await Task.detached(priority: .userInitiated) {
+                CodeTabMove.plan(title: title, cliSessionId: id, cwd: cwd, transcript: transcript,
+                                 lastActivity: lastActivity, sourceRecord: record, codeTabRoot: root,
+                                 destinationConfigDir: destinationConfig, sourceConfigDir: sourceConfig)
+            }.value
+            isPlanning = false
+            cleanUp()
+            self.plan = nil
+            codeTabPlan = plan
+            step = .review
         }
     }
 
@@ -149,6 +201,9 @@ final class ContinueModel: Identifiable {
         case .project(let path):
             endpoint = .claudeCode(projectDir: URL(fileURLWithPath: path),
                                    configDir: HostPaths.current.claudeCodeConfigDir)
+        case .codeTab:
+            // Planned by CodeTabMove instead; there's no bundle to import.
+            throw TransferError.preconditionsFailed(["A Code tab is planned separately."])
         }
         // Planned as if quitting were allowed, so an open Claude shows as the toggle in Review
         // rather than a dead end. Whether it is allowed is the toggle's, checked again on apply.
@@ -160,6 +215,26 @@ final class ContinueModel: Identifiable {
     // MARK: Apply
 
     func apply() {
+        if let codeTabPlan, case .codeTab = destination {
+            step = .working
+            progress = "Adding it to the Code tab…"
+            let name = codeTabInstallName
+            Task {
+                let result = await Task.detached(priority: .userInitiated) {
+                    Result { try CodeTabMove.apply(codeTabPlan, destinationName: name) }
+                }.value
+                switch result {
+                case .success(let receipt):
+                    self.receipt = receipt
+                    step = .done
+                case .failure(let error):
+                    if case TransferError.partiallyApplied(let id, _, _) = error { partialReceiptID = id }
+                    failure = Self.explain(error)
+                    step = .failed
+                }
+            }
+            return
+        }
         guard let plan else { return }
         step = .working
         progress = conversations.count == 1 ? "Copying the conversation…" : "Copying \(conversations.count) conversations…"

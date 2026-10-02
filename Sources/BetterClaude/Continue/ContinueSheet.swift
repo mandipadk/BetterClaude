@@ -46,7 +46,7 @@ struct ContinueSheet: View {
 
     private var actionBar: some View {
         HStack(spacing: 8) {
-            if model.step == .choose {
+            if model.step == .choose, !model.isClaudeCode {
                 Button(showOptions ? "Fewer Options" : "More Options") {
                     withAnimation(Theme.Motion.snappy) { showOptions.toggle() }
                 }
@@ -79,8 +79,7 @@ struct ContinueSheet: View {
                 Button("Continue") { forward = true; model.apply() }
                     .prominentAction()
                     .frame(minWidth: 110)
-                    .disabled(!(model.plan?.isExecutable ?? false)
-                              || (!(model.plan?.conflicts.isEmpty ?? true) && !model.quitIfOpen))
+                    .disabled(!model.canApply)
                     .keyboardShortcut(.defaultAction)
             case .working:
                 EmptyView()
@@ -108,7 +107,8 @@ struct ContinueSheet: View {
 
     private var openTitle: String {
         switch model.destination {
-        case .account(let installID, _): return "Open \(services.install(installID)?.name ?? "Claude")"
+        case .account(let installID, _), .codeTab(let installID):
+            return "Open \(services.install(installID)?.name ?? "Claude")"
         case .project: return "Open in Terminal"
         case nil: return "Done"
         }
@@ -116,7 +116,7 @@ struct ContinueSheet: View {
 
     private func openDestination() {
         switch model.destination {
-        case .account(let installID, _):
+        case .account(let installID, _), .codeTab(let installID):
             if let install = services.install(installID) { services.open(install) }
         case .project(let path):
             if let slot = model.plan?.computed.first {
@@ -144,7 +144,9 @@ private struct ChooseStep: View {
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(Theme.Surface.primary)
                     .lineLimit(2)
-                Text(model.project == nil
+                Text(model.isClaudeCode
+                     ? "Pick the Claude whose Code tab it belongs in. It's the same conversation, so it carries on where it left off. Nothing leaves this Mac."
+                     : model.project == nil
                      ? "Pick where to carry on. Nothing leaves this Mac."
                      : "The project, its folder, what Claude remembers about it, and \(model.countPhrase). The original stays where it is. Nothing leaves this Mac.")
                     .fixedSize(horizontal: false, vertical: true)
@@ -154,7 +156,16 @@ private struct ChooseStep: View {
 
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10, alignment: .top), count: 3),
                           alignment: .leading, spacing: 10) {
-                    ForEach(accountDestinations, id: \.destination) { item in
+                    if model.isClaudeCode {
+                        ForEach(codeTabDestinations) { install in
+                            DestinationTile(install: install,
+                                            detail: services.isRunning(install) ? "Code tab, open now" : "Code tab",
+                                            isSelected: model.destination == .codeTab(installID: install.id)) {
+                                model.destination = .codeTab(installID: install.id)
+                            }
+                        }
+                    }
+                    ForEach(model.isClaudeCode ? [] : accountDestinations, id: \.destination) { item in
                         DestinationTile(install: item.install,
                                         detail: services.isRunning(item.install) ? roomLine(item.room, open: true) : roomLine(item.room, open: false, fallback: item.detail),
                                         isSelected: model.destination == item.destination) {
@@ -162,7 +173,7 @@ private struct ChooseStep: View {
                             model.destination = item.destination
                         }
                     }
-                    if model.project == nil, let code = services.installs.first(where: { $0.kind == .claudeCode }) {
+                    if model.project == nil, !model.isClaudeCode, let code = services.installs.first(where: { $0.kind == .claudeCode }) {
                         DestinationTile(install: code, detail: projectLine,
                                         isSelected: pickingProject || isProject) {
                             pickingProject = true
@@ -236,8 +247,20 @@ private struct ChooseStep: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .onAppear {
-            if model.destination == nil, let first = accountDestinations.first { model.destination = first.destination }
+            if model.destination == nil {
+                if model.isClaudeCode {
+                    if let first = codeTabDestinations.first { model.destination = .codeTab(installID: first.id) }
+                } else if let first = accountDestinations.first {
+                    model.destination = first.destination
+                }
+            }
         }
+    }
+
+    /// Claudes with a Code tab, other than the one the conversation is already listed in.
+    private var codeTabDestinations: [Install] {
+        let current: String? = { if case .codeTab = model.conversation.origin { return model.conversation.installID } else { return nil } }()
+        return services.installs.filter { $0.isDesktop && $0.codeTabRoot != nil && $0.id != current }
     }
 
     private var isProject: Bool {
@@ -363,6 +386,13 @@ private struct ReviewStep: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                if let codeTab = model.codeTabPlan, !codeTab.problems.isEmpty {
+                    VStack(alignment: .leading, spacing: Theme.Space.m) {
+                        ForEach(codeTab.problems, id: \.self) { problem in
+                            CheckRow(symbol: "xmark.octagon.fill", tint: Theme.failure, title: problem, detail: nil)
+                        }
+                    }
+                }
                 if let plan = model.plan {
                     let blocking = plan.preconditions.filter { !$0.passed }
                     let notices = plan.preconditions.filter { $0.passed && $0.isNotice }
@@ -398,6 +428,7 @@ private struct ReviewStep: View {
 
     private var destinationInstall: Install? {
         if case .account(let id, _) = model.destination { return services.install(id) }
+        if case .codeTab(let id) = model.destination { return services.install(id) }
         return services.installs.first { $0.kind == .claudeCode }
     }
 
@@ -408,7 +439,7 @@ private struct ReviewStep: View {
 
     private var destinationName: String {
         switch model.destination {
-        case .account(let id, _): return services.install(id)?.name ?? "Claude"
+        case .account(let id, _), .codeTab(let id): return services.install(id)?.name ?? "Claude"
         case .project(let path): return URL(fileURLWithPath: path).lastPathComponent
         case nil: return ""
         }
@@ -418,6 +449,7 @@ private struct ReviewStep: View {
         switch model.destination {
         case .account: return model.project == nil ? "Ready to continue in \(destinationName)" : "Ready to copy it to \(destinationName)"
         case .project: return "Ready to continue in Claude Code"
+        case .codeTab: return "Ready to add it to \(destinationName)'s Code tab"
         case nil: return ""
         }
     }
@@ -433,6 +465,11 @@ private struct ReviewStep: View {
             return "Copies \(title) into \(destinationName)\(who). It will be at the top of its conversation list."
         case .project(let path):
             return "Copies \(title) into Claude Code for \(services.snapshot.paths.abbreviating(path)), where `claude --resume` picks it up."
+        case .codeTab:
+            if model.codeTabPlan?.copyTo != nil {
+                return "Copies \(title) into the Claude Code folder \(destinationName) uses and lists it in its Code tab, ready to carry on."
+            }
+            return "Lists \(title) in \(destinationName)'s Code tab. It's the same conversation, not a copy: carrying on there continues where it left off, and it stays in Claude Code's own list too."
         case nil:
             return ""
         }
@@ -515,6 +552,7 @@ private struct DoneStep: View {
         switch model.destination {
         case .account(let id, _): return "It's in \(services.install(id)?.name ?? "Claude")"
         case .project: return "It's in Claude Code"
+        case .codeTab(let id): return "It's in \(services.install(id)?.name ?? "Claude")'s Code tab"
         case nil: return "Done"
         }
     }
@@ -526,6 +564,10 @@ private struct DoneStep: View {
                 ? "Open it and the conversation is at the top of the list, ready to pick up where it left off."
                 : "Open it and the project is in Projects, with \(model.countPhrase) in it. The original is still in \(model.source?.name ?? "the first Claude") until you delete it there."
         case .project(let path): return "Open it in Terminal, or run claude --resume in \(URL(fileURLWithPath: path).lastPathComponent)."
+        case .codeTab(let id):
+            let name = services.install(id)?.name ?? "Claude"
+            return services.install(id).map(services.isRunning) == true ? "\(name) is open: quit and reopen it to see the conversation in its Code tab."
+                : "Open \(name) and it's in the Code tab, ready to carry on."
         case nil: return ""
         }
     }
