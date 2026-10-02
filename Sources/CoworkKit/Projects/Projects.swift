@@ -139,7 +139,7 @@ public enum Projects {
             SELECT id, session_id, title, kind, install_name, last_activity, git_branch, project_path FROM conversations
             WHERE project_path IS NOT NULL AND present = 1 ORDER BY last_activity DESC
             """).compactMap { row -> ProjectDetail.Conversation? in
-            guard let id = row.text(0), let project = row.text(7), root(of: project) == summary.path else { return nil }
+            guard let id = row.text(0), let project = row.text(7), Projects.root(of: project) == summary.path else { return nil }
             return .init(id: id, sessionID: row.text(1), title: row.text(2) ?? "Untitled",
                          place: HistorySearch.place(kind: row.text(3), install: row.text(4)),
                          lastActivity: row.date(5), cost: costs[id] ?? 0, branch: row.text(6))
