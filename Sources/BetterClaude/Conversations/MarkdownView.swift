@@ -1,148 +1,18 @@
+import CoworkKit
 import SwiftUI
 
-/// The Markdown Claude writes, as blocks: enough of the language to read a conversation
-/// comfortably — headings, lists, quotes, tables and code — and inline styling inside each.
-enum MarkdownBlock: Equatable {
-    case heading(level: Int, text: String)
-    case paragraph(String)
-    case bullets([String])
-    case numbered(start: Int, items: [String])
-    case quote(String)
-    case code(language: String?, text: String)
-    case table(header: [String], rows: [[String]])
-    case rule
+/// Parsed blocks by source text, so a message is parsed once rather than on every pass of
+/// the view that shows it, such as each hover.
+@MainActor
+enum MarkdownBlockCache {
+    private static var blocks: [String: [MarkdownBlock]] = [:]
 
-    static func parse(_ source: String) -> [MarkdownBlock] {
-        var blocks: [MarkdownBlock] = []
-        var lines = source.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")[...]
-        var paragraph: [String] = []
-
-        func flushParagraph() {
-            let text = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty { blocks.append(.paragraph(text)) }
-            paragraph = []
-        }
-
-        while let line = lines.first {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-
-            if trimmed.hasPrefix("```") {
-                flushParagraph()
-                lines.removeFirst()
-                let language = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                var code: [String] = []
-                while let next = lines.first, !next.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
-                    code.append(next)
-                    lines.removeFirst()
-                }
-                if !lines.isEmpty { lines.removeFirst() }
-                blocks.append(.code(language: language.isEmpty ? nil : language,
-                                    text: code.joined(separator: "\n")))
-                continue
-            }
-
-            if trimmed.isEmpty {
-                flushParagraph()
-                lines.removeFirst()
-                continue
-            }
-
-            if let heading = Self.heading(trimmed) {
-                flushParagraph()
-                blocks.append(heading)
-                lines.removeFirst()
-                continue
-            }
-
-            if trimmed == "---" || trimmed == "***" {
-                flushParagraph()
-                blocks.append(.rule)
-                lines.removeFirst()
-                continue
-            }
-
-            if trimmed.hasPrefix("|"), lines.count > 1,
-               let separator = lines.dropFirst().first?.trimmingCharacters(in: .whitespaces),
-               separator.hasPrefix("|"), separator.contains("-") {
-                flushParagraph()
-                let header = Self.cells(trimmed)
-                lines.removeFirst(2)
-                var rows: [[String]] = []
-                while let next = lines.first?.trimmingCharacters(in: .whitespaces), next.hasPrefix("|") {
-                    rows.append(Self.cells(next))
-                    lines.removeFirst()
-                }
-                blocks.append(.table(header: header, rows: rows))
-                continue
-            }
-
-            if Self.bulletText(trimmed) != nil {
-                flushParagraph()
-                var items: [String] = []
-                while let next = lines.first?.trimmingCharacters(in: .whitespaces), let item = Self.bulletText(next) {
-                    items.append(item)
-                    lines.removeFirst()
-                }
-                blocks.append(.bullets(items))
-                continue
-            }
-
-            if let (start, _) = Self.numbered(trimmed) {
-                flushParagraph()
-                var items: [String] = []
-                while let next = lines.first?.trimmingCharacters(in: .whitespaces), let (_, item) = Self.numbered(next) {
-                    items.append(item)
-                    lines.removeFirst()
-                }
-                blocks.append(.numbered(start: start, items: items))
-                continue
-            }
-
-            if trimmed.hasPrefix(">") {
-                flushParagraph()
-                var quoted: [String] = []
-                while let next = lines.first?.trimmingCharacters(in: .whitespaces), next.hasPrefix(">") {
-                    quoted.append(String(next.dropFirst()).trimmingCharacters(in: .whitespaces))
-                    lines.removeFirst()
-                }
-                blocks.append(.quote(quoted.joined(separator: "\n")))
-                continue
-            }
-
-            paragraph.append(line)
-            lines.removeFirst()
-        }
-        flushParagraph()
-        return blocks
-    }
-
-    private static func heading(_ line: String) -> MarkdownBlock? {
-        let hashes = line.prefix { $0 == "#" }.count
-        guard (1...4).contains(hashes), line.dropFirst(hashes).first == " " else { return nil }
-        return .heading(level: hashes, text: String(line.dropFirst(hashes + 1)))
-    }
-
-    private static func bulletText(_ line: String) -> String? {
-        for marker in ["- ", "* ", "• "] where line.hasPrefix(marker) {
-            return String(line.dropFirst(marker.count))
-        }
-        return nil
-    }
-
-    private static func numbered(_ line: String) -> (Int, String)? {
-        let digits = line.prefix { $0.isNumber }
-        guard !digits.isEmpty, digits.count <= 3, let number = Int(digits) else { return nil }
-        let rest = line.dropFirst(digits.count)
-        guard rest.hasPrefix(". ") || rest.hasPrefix(") ") else { return nil }
-        return (number, String(rest.dropFirst(2)))
-    }
-
-    private static func cells(_ line: String) -> [String] {
-        var trimmed = line.trimmingCharacters(in: .whitespaces)
-        if trimmed.hasPrefix("|") { trimmed.removeFirst() }
-        if trimmed.hasSuffix("|") { trimmed.removeLast() }
-        return trimmed.split(separator: "|", omittingEmptySubsequences: false)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
+    static func blocks(for source: String) -> [MarkdownBlock] {
+        if let cached = blocks[source] { return cached }
+        let parsed = MarkdownBlock.parse(source)
+        if blocks.count > 2_000 { blocks.removeAll(keepingCapacity: true) }
+        blocks[source] = parsed
+        return parsed
     }
 }
 
@@ -151,7 +21,7 @@ struct MarkdownView: View {
     let blocks: [MarkdownBlock]
 
     init(_ source: String) {
-        blocks = MarkdownBlock.parse(source)
+        blocks = MarkdownBlockCache.blocks(for: source)
     }
 
     var body: some View {
@@ -172,26 +42,22 @@ struct MarkdownView: View {
                 .padding(.top, 4)
         case .paragraph(let text):
             inline(text).font(Theme.Font.reading).lineSpacing(3)
-        case .bullets(let items):
+        case .list(let items):
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("•").foregroundStyle(.secondary)
-                        inline(item).lineSpacing(3)
+                        switch item.marker {
+                        case .bullet:
+                            Text(item.level == 0 ? "•" : "◦").foregroundStyle(.secondary)
+                        case .number(let number):
+                            Text("\(number).")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                                .frame(minWidth: 18, alignment: .trailing)
+                        }
+                        inline(item.text).lineSpacing(3)
                     }
-                }
-            }
-            .font(Theme.Font.reading)
-        case .numbered(let start, let items):
-            VStack(alignment: .leading, spacing: 5) {
-                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("\(start + index).")
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .frame(minWidth: 18, alignment: .trailing)
-                        inline(item).lineSpacing(3)
-                    }
+                    .padding(.leading, CGFloat(item.level) * 20)
                 }
             }
             .font(Theme.Font.reading)

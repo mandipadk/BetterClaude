@@ -93,17 +93,17 @@ public struct Recall: Sendable {
         var options = HistorySearch.Options(accountIDs: accounts, includeAbsent: true,
                                             limit: max(1, min(limit, 20)), excerptsPerHit: 3)
         options.since = sinceDays.map { Date().addingTimeInterval(-Double($0) * 86_400) }
-        var hits = try await index.search(query, options: options)
-        if let project, !project.isEmpty {
-            hits = hits.filter { ($0.projectPath ?? "").localizedCaseInsensitiveContains(project) }
-        }
+        options.projectContaining = project
+        options.redactSecrets = true
+        let hits = try await index.search(query, options: options)
         guard !hits.isEmpty else {
             return "No past conversation matches \"\(query)\". Try fewer or different words; every word has to appear somewhere in a conversation."
         }
+        let ids = try await shownIDs(hits.map { ($0.conversationID, $0.sessionID) })
         var out = "\(hits.count) past conversation\(hits.count == 1 ? "" : "s") match \"\(query)\", best first.\n"
         for (number, hit) in hits.enumerated() {
             out += "\n\(number + 1). \(hit.title)\n"
-            out += "   id: \(hit.sessionID ?? hit.conversationID)\n"
+            out += "   id: \(ids[hit.conversationID] ?? hit.conversationID)\n"
             out += "   last active: \(Self.stamp(hit.lastActivity))"
             out += ", \(hit.place)"
             if let project = hit.projectPath { out += ", in \(project)" }
@@ -126,7 +126,7 @@ public struct Recall: Sendable {
         let first = max(0, start ?? 0)
         let messages = try await index.messages(in: conversation.id, from: first, limit: max(1, min(limit, 120)))
         var out = "\(conversation.title)\n"
-        out += "id: \(conversation.sessionID ?? id)\n"
+        out += "id: \(try await shownIDs([(conversation.id, conversation.sessionID)])[conversation.id] ?? id)\n"
         out += "last active: \(Self.stamp(conversation.lastActivity))"
         if let project = conversation.projectPath { out += ", in \(project)" }
         out += "\nmessages: \(conversation.messageCount)\n"
@@ -137,7 +137,8 @@ public struct Recall: Sendable {
         var budget = maxCharacters
         var last = first - 1
         for message in messages {
-            var text = message.text
+            // Hidden before shortening: a key cut in half is no longer recognisable as one.
+            var text = SecretSweep.redact(message.text)
             if text.count > 4_000 { text = String(text.prefix(4_000)) + " […message shortened]" }
             let line = "\n[\(message.ordinal)] \(Self.speaker(message.role, message.kind)), \(Self.stamp(message.timestamp)):\n\(text)\n"
             if line.count > budget, last >= first { break }
@@ -159,8 +160,8 @@ public struct Recall: Sendable {
         filters.append("account_id IN (\(accounts.map { _ in "?" }.joined(separator: ",")))")
         values += accounts.sorted().map(SQLiteValue.text)
         if let project, !project.isEmpty {
-            filters.append("project_path LIKE ?")
-            values.append(.text("%\(project)%"))
+            filters.append("project_path LIKE ? ESCAPE '\\'")
+            values.append(.like("%", project, "%"))
         }
         values.append(.int(Int64(max(1, min(limit, 30)))))
         guard !accounts.isEmpty else { return "No history is shared with this Claude." }
@@ -175,15 +176,16 @@ public struct Recall: Sendable {
             ORDER BY c.last_activity DESC LIMIT ?
             """, values)
         guard !rows.isEmpty else { return "No conversations in the last \(days) days\(project.map { " in \($0)" } ?? "")." }
+        let ids = try await shownIDs(rows.map { ($0.text(0) ?? "", $0.text(1)) })
         var out = "Conversations from the last \(days) days, most recent first.\n"
         for row in rows {
             out += "\n- \(row.text(2) ?? "Untitled")\n"
-            out += "  id: \(row.text(1) ?? row.text(0) ?? "")\n"
+            out += "  id: \(ids[row.text(0) ?? ""] ?? row.text(0) ?? "")\n"
             out += "  last active: \(Self.stamp(row.date(4))), \(HistorySearch.place(kind: row.text(5), install: row.text(6)))"
             if let project = row.text(3) { out += ", in \(project)" }
             out += "\n"
-            if let asked = row.text(7) { out += "  first asked: \(Self.clip(asked, 280))\n" }
-            if let recap = row.text(8) { out += "  Claude's recap: \(Self.clip(recap, 400))\n" }
+            if let asked = row.text(7) { out += "  first asked: \(Self.clip(SecretSweep.redact(asked), 280))\n" }
+            if let recap = row.text(8) { out += "  Claude's recap: \(Self.clip(SecretSweep.redact(recap), 400))\n" }
             if let pulls = row.text(9) { out += "  pull requests: \(pulls)\n" }
         }
         return out
@@ -195,12 +197,12 @@ public struct Recall: Sendable {
         guard !accounts.isEmpty else { return "No history is shared with this Claude." }
         // A bare file name matches that name in any folder; a path matches exactly.
         let isBareName = !path.contains("/")
-        let match: SQLiteValue = isBareName ? .text("%/" + path) : .text((path as NSString).expandingTildeInPath)
+        let match: SQLiteValue = isBareName ? .like("%/", path, "") : .text((path as NSString).expandingTildeInPath)
         let rows = try await index.rows("""
             SELECT c.session_id, c.title, t.file_path, GROUP_CONCAT(DISTINCT t.name), COUNT(*),
-                   MIN(t.timestamp), MAX(t.timestamp)
+                   MIN(t.timestamp), MAX(t.timestamp), c.id
             FROM tool_calls t JOIN conversations c ON c.id = t.conversation_id
-            WHERE t.file_path \(isBareName ? "LIKE" : "=") ?
+            WHERE t.file_path \(isBareName ? "LIKE ? ESCAPE '\\'" : "= ?")
               AND c.account_id IN (\(accounts.map { _ in "?" }.joined(separator: ",")))
             GROUP BY c.id, t.file_path ORDER BY MAX(t.timestamp) DESC LIMIT 25
             """, [match] + accounts.sorted().map(SQLiteValue.text))
@@ -219,10 +221,11 @@ public struct Recall: Sendable {
                 versionsNote += "Commit \(commit.shortSHA) \"\(commit.subject)\" \(commit.match!.confidence == .likely ? "likely" : "possibly") came from \"\(commit.match!.title)\".\n"
             }
         }
+        let ids = try await shownIDs(rows.map { ($0.text(7) ?? "", $0.text(0)) })
         var out = versionsNote + "Conversations that read or changed \(path), most recent first.\n"
         for row in rows {
             out += "\n- \(row.text(1) ?? "Untitled")\n"
-            out += "  id: \(row.text(0) ?? "")\n"
+            out += "  id: \(ids[row.text(7) ?? ""] ?? row.text(7) ?? "")\n"
             out += "  file: \(row.text(2) ?? path)\n"
             out += "  tools: \(row.text(3) ?? "") (\(row.int(4)) times), \(Self.stamp(row.date(5))) to \(Self.stamp(row.date(6)))\n"
         }
@@ -238,10 +241,12 @@ public struct Recall: Sendable {
         guard !found.isEmpty else {
             return "No decisions found\(topic.map { " about \($0)" } ?? "")\(project.map { " in \($0)" } ?? "")."
         }
+        let shown = found.prefix(30)
+        let ids = try await shownIDs(shown.map { ($0.conversationID, $0.sessionID) })
         var out = "Decisions from past conversations, most recent first. Check these before deciding the same thing again, and read the conversation for the reasons.\n"
-        for decision in found.prefix(30) {
+        for decision in shown {
             let who = decision.source == .you ? "the person said" : decision.source == .summary ? "from Claude's summary" : "Claude recorded"
-            out += "\n- \(decision.text)\n  \(who), in \"\(decision.conversationTitle)\" (id: \(decision.sessionID ?? decision.conversationID)), \(Self.stamp(decision.date))\n"
+            out += "\n- \(decision.text)\n  \(who), in \"\(decision.conversationTitle)\" (id: \(ids[decision.conversationID] ?? decision.conversationID)), \(Self.stamp(decision.date))\n"
         }
         return out
     }
@@ -292,6 +297,29 @@ public struct Recall: Sendable {
         guard let row = rows.first else { return nil }
         return Found(id: row.text(0) ?? id, sessionID: row.text(1), title: row.text(2) ?? "Untitled",
                      projectPath: row.text(3), lastActivity: row.date(4), messageCount: Int(row.int(5)))
+    }
+
+    /// The id to give Claude for each conversation: its session id, which is what `claude
+    /// --resume` takes, unless copies of the session in other installs share it. Then the
+    /// index's own id, so reading it opens this copy and not another.
+    func shownIDs(_ conversations: [(conversationID: String, sessionID: String?)]) async throws -> [String: String] {
+        let sessions = Set(conversations.compactMap(\.sessionID))
+        var copies: [String: Int64] = [:]
+        if !sessions.isEmpty, !accounts.isEmpty {
+            for row in try await index.rows("""
+                SELECT session_id, COUNT(*) FROM conversations
+                WHERE session_id IN (\(sessions.map { _ in "?" }.joined(separator: ",")))
+                  AND account_id IN (\(accounts.map { _ in "?" }.joined(separator: ",")))
+                GROUP BY session_id
+                """, sessions.sorted().map(SQLiteValue.text) + accounts.sorted().map(SQLiteValue.text)) {
+                if let session = row.text(0) { copies[session] = row.int(1) }
+            }
+        }
+        var out: [String: String] = [:]
+        for (conversationID, sessionID) in conversations {
+            out[conversationID] = sessionID.flatMap { copies[$0] == 1 ? $0 : nil } ?? conversationID
+        }
+        return out
     }
 
     static func speaker(_ role: MessageText.Role, _ kind: TranscriptScan.Message.Kind) -> String {

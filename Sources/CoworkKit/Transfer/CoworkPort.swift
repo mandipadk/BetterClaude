@@ -85,33 +85,38 @@ public enum CoworkPort {
 
     /// Does it, and returns the one receipt that undoes it.
     public static func apply(_ plan: Plan, progress: (@Sendable (String) -> Void)? = nil) throws -> ImportReceipt {
+        let fm = FileManager.default
+        // The folder that holds every conversation's files, so Undo can tidy it away once it's
+        // empty. Only when this move made it: one that was already there is the person's.
+        let root = plan.folder.appendingPathComponent(Importer.sidecarRootName)
+        let rootExisted = fm.fileExists(atPath: root.path)
         var receipt = try Importer.apply(plan.importPlan, progress: progress)
         receipt.title = plan.projectName
         do {
-            let fm = FileManager.default
             if let claudeMD = plan.claudeMD, !fm.fileExists(atPath: claudeMD.path) {
                 try AtomicWrite.write(Data(plan.claudeMDText.utf8), to: claudeMD)
                 try receipt.recordCreatedFile(at: claudeMD)
             }
             if !fm.fileExists(atPath: plan.brief.path) {
-                try fm.createDirectory(at: plan.brief.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try receipt.createDirectories(at: plan.brief.deletingLastPathComponent())
                 try AtomicWrite.write(Data(plan.briefText.utf8), to: plan.brief)
                 try receipt.recordCreatedFile(at: plan.brief)
             }
             if let codeTab = plan.codeTab {
                 for computation in plan.importPlan.computed {
+                    let lastActivity = plan.importPlan.manifest.sessions
+                        .first { $0.slot == computation.slot }?.origin.lastActivityAt
                     let record = try writeCodeTabRecord(copying: codeTab.template, into: codeTab.directory,
                                                         cliSessionId: computation.cliSessionId,
-                                                        title: computation.title, cwd: computation.newCwd)
+                                                        title: computation.title, cwd: computation.newCwd,
+                                                        lastActivity: lastActivity)
                     try receipt.recordCreatedFile(at: record)
                 }
             }
-            // The folder that holds every conversation's files, so Undo can tidy it away once
-            // it's empty. Only added when this move made it.
-            let root = plan.folder.appendingPathComponent(Importer.sidecarRootName)
-            if !receipt.created.contains(where: { $0.path == root.standardizedFileURL.path }),
-               receipt.created.contains(where: { $0.path.hasPrefix(root.standardizedFileURL.path + "/") }) {
-                receipt.created.insert(.init(path: root.standardizedFileURL.path, isDirectory: true, sha256: nil), at: 0)
+            let rootPath = root.standardizedFileURL.path
+            if !rootExisted, !receipt.created.contains(where: { $0.path == rootPath }),
+               receipt.created.contains(where: { $0.path.hasPrefix(rootPath + "/") }) {
+                receipt.created.insert(.init(path: rootPath, isDirectory: true, sha256: nil), at: 0)
             }
             try Undo.save(receipt)
         } catch {
@@ -181,20 +186,27 @@ public enum CoworkPort {
     }
 
     /// A Code tab record for a conversation brought in, started from another record so it keeps
-    /// that app's model, permission mode and tools, with everything about the other one dropped.
+    /// that app's model and tool list, with everything about the other one dropped. Permissions
+    /// that record was given are not passed on: the new conversation asks as a new one would.
     static func writeCodeTabRecord(copying template: URL, into directory: URL, cliSessionId: String,
-                                   title: String, cwd: String) throws -> URL {
+                                   title: String, cwd: String, lastActivity: Date? = nil,
+                                   now: Date = Date()) throws -> URL {
         var record = try JSONValue.parse(try Data(contentsOf: template))
         guard case .object = record else { throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: template.path]) }
         let localId = "local_" + UUID().uuidString.lowercased()
-        let now = JSONValue.int(Int64(Date().timeIntervalSince1970 * 1000))
+        func milliseconds(_ date: Date) -> JSONValue { .int(Int64(date.timeIntervalSince1970 * 1000)) }
         record["sessionId"] = .string(localId)
         record["cliSessionId"] = .string(cliSessionId)
         record["title"] = .string(title)
         record["titleSource"] = .string("user")
         record["cwd"] = .string(cwd)
         record["originCwd"] = .string(cwd)
-        for key in ["createdAt", "lastActivityAt", "lastFocusedAt"] { record[key] = now }
+        // Listed by when the conversation was last worked on, not when it was moved.
+        record["createdAt"] = milliseconds(lastActivity ?? now)
+        record["lastActivityAt"] = milliseconds(lastActivity ?? now)
+        record["lastFocusedAt"] = milliseconds(now)
+        if record["permissionMode"] != nil { record["permissionMode"] = .string("default") }
+        record["enabledMcpTools"] = nil
         if record["isArchived"] != nil { record["isArchived"] = .bool(false) }
         if record["isStarred"] != nil { record["isStarred"] = .bool(false) }
         for key in ["previousTitles", "gitAnchors", "writtenBranches", "publishedArtifacts",

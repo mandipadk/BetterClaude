@@ -54,7 +54,11 @@ struct PulseTests {
         formatter.dateFormat = "EEE MMM d HH:mm:ss yyyy"
         #expect(LiveSessions.isAlive(me, procStart: formatter.string(from: started)))
         #expect(!LiveSessions.isAlive(me, procStart: formatter.string(from: started.addingTimeInterval(-3600))))
-        #expect(LiveSessions.isAlive(me, procStart: nil))
+        // Without a readable start time, only a process older than the session counts.
+        #expect(!LiveSessions.isAlive(me, procStart: nil))
+        #expect(!LiveSessions.isAlive(me, procStart: "not a date"))
+        #expect(LiveSessions.isAlive(me, procStart: nil, startedAt: started.addingTimeInterval(30)))
+        #expect(!LiveSessions.isAlive(me, procStart: "not a date", startedAt: started.addingTimeInterval(-3600)))
         #expect(LiveSessions.ancestry(of: me).first == me)
     }
 

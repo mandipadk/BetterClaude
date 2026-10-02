@@ -98,12 +98,13 @@ public enum Insights {
                        action: "Show Kept", weight: 80)
     }
 
-    public static func cacheBreaks(extra: Double, breaks: Int) -> Insight? {
+    /// Breaks over the last seven days; `hourLong` when sessions mostly keep the cache for an hour.
+    public static func cacheBreaks(extra: Double, breaks: Int, hourLong: Bool) -> Insight? {
         guard breaks > 0, extra >= 1 else { return nil }
         let money = extra.formatted(.currency(code: "USD").precision(.fractionLength(extra < 10 ? 2 : 0)))
         return Insight(kind: .cacheBreaks, key: "breaks:\(Int(extra))",
-                       title: "Breaks cost \(money) this week",
-                       detail: "Coming back to a long conversation after five minutes rewrites its cache at list prices.",
+                       title: "Breaks cost \(money) over the last seven days",
+                       detail: "Coming back to a long conversation after \(hourLong ? "an hour" : "five minutes") rewrites its cache at list prices.",
                        action: "See Where", weight: 40)
     }
 

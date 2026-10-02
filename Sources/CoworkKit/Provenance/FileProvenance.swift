@@ -48,15 +48,17 @@ public enum FileProvenance {
 
     /// Files Claude wrote or edited, most recently changed first.
     public static func recentFiles(index: HistoryIndex, matching filter: String = "", limit: Int = 200) async throws -> [TouchedFile] {
-        let like = "%\(filter.replacingOccurrences(of: "%", with: ""))%"
+        let like = SQLiteValue.like("%", filter, "%")
         let rows = try await index.rows("""
             SELECT file_path, COUNT(DISTINCT conversation_id), 0, MAX(timestamp) FROM tool_calls
-            WHERE file_path IS NOT NULL AND name IN ('Edit', 'Write', 'MultiEdit', 'NotebookEdit') AND file_path LIKE ?
+            WHERE file_path IS NOT NULL AND name IN ('Edit', 'Write', 'MultiEdit', 'NotebookEdit')
+              AND file_path LIKE ? ESCAPE '\\'
             GROUP BY file_path ORDER BY MAX(timestamp) DESC LIMIT ?
-            """, [.text(like), .int(Int64(limit))])
+            """, [like, .int(Int64(limit))])
         var versions: [String: Int] = [:]
-        for row in try await index.rows("SELECT file_path, COUNT(*) FROM file_versions WHERE file_path LIKE ? GROUP BY file_path",
-                                        [.text(like)]) {
+        for row in try await index.rows("""
+            SELECT file_path, COUNT(*) FROM file_versions WHERE file_path LIKE ? ESCAPE '\\' GROUP BY file_path
+            """, [like]) {
             versions[row.text(0) ?? ""] = Int(row.int(1))
         }
         return rows.compactMap { row in
@@ -132,22 +134,20 @@ public enum FileProvenance {
             // Going back to before the file existed means taking it away. A copy is saved
             // first, and Undo puts it back from there.
             guard fm.fileExists(atPath: path) else { return receipt }
-            let saved = try saveCurrent(target, paths: paths)
-            receipt.modified.append(.init(path: path, backupPath: saved.path,
-                                          sha256Before: try FileDigest.hex(contentsOf: target)))
+            try receipt.backUp(target, paths: paths)
             try Undo.save(receipt)
             try fm.removeItem(at: target)
+            try receipt.recordModified(at: target)
         } else {
             guard let copy = version.copy else { throw RestoreError.copyMissing }
             if fm.fileExists(atPath: path) {
-                let saved = try saveCurrent(target, paths: paths)
-                receipt.modified.append(.init(path: path, backupPath: saved.path,
-                                              sha256Before: try FileDigest.hex(contentsOf: target)))
+                try receipt.backUp(target, paths: paths)
                 try Undo.save(receipt)
                 try AtomicWrite.write(try Data(contentsOf: copy), to: target)
+                try receipt.recordModified(at: target)
             } else {
+                try receipt.createDirectories(at: target.deletingLastPathComponent())
                 try Undo.save(receipt)
-                try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try AtomicWrite.write(try Data(contentsOf: copy), to: target)
                 try receipt.recordCreatedFile(at: target)
             }

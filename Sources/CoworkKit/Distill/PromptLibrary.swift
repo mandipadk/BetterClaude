@@ -49,20 +49,51 @@ public enum PromptLibrary {
         for entry in all { groups[normalize(entry.text), default: []].append(entry) }
 
         // Then fold near-identical groups together, biggest first so they absorb the rest.
-        var keys = groups.keys.sorted { (groups[$0]?.count ?? 0) > (groups[$1]?.count ?? 0) }
-        let words = Dictionary(uniqueKeysWithValues: keys.map { ($0, Set($0.split(separator: " ").map(String.init))) })
+        let keys = groups.keys.sorted {
+            let (a, b) = (groups[$0]?.count ?? 0, groups[$1]?.count ?? 0)
+            return a == b ? $0 < $1 : a > b
+        }
+        // Each prompt's words as numbers, rarest first. Two prompts sharing three quarters of
+        // their words share one of each other's first few, and the first they share bounds how
+        // many more they can, so most pairs are never compared at all.
+        let sets = keys.map { Set($0.split(separator: " ").map(String.init)) }
+        var frequency: [String: Int] = [:]
+        for set in sets { for word in set { frequency[word, default: 0] += 1 } }
+        let vocabulary = frequency.keys.sorted { (frequency[$0] ?? 0, $0) < (frequency[$1] ?? 0, $1) }
+        let number = Dictionary(uniqueKeysWithValues: vocabulary.enumerated().map { ($1, $0) })
+        let words = sets.map { $0.compactMap { number[$0] }.sorted() }
+        func leading(_ count: Int) -> Int { count - (3 * count + 3) / 4 + 1 }
+        var filed = [[(prompt: Int, at: Int)]](repeating: [], count: vocabulary.count)
+        for (prompt, list) in words.enumerated() where list.count >= 4 {
+            for at in 0..<leading(list.count) { filed[list[at]].append((prompt, at)) }
+        }
+        func shared(_ a: [Int], _ b: [Int]) -> Int {
+            var (i, j, count) = (0, 0, 0)
+            while i < a.count, j < b.count {
+                if a[i] == b[j] { count += 1; i += 1; j += 1 } else if a[i] < b[j] { i += 1 } else { j += 1 }
+            }
+            return count
+        }
+        var absorbed = [Bool](repeating: false, count: keys.count)
+        var looked = [Int](repeating: -1, count: keys.count)
         var merged: [String: [String]] = [:]
-        while let key = keys.first {
-            keys.removeFirst()
+        for (position, key) in keys.enumerated() where !absorbed[position] {
+            absorbed[position] = true
             var members = [key]
-            let own = words[key] ?? []
+            let own = words[position]
             if own.count >= 4 {
-                keys.removeAll { other in
-                    let theirs = words[other] ?? []
-                    guard theirs.count >= 4 else { return false }
-                    let overlap = Double(own.intersection(theirs).count) / Double(own.union(theirs).count)
-                    if overlap >= 0.75 { members.append(other); return true }
-                    return false
+                for at in 0..<leading(own.count) {
+                    for (other, theirAt) in filed[own[at]] where !absorbed[other] && looked[other] != position {
+                        looked[other] = position
+                        let theirs = words[other]
+                        let needed = (3 * (own.count + theirs.count) + 6) / 7
+                        guard 1 + min(own.count - at - 1, theirs.count - theirAt - 1) >= needed else { continue }
+                        let common = shared(own, theirs)
+                        if Double(common) / Double(own.count + theirs.count - common) >= 0.75 {
+                            members.append(keys[other])
+                            absorbed[other] = true
+                        }
+                    }
                 }
             }
             merged[key] = members

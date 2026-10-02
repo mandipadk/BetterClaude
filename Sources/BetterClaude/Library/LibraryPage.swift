@@ -1,6 +1,7 @@
 import AppKit
 import CoworkKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Everything Claude has made, as a gallery: documents, images, code it gave you, what you
 /// gave it, and the prompts you keep typing, each with the conversation it came from.
@@ -28,7 +29,7 @@ struct LibraryPage: View {
         }
         .background(Theme.Surface.window)
         .task(id: services.generation) {
-            if services.hasLoaded { services.library.gather(from: services.snapshot, generation: services.generation) }
+            if services.hasLoaded { services.library.gather(from: services.snapshot) }
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -55,10 +56,14 @@ struct LibraryPage: View {
 /// Tiles, newest first, grouped by when Claude made them.
 private struct LibraryGallery: View {
     @Environment(AppServices.self) private var services
+    /// Everything starts with the newest two groups; the rest are a click away.
+    @State private var showsAll = false
 
     var body: some View {
         let library = services.library
         let artifacts = library.visible
+        let groups = Self.groups(artifacts)
+        let shown = library.filter == .everything && !showsAll ? Array(groups.prefix(2)) : groups
         if library.summary == nil {
             VStack(spacing: 10) {
                 ProgressView()
@@ -71,17 +76,24 @@ private struct LibraryGallery: View {
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Self.groups(artifacts).prefix(library.filter == .everything ? 2 : 99), id: \.title) { group in
-                        SectionLabel(title: group.title, top: group.title == Self.groups(artifacts).first?.title ? 0 : 26)
+                    ForEach(shown, id: \.title) { group in
+                        SectionLabel(title: group.title, top: group.title == groups.first?.title ? 0 : 26)
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 14, alignment: .top)],
                                   alignment: .leading, spacing: 18) {
                             ForEach(group.items) { artifact in
                                 LibraryTile(artifact: artifact, isSelected: library.selectedID == artifact.id)
-                                    .onTapGesture { library.selectedID = artifact.id }
+                                    // The double click first: declared after, it would never be seen.
                                     .onTapGesture(count: 2) { open(artifact) }
+                                    .onTapGesture { library.selectedID = artifact.id }
                                     .contextMenu { LibraryItemActions(artifact: artifact) }
                             }
                         }
+                    }
+                    if shown.count < groups.count {
+                        let more = groups.dropFirst(shown.count).reduce(0) { $0 + $1.items.count }
+                        Button(more == 1 ? "Show 1 More" : "Show \(more) More") { showsAll = true }
+                            .buttonStyle(.secondary)
+                            .padding(.top, 22)
                     }
                     if library.filter == .everything, !services.prompts.prompts.isEmpty {
                         SectionLabel(title: "Prompts you keep typing", link: "All", action: { services.library.filter = .prompts })
@@ -232,93 +244,6 @@ private struct LibraryPrompts: View {
     }
 }
 
-private struct ArtifactRow: View {
-    let artifact: Artifact
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            ArtifactIcon(artifact: artifact, size: 28)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(artifact.title).font(Theme.Font.bodyMedium).lineLimit(1)
-                    Spacer(minLength: 4)
-                    if let date = artifact.createdAt {
-                        Text(date.listStamp)
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
-                Text(artifact.conversationTitle)
-                    .font(Theme.Font.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        }
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// A file's own icon or thumbnail; code gets a drawn tile.
-struct ArtifactIcon: View {
-    let artifact: Artifact
-    var size: CGFloat = 28
-    @State private var thumbnail: NSImage?
-
-    var body: some View {
-        Group {
-            if let url = artifact.fileURL {
-                Image(nsImage: thumbnail ?? NSWorkspace.shared.icon(forFile: url.path))
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .task(id: url) {
-                        if artifact.kind == .image { thumbnail = await Thumbnails.load(url, size: size) }
-                    }
-            } else {
-                GlyphTile(systemImage: "chevron.left.forwardslash.chevron.right", size: size)
-            }
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
-    }
-}
-
-private struct ImageTile: View {
-    let artifact: Artifact
-    let isSelected: Bool
-    let action: () -> Void
-    @State private var thumbnail: NSImage?
-
-    var body: some View {
-        Button(action: action) {
-            ZStack {
-                RoundedRectangle(cornerRadius: Theme.Radius.tile, style: .continuous)
-                    .fill(Theme.subtleFill)
-                if let thumbnail {
-                    Image(nsImage: thumbnail)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } else {
-                    ProgressView().controlSize(.small)
-                }
-            }
-            .frame(height: 104)
-            .clipShape(.rect(cornerRadius: Theme.Radius.tile, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: Theme.Radius.tile, style: .continuous)
-                    .strokeBorder(isSelected ? Theme.accent : .clear, lineWidth: 2)
-            }
-        }
-        .buttonStyle(.plain)
-        .task(id: artifact.fileURL) {
-            if let url = artifact.fileURL { thumbnail = await Thumbnails.load(url, size: 208) }
-        }
-        .accessibilityLabel(artifact.title)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-}
-
 // MARK: - Preview
 
 private struct ArtifactPreview: View {
@@ -329,7 +254,7 @@ private struct ArtifactPreview: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     header(artifact)
-                    content(artifact)
+                    ArtifactContent(artifact: artifact)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
@@ -380,30 +305,71 @@ private struct ArtifactPreview: View {
         }
     }
 
-    @ViewBuilder
-    private func content(_ artifact: Artifact) -> some View {
+    private func kindName(_ artifact: Artifact) -> String {
+        switch artifact.kind {
+        case .code: return artifact.language.map { CodeWell.languageName($0) } ?? "Code"
+        case .document: return "Document"
+        case .data: return "Data"
+        case .image: return "Image"
+        case .upload: return "Upload"
+        case .other:
+            let type = artifact.fileURL.flatMap { UTType(filenameExtension: $0.pathExtension) }
+            return type?.localizedDescription.map { $0.prefix(1).uppercased() + $0.dropFirst() } ?? "File"
+        }
+    }
+
+}
+
+/// What the preview shows of a file: the image, the text, or its Quick Look thumbnail. Files
+/// are read once, off the main actor, not on every redraw.
+private struct ArtifactContent: View {
+    let artifact: Artifact
+    @State private var loaded: Loaded?
+
+    // NSImage isn't Sendable; this one is made off the main actor and only read after.
+    private enum Loaded: @unchecked Sendable {
+        case image(NSImage)
+        case text(String)
+        case neither
+    }
+
+    var body: some View {
         if let code = artifact.inlineContent {
             CodeWell(language: artifact.language, text: code)
         } else if let url = artifact.fileURL {
-            if artifact.kind == .image, let image = NSImage(contentsOf: url) {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxHeight: 520)
-                    .clipShape(.rect(cornerRadius: Theme.Radius.tile))
-            } else if let text = readableText(url) {
-                if url.pathExtension.lowercased() == "md" {
-                    MarkdownView(text).fixedSize(horizontal: false, vertical: true)
-                } else {
-                    CodeWell(language: url.pathExtension, text: text)
+            Group {
+                switch loaded {
+                case .image(let image)?:
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxHeight: 520)
+                        .clipShape(.rect(cornerRadius: Theme.Radius.tile))
+                case .text(let text)?:
+                    if url.pathExtension.lowercased() == "md" {
+                        MarkdownView(text).fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        CodeWell(language: url.pathExtension, text: text)
+                    }
+                case .neither?:
+                    FilePreviewTile(url: url)
+                case nil:
+                    ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(.vertical, Theme.Space.xl)
                 }
-            } else {
-                FilePreviewTile(url: url)
+            }
+            .task(id: artifact.id) {
+                let isImage = artifact.kind == .image
+                loaded = await Task.detached(priority: .userInitiated) { Self.load(url, isImage: isImage) }.value
             }
         }
     }
 
-    private func readableText(_ url: URL) -> String? {
+    nonisolated private static func load(_ url: URL, isImage: Bool) -> Loaded {
+        if isImage, let image = NSImage(contentsOf: url) { return .image(image) }
+        return readableText(url).map(Loaded.text) ?? .neither
+    }
+
+    nonisolated private static func readableText(_ url: URL) -> String? {
         let textual: Set<String> = ["md", "txt", "csv", "json", "yaml", "yml", "html", "css", "js", "ts",
                                     "py", "swift", "sh", "sql", "xml", "tsv", "log", "toml"]
         guard textual.contains(url.pathExtension.lowercased()),
@@ -412,18 +378,6 @@ private struct ArtifactPreview: View {
         guard let data = try? handle.read(upToCount: 40_000) else { return nil }
         return String(data: data, encoding: .utf8)
     }
-
-    private func kindName(_ artifact: Artifact) -> String {
-        switch artifact.kind {
-        case .code: return artifact.language.map { CodeWell.languageName($0) } ?? "Code"
-        case .document: return "Document"
-        case .data: return "Data"
-        case .image: return "Image"
-        case .upload: return "Upload"
-        case .other: return artifact.fileURL?.pathExtension.uppercased() ?? "File"
-        }
-    }
-
 }
 
 /// A file without an inline preview: its Quick Look thumbnail, large.

@@ -44,64 +44,115 @@ struct ReaderView: View {
 
     private var document: some View {
         let reader = services.reader
-        return ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                if let conversation = reader.conversation {
-                    ReaderHeader(conversation: conversation, install: reader.install,
-                                 readable: reader.readable)
-                        .padding(.bottom, 22)
-                }
-                if reader.conversation?.external == nil {
-                    TipView(ReaderTip())
-                        .tipBackground(Theme.Surface.group)
-                        .padding(.bottom, Theme.Space.l)
-                }
-                let entries = reader.visibleEntries
-                // While finding, only matching messages show, and markers between them would mislead.
-                let anchors = reader.findQuery.isEmpty
-                    ? TimelineMarkers.anchors(reader.markers, times: entries.map(\.time)) : [:]
-                LazyVStack(alignment: .leading, spacing: 18) {
-                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                        ForEach(anchors[index] ?? []) { marker in MarkerLine(marker: marker) }
-                        switch entry {
-                        case .message(let message):
-                            MessageView(message: message,
-                                        assistantName: reader.conversation?.external?.source == .codex ? "Codex" : "Claude",
-                                        claims: message.role == .user ? [] : message.timestamp.flatMap { reader.doubtfulClaims[$0] } ?? [],
-                                        onFork: reader.forkPoints[message.id] == nil ? nil : {
-                                            services.forking = ForkRequest(messageID: message.id)
-                                        })
-                        case .tools(_, let names):
-                            ToolsLine(names: names)
-                        case .compaction(let compaction):
-                            CompactionMarker(compaction: compaction, conversation: reader.conversation,
-                                             number: entries.compactMap { entry -> String? in
-                                                 if case .compaction(let other) = entry, other.summary != nil { return other.id }
-                                                 return nil
-                                             }.firstIndex(of: compaction.id))
-                        case .recap(_, let text, _):
-                            RecapLine(text: text)
-                        }
+        return VStack(spacing: 0) {
+            // Outside the scroll view, so it stays put however far down you are.
+            if reader.showsFind { findBar }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    if let conversation = reader.conversation {
+                        ReaderHeader(conversation: conversation, install: reader.install,
+                                     readable: reader.readable)
+                            .padding(.bottom, 22)
                     }
-                    ForEach(anchors[entries.count] ?? []) { marker in MarkerLine(marker: marker) }
+                    if reader.conversation?.external == nil {
+                        TipView(ReaderTip())
+                            .tipBackground(Theme.Surface.group)
+                            .padding(.bottom, Theme.Space.l)
+                    }
+                    entryList
+                        .task(id: "\(reader.conversation?.id ?? "")#\(services.index.generation)#\(reader.state == .ready)") {
+                            await reader.loadAnnotations(index: services.index.index)
+                        }
                 }
-                .task(id: "\(reader.conversation?.id ?? "")#\(services.index.generation)#\(reader.state == .ready)") {
-                    await reader.loadAnnotations(index: services.index.index, generation: services.index.generation)
-                }
-                if reader.visibleEntries.isEmpty, !reader.findQuery.isEmpty {
-                    Text("No message here contains “\(reader.findQuery)”.")
-                        .font(Theme.Font.body)
-                        .foregroundStyle(.secondary)
-                }
+                .padding(.horizontal, 34)
+                .padding(.top, 22)
+                .padding(.bottom, 48)
+                .frame(maxWidth: 748, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 34)
-            .padding(.top, 22)
-            .padding(.bottom, 48)
-            .frame(maxWidth: 748, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Theme.Surface.window)
         .id(reader.conversation?.id)
+    }
+
+    private var findBar: some View {
+        @Bindable var reader = services.reader
+        return HStack(spacing: Theme.Space.s) {
+            FindField(text: $reader.findQuery, focusRequest: reader.findFocusRequest)
+                .frame(maxWidth: 260)
+                .onKeyPress(.escape) { reader.closeFind(); return .handled }
+            Spacer(minLength: 0)
+            Button("Done") { reader.closeFind() }
+                .buttonStyle(.plain)
+                .font(Theme.Font.callout)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 34)
+        .padding(.vertical, 8)
+        .background(Theme.Surface.window)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.Surface.line).frame(height: 0.5) }
+    }
+
+    /// The messages and everything between them, worked out once per pass.
+    private var entryList: some View {
+        let reader = services.reader
+        let entries = reader.visibleEntries
+        let finding = reader.isFinding
+        // While finding, only matching messages show, and markers between them would mislead.
+        let anchors = finding ? [:] : TimelineMarkers.anchors(reader.markers, times: entries.map(\.time))
+        let days = Self.dayStarts(entries)
+        var summaries: [String: Int] = [:]
+        for entry in entries {
+            if case .compaction(let compaction) = entry, compaction.summary != nil {
+                summaries[compaction.id] = summaries.count
+            }
+        }
+        let assistant = reader.assistantName
+        return VStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 18) {
+                ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                    if let day = days[index] { DayLine(date: day) }
+                    ForEach(anchors[index] ?? []) { marker in MarkerLine(marker: marker) }
+                    switch entry {
+                    case .message(let message):
+                        MessageView(message: message,
+                                    assistantName: assistant,
+                                    claims: reader.claims(for: message),
+                                    onFork: reader.forkPoints[message.id] == nil ? nil : {
+                                        services.forking = ForkRequest(messageID: message.id)
+                                    })
+                    case .tools(_, let names):
+                        ToolsLine(names: names)
+                    case .compaction(let compaction):
+                        CompactionMarker(compaction: compaction, conversation: reader.conversation,
+                                         number: summaries[compaction.id])
+                    case .recap(_, let text, _):
+                        RecapLine(text: text, assistantName: assistant)
+                    case .notice(let notice):
+                        NoticeLine(notice: notice)
+                    }
+                }
+                ForEach(anchors[entries.count] ?? []) { marker in MarkerLine(marker: marker) }
+            }
+            if entries.isEmpty, finding {
+                Text("No message here contains “\(reader.findQuery.trimmingCharacters(in: .whitespacesAndNewlines))”.")
+                    .font(Theme.Font.body)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// The local day each entry starts, for the entries where it differs from the one before.
+    static func dayStarts(_ entries: [ReadableConversation.Entry]) -> [Int: Date] {
+        var starts: [Int: Date] = [:]
+        var current: Date?
+        for (index, entry) in entries.enumerated() {
+            guard let time = entry.time else { continue }
+            let day = Calendar.current.startOfDay(for: time)
+            if let current, current != day { starts[index] = day }
+            current = day
+        }
+        return starts
     }
 }
 
@@ -118,7 +169,6 @@ struct ReaderHeader: View {
     let readable: ReadableConversation?
 
     var body: some View {
-        @Bindable var reader = services.reader
         VStack(alignment: .leading, spacing: 3) {
             Text(conversation.title)
                 .font(.system(size: 18, weight: .semibold))
@@ -130,12 +180,6 @@ struct ReaderHeader: View {
                 .font(.system(size: 12.5))
                 .foregroundStyle(Theme.Surface.secondary)
                 .lineLimit(1)
-            if reader.showsFind {
-                FindField(text: $reader.findQuery)
-                    .frame(maxWidth: 260)
-                    .padding(.top, 12)
-                    .onKeyPress(.escape) { reader.findQuery = ""; reader.showsFind = false; return .handled }
-            }
         }
     }
 }
@@ -200,6 +244,8 @@ struct Fact<Value: View>: View {
 struct FindField: View {
     @Binding var text: String
     var prompt = "Find in conversation"
+    /// Changes when something asks for the cursor to be put here.
+    var focusRequest: Int? = nil
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -228,6 +274,8 @@ struct FindField: View {
                 .opacity(0)
                 .accessibilityHidden(true)
         }
+        .onAppear { if focusRequest != nil { focused = true } }
+        .onChange(of: focusRequest) { focused = true }
     }
 }
 
@@ -266,15 +314,23 @@ struct MessageView: View {
                 }
             }
             if message.role == .user {
-                Text(message.text)
-                    .font(.system(size: 14))
-                    .lineSpacing(5)
-                    .foregroundStyle(Theme.Surface.primary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(Theme.Surface.fill, in: .rect(cornerRadius: 14, style: .continuous))
+                if !message.text.isEmpty {
+                    Text(message.text)
+                        .font(.system(size: 14))
+                        .lineSpacing(5)
+                        .foregroundStyle(Theme.Surface.primary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(Theme.Surface.fill, in: .rect(cornerRadius: 14, style: .continuous))
+                }
+                ForEach(Array(message.attachments.enumerated()), id: \.offset) { _, name in
+                    Label(name, systemImage: name == "Image" ? "photo" : "doc")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.Surface.secondary)
+                        .lineLimit(1)
+                }
             } else {
                 MarkdownView(message.text)
                     .fixedSize(horizontal: false, vertical: true)
@@ -308,6 +364,7 @@ extension ReadableConversation.Entry {
         case .tools: return nil
         case .compaction(let compaction): return compaction.timestamp
         case .recap(_, _, let timestamp): return timestamp
+        case .notice(let notice): return notice.timestamp
         }
     }
 }
@@ -397,7 +454,7 @@ struct MarkerLine: View {
         case .modelSwitch(let change):
             return ModelSwitchesView.sentence(change)
         case .cacheBreak(let gap, let cost):
-            return "Back after \(Self.duration(gap)). This reply rewrote the cache, \(Self.dollars(cost)) at list prices"
+            return "Back after \(Self.duration(gap)). Rewriting the cache cost \(Self.dollars(cost)) more at list prices"
         }
     }
 
@@ -408,9 +465,7 @@ struct MarkerLine: View {
         return hours == 1 ? "an hour" : "\(hours) hours"
     }
 
-    static func dollars(_ value: Double) -> String {
-        value < 0.01 ? "under 1¢" : value.formatted(.currency(code: "USD").precision(.fractionLength(2)))
-    }
+    static func dollars(_ value: Double) -> String { Pricing.dollars(value) }
 }
 
 extension MessageView {
@@ -504,7 +559,12 @@ struct CompactionMarker: View {
                         .confirmationDialog("Add \(forgotten.count == 1 ? "this" : "these \(forgotten.count)") to this project's CLAUDE.md?", isPresented: $confirming) {
                             Button("Add") {
                                 let lines = forgotten.map { Corrections.rule(from: $0.text) }
-                                added = (try? Corrections.add(lines, to: Corrections.target(for: Projects.root(of: project)))) != nil
+                                do {
+                                    try Corrections.add(lines, to: Corrections.target(for: Projects.root(of: project)))
+                                    added = true
+                                } catch {
+                                    services.errorMessage = "Couldn't add them to CLAUDE.md: \(ContinueModel.explain(error))"
+                                }
                             }
                         } message: {
                             Text("Every session in the project then starts knowing them. Undo it from History.")
@@ -536,12 +596,13 @@ struct CompactionMarker: View {
 /// A recap Claude wrote when you stepped away.
 struct RecapLine: View {
     let text: String
+    var assistantName = "Claude"
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: "text.append").foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Claude's recap").font(Theme.Font.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text("\(assistantName)'s recap").font(Theme.Font.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Text(text).font(Theme.Font.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
@@ -550,3 +611,60 @@ struct RecapLine: View {
     }
 }
 
+
+/// Something between messages that isn't a message: a command you ran, a reply you stopped,
+/// a background task that finished, a reply that failed, or an attempt you rewound.
+struct NoticeLine: View {
+    let notice: ReadableConversation.Notice
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: symbol).font(.system(size: 11)).foregroundStyle(Theme.Surface.tertiary)
+            Text(notice.text)
+                .font(.system(size: 12))
+                .foregroundStyle(notice.kind == .apiError ? Theme.attention : Theme.Surface.secondary)
+                .lineLimit(notice.kind == .apiError ? 3 : 2)
+                .textSelection(.enabled)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var symbol: String {
+        switch notice.kind {
+        case .command: return "command"
+        case .shell: return "terminal"
+        case .interrupted: return "stop.circle"
+        case .notification: return "bell"
+        case .apiError: return "exclamationmark.triangle"
+        case .rewound: return "arrow.uturn.backward"
+        }
+    }
+}
+
+/// Where the conversation moves on to another day.
+struct DayLine: View {
+    let date: Date
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Rectangle().fill(Theme.Surface.line).frame(height: 0.5)
+            Text(label)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.Surface.secondary)
+                .fixedSize()
+            Rectangle().fill(Theme.Surface.line).frame(height: 0.5)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(label)
+    }
+
+    private var label: String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return "Today" }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        if calendar.isDate(date, equalTo: .now, toGranularity: .year) {
+            return date.formatted(.dateTime.weekday(.wide).month(.wide).day())
+        }
+        return date.formatted(.dateTime.weekday(.wide).month(.wide).day().year())
+    }
+}

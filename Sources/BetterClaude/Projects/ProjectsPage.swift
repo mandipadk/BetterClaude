@@ -17,8 +17,20 @@ final class ProjectsModel {
     var chosen: Set<String> = []
     private(set) var added: Int?
     private(set) var decisions: [Decision] = []
+    /// Reading the selected project failed, so its page says so instead of waiting forever.
+    private(set) var detailFailed = false
     var selectedID: String? {
-        didSet { if selectedID != oldValue { loadDetail() } }
+        didSet {
+            guard selectedID != oldValue else { return }
+            // Nothing of the last project stays on screen while the next one is read.
+            detail = nil
+            decisions = []
+            corrections = []
+            chosen = []
+            added = nil
+            detailFailed = false
+            loadDetail()
+        }
     }
     private var index: HistoryIndex?
 
@@ -59,11 +71,25 @@ final class ProjectsModel {
         }
     }
 
+    /// Reads the selected project again, after a failure.
+    func retry() {
+        detailFailed = false
+        loadDetail()
+    }
+
     private func loadDetail() {
         guard let index, let summary = projects.first(where: { $0.id == selectedID }) else { detail = nil; return }
         Task {
-            let found = try? await Projects.detail(of: summary, index: index)
-            if found?.summary.id == selectedID { detail = found }
+            do {
+                let found = try await Projects.detail(of: summary, index: index)
+                guard summary.id == selectedID else { return }
+                detail = found
+                detailFailed = false
+            } catch {
+                guard summary.id == selectedID else { return }
+                if detail == nil { detailFailed = true }
+                return
+            }
             let all = (try? await Corrections.suggestions(index: index)) ?? []
             let decided = (try? await Decisions.list(index: index, project: summary.path)) ?? []
             guard summary.id == selectedID else { return }
@@ -81,8 +107,17 @@ struct ProjectsPage: View {
     var body: some View {
         let model = services.projectPages
         Group {
-            if model.selectedID != nil, let detail = model.detail {
+            if let id = model.selectedID, let detail = model.detail, detail.summary.id == id {
                 ProjectDetailView(detail: detail)
+            } else if model.selectedID != nil, model.detailFailed {
+                EmptyState(systemImage: "folder", title: "Couldn't read this project",
+                           message: "Better Claude couldn't put its page together from your history. Try again, or go back to every project.") {
+                    HStack(spacing: 8) {
+                        Button("All Projects") { services.openProject(nil) }.buttonStyle(.secondary)
+                        Button("Try Again") { model.retry() }.buttonStyle(.primary)
+                    }
+                }
+                .background(Theme.Surface.window)
             } else if model.selectedID != nil {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.Surface.window)
             } else {
@@ -126,10 +161,7 @@ struct ProjectsPage: View {
                     .buttonStyle(.plain)
                     .contextMenu {
                         Button("Open") { services.openProject(project.id) }
-                        Button("Show Conversations") {
-                            services.filter = .project(project.path)
-                            services.destination = .conversations
-                        }
+                        Button("Show Conversations") { services.showConversations(.project(project.path)) }
                         Button("New Session in Claude Code") { services.newSession(in: project.path) }
                         Divider()
                         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: project.path)]) }
@@ -204,6 +236,8 @@ private struct ProjectDetailView: View {
     let detail: ProjectDetail
     @AppStorage("projectTab") private var tab: ProjectTab = .overview
     @State private var health: MemoryHealth?
+    /// CLAUDE.md's length and when it was edited, read off the main actor.
+    @State private var claudeMDLine: String?
 
     var body: some View {
         let summary = detail.summary
@@ -233,10 +267,7 @@ private struct ProjectDetailView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Button("Show Conversations") {
-                        services.filter = .project(summary.path)
-                        services.destination = .conversations
-                    }
+                    Button("Show Conversations") { services.showConversations(.project(summary.path)) }
                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: summary.path)]) }
                     Button("Copy Path") {
                         NSPasteboard.general.clearContents()
@@ -252,9 +283,11 @@ private struct ProjectDetailView: View {
             }
             .sharedBackgroundVisibility(.hidden)
         }
-        .task(id: summary.id) {
+        .task(id: "\(summary.id)#\(services.generation)#\(services.projectPages.added ?? 0)") {
             let folder = detail.memory.first { $0.lastPathComponent == "memory" }
-            health = folder.flatMap(MemoryHealth.check)
+            let claudeMD = detail.memory.first { $0.lastPathComponent == "CLAUDE.md" }
+            health = await Task.detached(priority: .userInitiated) { folder.flatMap(MemoryHealth.check) }.value
+            claudeMDLine = await Task.detached(priority: .userInitiated) { claudeMD.map(Self.lineCount) }.value
         }
     }
 
@@ -276,7 +309,7 @@ private struct ProjectDetailView: View {
                     let claudeMD = detail.memory.first { $0.lastPathComponent == "CLAUDE.md" }
                     if let claudeMD {
                         Button { NSWorkspace.shared.open(claudeMD) } label: {
-                            Row(title: "CLAUDE.md", detail: lineCount(claudeMD)) { RowSymbol(name: "doc.text") } trailing: { Chevron() }
+                            Row(title: "CLAUDE.md", detail: claudeMDLine ?? "Reading…") { RowSymbol(name: "doc.text") } trailing: { Chevron() }
                         }
                         .buttonStyle(.plain)
                     } else {
@@ -291,8 +324,13 @@ private struct ProjectDetailView: View {
                         } trailing: {
                             if !health.unlinked.isEmpty {
                                 Button(health.unlinked.count == 1 ? "Link It" : "Link Them") {
-                                    _ = try? health.link(health.unlinked)
-                                    self.health = MemoryHealth.check(folder: health.index.deletingLastPathComponent())
+                                    do {
+                                        try health.link(health.unlinked)
+                                    } catch {
+                                        services.errorMessage = "Couldn't update MEMORY.md: \(ContinueModel.explain(error))"
+                                    }
+                                    let folder = health.index.deletingLastPathComponent()
+                                    Task { self.health = await Task.detached { MemoryHealth.check(folder: folder) }.value }
                                 }
                                 .buttonStyle(.secondary)
                             }
@@ -309,9 +347,7 @@ private struct ProjectDetailView: View {
                     }
                     ForEach(services.projectPages.decisions.prefix(8)) { decision in
                         Button {
-                            if let conversation = services.snapshot.conversations.first(where: { $0.id == decision.conversationID }) {
-                                services.show(conversation)
-                            }
+                            services.show(conversationID: decision.conversationID)
                         } label: {
                             Row(title: decision.text,
                                 detail: [decision.conversationTitle, decision.date?.listStamp.lowercasedIfWordLocal].compactMap { $0 }.joined(separator: ", ")) {
@@ -338,7 +374,7 @@ private struct ProjectDetailView: View {
         }
     }
 
-    private func lineCount(_ url: URL) -> String {
+    nonisolated private static func lineCount(_ url: URL) -> String {
         let lines = (try? String(contentsOf: url, encoding: .utf8))?.split(separator: "\n", omittingEmptySubsequences: false).count ?? 0
         let edited = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
         return "\(lines) lines" + (edited.map { ", edited \($0.listStamp.lowercasedIfWordLocal)" } ?? "")
@@ -347,16 +383,12 @@ private struct ProjectDetailView: View {
     @ViewBuilder
     private func conversations(_ summary: ProjectSummary) -> some View {
         SectionLabel(title: detail.conversations.count == 1 ? "1 conversation" : "\(detail.conversations.count) conversations",
-                     link: "Show in Conversations", action: {
-            services.filter = .project(summary.path)
-            services.destination = .conversations
-        })
+                     link: "Show in Conversations", action: { services.showConversations(.project(summary.path)) })
         Card {
             ForEach(detail.conversations) { conversation in
                 Button {
-                    services.filter = .project(summary.path)
-                    services.destination = .conversations
-                    services.selectedConversationID = conversation.id
+                    services.showConversations(.project(summary.path))
+                    services.show(conversationID: conversation.id)
                 } label: {
                     Row(title: conversation.title,
                         detail: conversation.branch.map { "\(conversation.place), on \($0)" } ?? conversation.place) {
@@ -499,9 +531,7 @@ private struct DecisionRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(decision.text).font(Theme.Font.body).fixedSize(horizontal: false, vertical: true)
                 Button {
-                    services.filter = .all
-                    services.destination = .conversations
-                    services.selectedConversationID = decision.conversationID
+                    services.show(conversationID: decision.conversationID)
                 } label: {
                     Text("\(Text("\(who), in ").foregroundStyle(.secondary))\(Text(decision.conversationTitle).foregroundStyle(Theme.accent))\(Text(decision.date.map { ", \($0.listStamp.lowercasedIfWordLocal)" } ?? "").foregroundStyle(.secondary))")
                         .font(Theme.Font.caption)

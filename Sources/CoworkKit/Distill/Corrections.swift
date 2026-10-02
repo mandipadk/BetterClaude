@@ -164,10 +164,7 @@ public enum Corrections {
         receipt.itemCount = rules.count
         let existed = fm.fileExists(atPath: file.path)
         var text = existed ? (try String(contentsOf: file, encoding: .utf8)) : ""
-        if existed {
-            let saved = try FileProvenance.saveCurrent(file, paths: paths)
-            receipt.modified.append(.init(path: file.path, backupPath: saved.path, sha256Before: try FileDigest.hex(contentsOf: file)))
-        }
+        if existed { try receipt.backUp(file, paths: paths) }
         try Undo.save(receipt)
 
         let bullets = rules.map { "- " + $0.replacingOccurrences(of: "\n", with: " ") }
@@ -182,9 +179,10 @@ public enum Corrections {
             if !text.isEmpty && !text.hasSuffix("\n") { text += "\n" }
             text += (text.isEmpty ? "" : "\n") + heading + "\n\n" + bullets.joined(separator: "\n") + "\n"
         }
-        try fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try receipt.createDirectories(at: file.deletingLastPathComponent())
+        try Undo.save(receipt)
         try AtomicWrite.write(Data(text.utf8), to: file)
-        if !existed { try receipt.recordCreatedFile(at: file) }
+        if existed { try receipt.recordModified(at: file) } else { try receipt.recordCreatedFile(at: file) }
         receipt.completed = true
         try Undo.save(receipt)
         return receipt

@@ -57,8 +57,8 @@ public enum Decisions {
         var filters = ["(m.kind = 'compaction' OR m.kind = 'message')"]
         var values: [SQLiteValue] = []
         if let project {
-            filters.append("(c.project_path = ? OR c.project_path LIKE ?)")
-            values += [.text(project), .text(project + "/%")]
+            filters.append("(c.project_path = ? OR c.project_path LIKE ? ESCAPE '\\')")
+            values += [.text(project), .like("", project, "/%")]
         }
         if let accounts {
             filters.append("c.account_id IN (\(accounts.map { _ in "?" }.joined(separator: ",")))")

@@ -32,11 +32,23 @@ struct Place: Equatable {
     var projectID: String?
 }
 
-/// Narrows the conversation timeline to one install or one project folder.
+/// Narrows the conversation timeline to one install or one project folder, or shows the
+/// archived conversations, which every other list and count leaves out.
 enum ConversationFilter: Hashable {
     case all
     case install(String)
     case project(String)
+    case archived
+
+    func includes(_ conversation: ConversationRef) -> Bool {
+        guard conversation.isArchived == (self == .archived) else { return false }
+        switch self {
+        case .all, .archived: return true
+        case .install(let id): return conversation.installID == id
+        // Grouped the way the Projects page groups them, so worktrees count as their repository.
+        case .project(let path): return conversation.projectPath.map(Projects.root(of:)) == path
+        }
+    }
 }
 
 /// The app's one shared model. It owns the catalog of everything on the Mac and the state
@@ -118,7 +130,13 @@ final class AppServices {
         projectPages.selectedID = place.projectID
         selectedConversationID = place.conversationID
     }
-    var filter: ConversationFilter = .all
+    var filter: ConversationFilter = .all {
+        didSet {
+            // The open conversation goes when the new filter leaves it out of the list.
+            guard filter != oldValue, let open = selectedConversation, !filter.includes(open) else { return }
+            selectedConversationID = nil
+        }
+    }
     var selectedConversationID: String? {
         didSet { if selectedConversationID != oldValue { openSelected() } }
     }
@@ -153,6 +171,7 @@ final class AppServices {
 
 
     private var loadTask: Task<Void, Never>?
+    private var refreshQueued = false
     private var watcher: DirectoryWatcher?
     private var watchedRoots: [URL] = []
     private var observers: [NSObjectProtocol] = []
@@ -202,18 +221,26 @@ final class AppServices {
     // MARK: Loading
 
     /// Re-reads the machine. Cheap to call often: unchanged transcripts are not read again.
+    /// A call while a read is under way asks for one more read after it, so a stream of
+    /// changes never starves the read that's nearly done.
     func refresh() {
-        loadTask?.cancel()
+        guard loadTask == nil else {
+            refreshQueued = true
+            return
+        }
         isLoading = true
-        setup = [:]
-        credentialHints = [:]
         loadTask = Task { [catalog] in
             let fresh = await catalog.snapshot()
-            guard !Task.isCancelled else { return }
+            self.loadTask = nil
             self.snapshot = fresh
             self.generation += 1
-            self.isLoading = false
             self.hasLoaded = true
+            if self.refreshQueued {
+                self.refreshQueued = false
+                self.refresh()
+            } else {
+                self.isLoading = false
+            }
             self.updateRunning()
             self.index.update(from: fresh)
             self.pulse.start()
@@ -240,6 +267,7 @@ final class AppServices {
     /// Refreshes on its own when Claude writes a conversation, so the timeline is live.
     private func watch(_ snapshot: CatalogSnapshot) {
         let roots = DirectoryWatcher.conversationRoots(for: snapshot.installs, paths: snapshot.paths)
+            + [CodexSessions.home(paths: snapshot.paths).appendingPathComponent("sessions", isDirectory: true)]
         guard roots != watchedRoots else { return }
         watcher?.stop()
         watchedRoots = roots
@@ -300,10 +328,9 @@ final class AppServices {
                 let left = cache.at.timeIntervalSinceNow
                 let key = "cache|\(conversation.id)|\(Int(cache.at.timeIntervalSince1970))"
                 guard left > 0, left <= 120, !sent.contains(key) else { continue }
-                let rate = Pricing.rate(for: cache.model)
-                let extra = Double(cache.context) * rate.input * (2 - rate.cacheReadFactor) / 1_000_000
                 pulse.notifier.post(cacheExpiring: session.projectName, conversationID: conversation.id,
-                                    minutes: max(1, Int((left / 60).rounded(.up))), context: cache.context, extra: extra, key: key)
+                                    minutes: max(1, Int((left / 60).rounded(.up))), context: cache.context,
+                                    extra: cache.extra, key: key)
                 sent.append(key)
             }
             UserDefaults.standard.set(Array(sent.suffix(300)), forKey: Self.coachedKey)
@@ -370,18 +397,37 @@ final class AppServices {
 
     func isRunning(_ install: Install) -> Bool { running.contains(install.id) }
 
+    /// An install's conversations as counted everywhere: archived ones left out.
     func conversationCount(in install: Install) -> Int {
-        snapshot.conversations.lazy.filter { $0.installID == install.id }.count
+        snapshot.conversations.lazy.filter { $0.installID == install.id && !$0.isArchived }.count
+    }
+
+    /// Conversations you've archived, reachable from the filter.
+    var archivedCount: Int { snapshot.conversations.lazy.filter(\.isArchived).count }
+
+    /// The newest conversations worth picking up again, for Home and the palette.
+    func recentConversations(_ count: Int) -> [ConversationRef] {
+        Array(snapshot.conversations
+            .filter { !$0.isArchived && !$0.isTranscriptMissing }
+            .sorted { $0.lastActivity > $1.lastActivity }
+            .prefix(count))
+    }
+
+    /// Shows the timeline narrowed to `filter`, so Back returns to where you were.
+    func showConversations(_ filter: ConversationFilter) {
+        if destination != .conversations {
+            // Changing page records the place you left, so before the filter changes.
+            destination = .conversations
+        } else if filter != self.filter {
+            remember(currentPlace)
+        }
+        self.filter = filter
     }
 
     /// The timeline as filtered and searched.
     var visibleConversations: [ConversationRef] {
-        var list = snapshot.conversations.filter { !$0.isArchived }
-        switch filter {
-        case .all: break
-        case .install(let id): list = list.filter { $0.installID == id }
-        case .project(let path): list = list.filter { $0.projectPath == path }
-        }
+        let filter = filter
+        let list = snapshot.conversations.filter { filter.includes($0) }
         let needle = query.trimmingCharacters(in: .whitespaces)
         guard !needle.isEmpty else { return list }
         return list.filter { conversation in
@@ -533,7 +579,8 @@ final class AppServices {
 
     /// Project folders that have conversations, most active first — the choices in the filter.
     var projects: [(path: String, name: String, count: Int)] {
-        let grouped = Dictionary(grouping: snapshot.conversations.compactMap(\.projectPath), by: { $0 })
+        let paths = snapshot.conversations.filter { !$0.isArchived }.compactMap { $0.projectPath.map(Projects.root(of:)) }
+        let grouped = Dictionary(grouping: paths, by: { $0 })
         return grouped.map { (path: $0.key, name: URL(fileURLWithPath: $0.key).lastPathComponent,
                               count: $0.value.count) }
             .sorted { $0.count == $1.count ? $0.name < $1.name : $0.count > $1.count }
@@ -544,16 +591,34 @@ final class AppServices {
         case .all: return "All conversations"
         case .install(let id): return install(id)?.name ?? "Conversations"
         case .project(let path): return URL(fileURLWithPath: path).lastPathComponent
+        case .archived: return "Archived"
         }
     }
 
+    /// Opens a conversation in the timeline, widening the filter and clearing the search when
+    /// they would hide it.
     func show(_ conversation: ConversationRef) {
         destination = .conversations
         if !visibleConversations.contains(where: { $0.id == conversation.id }) {
-            filter = .all
+            filter = conversation.isArchived ? .archived : .all
             query = ""
         }
         selectedConversationID = conversation.id
+    }
+
+    /// Opens the conversation with this id, if it's on the Mac.
+    func show(conversationID id: String) {
+        if let conversation = snapshot.conversations.first(where: { $0.id == id }) { show(conversation) }
+    }
+
+    /// Where the sidebar and ⌘1–⌘6 go. Asking for the page you're on goes back to its top:
+    /// Projects returns to the list of projects.
+    func go(to page: SidebarDestination) {
+        if page == .projects, destination == .projects, projectPages.selectedID != nil {
+            openProject(nil)
+        } else {
+            destination = page
+        }
     }
 
     private func openSelected() {
@@ -697,18 +762,27 @@ final class AppServices {
 
     // MARK: Setup
 
-    /// What each install is set up with, by install id; filled on first look.
+    /// What each install is set up with, by install id; filled on first look. What was read
+    /// stays on screen until a newer read replaces it.
     private(set) var setup: [String: [ConfigItem]] = [:]
     private(set) var credentialHints: [String: [CredentialHints.Hint]] = [:]
+    private var setupGeneration: [String: Int] = [:]
+    private var readingSetup: Set<String> = []
 
+    /// Reads an install's setup again when the machine has been re-read since.
     func loadSetup(for install: Install) {
-        guard setup[install.id] == nil else { return }
+        let id = install.id
+        guard !readingSetup.contains(id), setupGeneration[id] != generation || setup[id] == nil else { return }
+        readingSetup.insert(id)
+        let generation = generation
         Task {
             let (items, hints) = await Task.detached(priority: .userInitiated) {
                 (ConfigInventory.items(for: install), CredentialHints.hints(for: install))
             }.value
-            setup[install.id] = items
-            credentialHints[install.id] = hints
+            setup[id] = items
+            credentialHints[id] = hints
+            setupGeneration[id] = generation
+            readingSetup.remove(id)
         }
     }
 

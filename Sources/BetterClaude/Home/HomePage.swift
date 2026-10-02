@@ -9,6 +9,8 @@ import TipKit
 final class HomeModel {
     private var computed: [Insight] = []
     private(set) var computing = false
+    /// Whether "Worth a look" has been worked out at least once.
+    private(set) var hasComputed = false
     /// Which group in Memory the memory insight is about, and which conversation drifted.
     private(set) var memoryGroupID: String?
     private(set) var driftConversationID: String?
@@ -54,7 +56,7 @@ final class HomeModel {
                     if let drift = Insights.drift(switches.map(\.title)) { insights.append(drift) }
                 }
                 if let breaks = try? await CacheBreaks.summary(index: index, since: week),
-                   let insight = Insights.cacheBreaks(extra: breaks.extra, breaks: breaks.breaks) {
+                   let insight = Insights.cacheBreaks(extra: breaks.extra, breaks: breaks.breaks, hourLong: breaks.hourLong) {
                     insights.append(insight)
                 }
                 return (insights, memoryGroup, drifted)
@@ -64,6 +66,7 @@ final class HomeModel {
             memoryGroupID = found.1
             driftConversationID = found.2
             computing = false
+            hasComputed = true
         }
     }
 
@@ -124,12 +127,22 @@ struct HomePage: View {
             }
         }
         .onGeometryChange(for: Bool.self) { $0.size.width > 820 } action: { wide = $0 }
-        .task(id: services.index.isReady) {
-            if services.index.isReady { services.home.refresh(services) }
+        .task(id: services.index.generation) {
+            guard services.index.isReady else { return }
+            // Each pass of the index while Claude writes would start these again; once there's
+            // something on screen, they wait for a quiet moment.
+            if services.home.hasComputed {
+                try? await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled else { return }
+            }
+            services.home.refresh(services)
+        }
+        .task(id: services.generation) {
             let dirs = services.pulse.configDirs
             let day = Date().addingTimeInterval(-86_400)
-            jobs = await Task.detached { Unattended.jobs(configDirs: dirs) }.value
-                .filter { ($0.updated ?? .distantPast) > day }
+            let found = await Task.detached { Unattended.jobs(configDirs: dirs) }.value
+            guard !Task.isCancelled else { return }
+            jobs = found.filter { ($0.updated ?? .distantPast) > day }
         }
     }
 
@@ -148,7 +161,7 @@ struct HomePage: View {
             let now = services.pulse.sessions.filter { $0.state != .needsYou }
             let shownJobs = Array(jobs.prefix(max(0, 5 - now.count)))
             SectionLabel(title: "Now",
-                         link: now.count + jobs.count > 5 ? "Show All \(now.count + jobs.count)" : nil,
+                         link: now.count + jobs.count > 5 ? "All \(now.count + jobs.count)" : nil,
                          action: { services.destination = .running })
             Card(inset: 46) {
                 if now.isEmpty && shownJobs.isEmpty {
@@ -176,7 +189,7 @@ struct HomePage: View {
     @ViewBuilder
     private var right: some View {
         VStack(alignment: .leading, spacing: 0) {
-            let quotas = services.usage.quotas.filter { $0.window(.weekly) != nil }
+            let quotas = services.usage.quotas.filter { $0.tightestWeekly != nil }
             if !quotas.isEmpty {
                 SectionLabel(title: "Limits", link: "Usage", action: { services.destination = .usage })
                 Card {
@@ -184,8 +197,7 @@ struct HomePage: View {
                 }
             }
             SectionLabel(title: "Pick up where you left off", link: "All", action: {
-                services.filter = .all
-                services.destination = .conversations
+                services.showConversations(.all)
             })
             Card(inset: 46) {
                 ForEach(recent) { conversation in
@@ -287,12 +299,7 @@ struct HomePage: View {
         return hours < 24 ? "\(hours) h" : "\(hours / 24) d"
     }
 
-    private var recent: [ConversationRef] {
-        Array(services.snapshot.conversations
-            .filter { !$0.isTranscriptMissing }
-            .sorted { $0.lastActivity > $1.lastActivity }
-            .prefix(5))
-    }
+    private var recent: [ConversationRef] { services.recentConversations(5) }
 
     private func recentDetail(_ conversation: ConversationRef) -> String {
         let place = conversation.projectName ?? services.install(for: conversation)?.name ?? "Claude"
@@ -305,11 +312,18 @@ struct HomePage: View {
         let waiting = services.pulse.needingYou.count
         let working = services.pulse.sessions.filter { $0.state == .working }.count
         if waiting > 0 { parts.append(waiting == 1 ? "One session needs you" : "\(waiting) sessions need you") }
-        if working > 0 { parts.append(working == 1 ? "one is working" : "\(working) are working") }
+        if working > 0 {
+            // After "needs you" the subject carries over; on its own the sentence needs one.
+            if waiting > 0 {
+                parts.append(working == 1 ? "one is working" : "\(working) are working")
+            } else {
+                parts.append(working == 1 ? "one session is working" : "\(working) sessions are working")
+            }
+        }
         let quotas = services.usage.quotas
         if let tight = quotas.first(where: { if case .reachesLimit? = $0.forecast { return true }; return false }),
            case .reachesLimit(let date)? = tight.forecast {
-            parts.append("\(tight.account.displayName) reaches its weekly limit \(AccountUsageSection.when(date))")
+            parts.append("\(tight.account.displayName) reaches its \(UsagePage.limitName(tight.tightestWeekly)) \(AccountUsageSection.when(date))")
         } else if !quotas.isEmpty {
             parts.append(quotas.count == 1 ? "your account has room this week" : quotas.count == 2 ? "both accounts have room this week" : "every account has room this week")
         }
@@ -320,13 +334,13 @@ struct HomePage: View {
     }
 }
 
-/// An account's weekly limit: the figure, a meter with where this week is heading, and what
-/// that means in words.
+/// An account's tightest weekly limit: the figure, a meter with where this week is heading,
+/// and what that means in words.
 struct LimitRow: View {
     let quota: AccountQuota
 
     var body: some View {
-        let weekly = quota.window(.weekly)?.percent ?? 0
+        let weekly = quota.tightestWeekly?.percent ?? 0
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 Text(quota.account.displayName).font(.system(size: 13, weight: .medium))
@@ -356,18 +370,20 @@ struct LimitRow: View {
     }
 
     private var sentence: String {
+        let window = quota.tightestWeekly
+        let lead = window.map(UsagePage.label(for:)) ?? "This week"
         switch quota.forecast {
-        case .reachesLimit(let date)?: return "This week. At this pace, \(AccountUsageSection.when(date))."
+        case .reachesLimit(let date)?: return "\(lead). At this pace, full \(AccountUsageSection.when(date))."
         case .leftAtReset(let left)?:
-            if left >= 30, let reset = quota.window(.weekly)?.resetsAt {
-                return "This week. Plenty left, resets \(reset.formatted(.dateTime.weekday(.wide).hour()))."
+            if left >= 30, let reset = window?.resetsAt {
+                return "\(lead). Plenty left, resets \(reset.formatted(.dateTime.weekday(.wide).hour()))."
             }
-            return "This week. About \(Int(left.rounded()))% left when it resets."
+            return "\(lead). About \(Int(left.rounded()))% left when it resets."
         case nil:
-            if let reset = quota.window(.weekly)?.resetsAt {
-                return "This week. Resets \(reset.formatted(.dateTime.weekday(.wide).hour().minute()))."
+            if let reset = window?.resetsAt {
+                return "\(lead). Resets \(reset.formatted(.dateTime.weekday(.wide).hour().minute()))."
             }
-            return "This week."
+            return "\(lead)."
         }
     }
 }

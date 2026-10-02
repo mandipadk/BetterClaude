@@ -44,7 +44,8 @@ final class ContinueModel: Identifiable {
     var includeUploads = false
     var includeOutputs = false
     var profile: RedactionProfile = .sameUser
-    var quitIfOpen = true
+    /// Off until the person turns it on: quitting an app is theirs to agree to.
+    var quitIfOpen = false
 
     private(set) var isPlanning = false
     private(set) var plan: ImportPlan?
@@ -54,6 +55,10 @@ final class ContinueModel: Identifiable {
     /// Set when the import stopped partway; this receipt undoes what it wrote.
     private(set) var partialReceiptID: String?
     private(set) var undone = false
+    private(set) var isUndoing = false
+    /// What Undo left in place, in words, when it couldn't take everything back.
+    private(set) var undoNote: String?
+    private(set) var undoFailure: String?
 
     private var stagingDirectory: URL?
 
@@ -93,11 +98,10 @@ final class ContinueModel: Identifiable {
         let conversations = conversations
         let options = exportOptions
         let profile = profile
-        let quit = quitIfOpen
         Task {
             let result = await Task.detached(priority: .userInitiated) {
                 Result { try Self.buildPlan(conversations: conversations, destination: destination,
-                                            options: options, profile: profile, quit: quit) }
+                                            options: options, profile: profile) }
             }.value
             isPlanning = false
             switch result {
@@ -120,8 +124,7 @@ final class ContinueModel: Identifiable {
     }
 
     nonisolated static func buildPlan(conversations: [ConversationRef], destination: ContinueDestination,
-                                      options: ExportOptions, profile: RedactionProfile,
-                                      quit: Bool) throws -> (ImportPlan, URL) {
+                                      options: ExportOptions, profile: RedactionProfile) throws -> (ImportPlan, URL) {
         let staging = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("BetterClaude-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
@@ -147,8 +150,10 @@ final class ContinueModel: Identifiable {
             endpoint = .claudeCode(projectDir: URL(fileURLWithPath: path),
                                    configDir: HostPaths.current.claudeCodeConfigDir)
         }
+        // Planned as if quitting were allowed, so an open Claude shows as the toggle in Review
+        // rather than a dead end. Whether it is allowed is the toggle's, checked again on apply.
         var importOptions = ImportOptions()
-        importOptions.quitRunningVariant = quit
+        importOptions.quitRunningVariant = true
         return (try Importer.plan(bundle: bundle, to: endpoint, options: importOptions), staging)
     }
 
@@ -182,7 +187,9 @@ final class ContinueModel: Identifiable {
     /// Takes back what this transfer wrote.
     func undo() {
         let id = receipt?.id ?? partialReceiptID
-        guard let id else { return }
+        guard let id, !isUndoing, !undone else { return }
+        isUndoing = true
+        undoFailure = nil
         Task {
             let result = await Task.detached(priority: .userInitiated) {
                 Result { () throws -> RevertResult in
@@ -192,11 +199,23 @@ final class ContinueModel: Identifiable {
                     return try Undo.revertAndRecord(receipt)
                 }
             }.value
+            isUndoing = false
             switch result {
-            case .success: undone = true
-            case .failure(let error): failure = "Couldn't undo it: \(Self.explain(error))"
+            case .success(let outcome):
+                undone = true
+                undoNote = Self.leftBehind(outcome)
+            case .failure(let error): undoFailure = "Couldn't undo it: \(Self.explain(error))"
             }
         }
+    }
+
+    /// What an undo kept, in a sentence, or `nil` when it took everything back.
+    nonisolated static func leftBehind(_ result: RevertResult) -> String? {
+        let count = result.leftInPlace.count
+        guard count > 0 else { return nil }
+        return count == 1
+            ? "One file changed since, so it was kept. Undo it again from Activity once you're done with it."
+            : "\(count) files changed since, so they were kept. Undo it again from Activity once you're done with them."
     }
 
     func cleanUp() {

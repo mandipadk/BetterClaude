@@ -115,9 +115,8 @@ public enum SpaceStore {
     @discardableResult
     public static func add(_ space: SpaceRef, toOrg orgRoot: URL) throws -> Bool {
         try WriteFence.check(orgRoot)
-        var root = (try? document(inOrg: orgRoot)) ?? .object(JSONObject())
-        if root.objectValue == nil { root = .object(JSONObject()) }
-        var list = root["spaces"]?.arrayValue ?? []
+        var root = try existingDocument(inOrg: orgRoot) ?? .object(JSONObject())
+        var list = try spacesList(in: root, orgRoot: orgRoot) ?? []
         guard !list.contains(where: { $0["id"]?.stringValue == space.id }) else { return false }
 
         let created = Int64((space.createdAt ?? Date()).timeIntervalSince1970 * 1000)
@@ -146,8 +145,8 @@ public enum SpaceStore {
     @discardableResult
     public static func remove(id: String, fromOrg orgRoot: URL) throws -> Bool {
         try WriteFence.check(orgRoot)
-        guard var root = try? document(inOrg: orgRoot),
-              let list = root["spaces"]?.arrayValue else { return false }
+        guard var root = try existingDocument(inOrg: orgRoot),
+              let list = try spacesList(in: root, orgRoot: orgRoot) else { return false }
         let kept = list.filter { $0["id"]?.stringValue != id }
         guard kept.count != list.count else { return false }
         root["spaces"] = .array(kept)
@@ -155,18 +154,52 @@ public enum SpaceStore {
         return true
     }
 
+    public enum Failure: Error, CustomStringConvertible {
+        case unreadable(path: String, reason: String)
+
+        public var description: String {
+            switch self {
+            case .unreadable(let path, let reason):
+                return "Couldn't read the projects in \(path), so it was left as it is: \(reason)"
+            }
+        }
+    }
+
+    /// The file's contents, or `nil` when there is no file. A file that is there but can't be
+    /// read as an object throws: writing over it would wipe out every project in it.
+    static func existingDocument(inOrg orgRoot: URL) throws -> JSONValue? {
+        let file = url(inOrg: orgRoot)
+        let data: Data
+        do {
+            data = try Data(contentsOf: file)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return nil
+        } catch {
+            throw Failure.unreadable(path: file.path, reason: error.localizedDescription)
+        }
+        let root: JSONValue
+        do {
+            root = try JSONValue.parse(data)
+        } catch {
+            throw Failure.unreadable(path: file.path, reason: String(describing: error))
+        }
+        guard root.objectValue != nil else {
+            throw Failure.unreadable(path: file.path, reason: "it isn't a JSON object")
+        }
+        return root
+    }
+
+    static func spacesList(in root: JSONValue, orgRoot: URL) throws -> [JSONValue]? {
+        guard let value = root["spaces"] else { return nil }
+        guard let list = value.arrayValue else {
+            throw Failure.unreadable(path: url(inOrg: orgRoot).path, reason: "its spaces aren't a list")
+        }
+        return list
+    }
+
     /// Replace the file in one step. Claude Desktop polls this path while it runs, so a reader
     /// must see either the whole old file or the whole new one and never a half-written list.
     static func writeAtomically(_ root: JSONValue, to url: URL) throws {
-        let directory = url.deletingLastPathComponent()
-        let temporary = directory.appendingPathComponent(
-            ".\(url.lastPathComponent).\(UUID().uuidString).tmp")
-        try root.serialized().write(to: temporary, options: [.withoutOverwriting])
-        do {
-            _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary)
-        } catch {
-            // No existing file to replace: move the temporary into place instead.
-            try? FileManager.default.moveItem(at: temporary, to: url)
-        }
+        try AtomicWrite.write(root.serialized(), to: url)
     }
 }

@@ -74,7 +74,7 @@ public enum LiveSessions {
 
     /// The sessions running now, most recently changed first.
     public static func running(paths: HostPaths = .current,
-                               isAlive: (Int32, String?) -> Bool = LiveSessions.isAlive(_:procStart:)) -> [LiveSession] {
+                               isAlive: ((Int32, String?) -> Bool)? = nil) -> [LiveSession] {
         var found: [LiveSession] = []
         for config in configDirs(paths: paths) {
             let dir = sessionsDir(in: config)
@@ -82,8 +82,10 @@ public enum LiveSessions {
                 at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
             where url.pathExtension == "json" {
                 guard let data = try? Data(contentsOf: url),
-                      let session = parse(data, configDir: config),
-                      isAlive(session.pid, procStart(in: data)) else { continue }
+                      let session = parse(data, configDir: config) else { continue }
+                let start = procStart(in: data)
+                guard isAlive?(session.pid, start)
+                        ?? Self.isAlive(session.pid, procStart: start, startedAt: session.startedAt) else { continue }
                 found.append(session)
             }
         }
@@ -123,12 +125,17 @@ public enum LiveSessions {
 
     // MARK: Processes
 
-    /// Whether `pid` is still the process that wrote the file: it exists, and when Claude
-    /// Code recorded its start time, it started then — so a recycled pid doesn't count.
-    public static func isAlive(_ pid: Int32, procStart: String?) -> Bool {
+    /// Whether `pid` is still the process that wrote the file, so a recycled pid doesn't
+    /// count: it started when Claude Code recorded it starting or, without a readable record
+    /// of that, no later than the session did. With neither, it can't be told apart from a
+    /// stranger.
+    public static func isAlive(_ pid: Int32, procStart: String?, startedAt: Date? = nil) -> Bool {
         guard let info = processInfo(pid) else { return false }
-        guard let procStart, let recorded = parseProcStart(procStart) else { return true }
-        return abs(info.startTime.timeIntervalSince(recorded)) < 2
+        if let procStart, let recorded = parseProcStart(procStart) {
+            return abs(info.startTime.timeIntervalSince(recorded)) < 2
+        }
+        guard let startedAt else { return false }
+        return info.startTime.timeIntervalSince(startedAt) < 2
     }
 
     /// `ps -o lstart` output, which Claude Code records in UTC.

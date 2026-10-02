@@ -86,7 +86,7 @@ struct ContinueSheet: View {
                 EmptyView()
             case .done:
                 if !model.undone {
-                    Button("Undo") { model.undo() }.quietAction()
+                    Button("Undo") { model.undo() }.quietAction().disabled(model.isUndoing)
                 }
                 Button(model.undone ? "Close" : openTitle) {
                     if !model.undone { openDestination() }
@@ -96,7 +96,7 @@ struct ContinueSheet: View {
                 .keyboardShortcut(.defaultAction)
             case .failed:
                 if model.partialReceiptID != nil, !model.undone {
-                    Button("Undo What It Wrote") { model.undo() }.quietAction()
+                    Button("Undo What It Wrote") { model.undo() }.quietAction().disabled(model.isUndoing)
                 }
                 Button("Close", action: onClose).prominentAction().keyboardShortcut(.defaultAction)
             }
@@ -495,11 +495,18 @@ private struct DoneStep: View {
                 .symbolEffect(.bounce, value: model.undone)
                 .contentTransition(.symbolEffect(.replace))
             Text(model.undone ? "Undone" : title).font(Theme.Font.title)
-            Text(model.undone ? "Everything it wrote has been removed." : detail)
+            Text(model.undone ? (model.undoNote ?? "Everything it wrote has been removed.") : detail)
                 .font(Theme.Font.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 380)
+            if let failure = model.undoFailure {
+                Label(failure, systemImage: "exclamationmark.triangle.fill")
+                    .font(Theme.Font.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 380)
+            }
         }
         .padding(24)
     }
@@ -533,11 +540,18 @@ private struct FailedStep: View {
                 .font(.system(size: 52))
                 .foregroundStyle(model.undone ? Color.secondary : Theme.failure)
             Text(model.undone ? "Undone" : "It didn't finish").font(Theme.Font.title)
-            Text(model.undone ? "Everything it wrote has been removed." : (model.failure ?? ""))
+            Text(model.undone ? (model.undoNote ?? "Everything it wrote has been removed.") : (model.failure ?? ""))
                 .font(Theme.Font.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
+            if let failure = model.undoFailure {
+                Label(failure, systemImage: "exclamationmark.triangle.fill")
+                    .font(Theme.Font.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
+            }
         }
         .padding(24)
     }

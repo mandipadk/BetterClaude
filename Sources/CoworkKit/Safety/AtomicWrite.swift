@@ -50,18 +50,37 @@ public enum AtomicWrite {
 
     /// Write `data` so that `url` either has its old contents or the complete new contents,
     /// never a prefix of the new contents.
-    public static func write(_ data: Data, to url: URL) throws {
+    ///
+    /// A symlink at `url` is followed and its target replaced, so the link survives. A file
+    /// that is already there keeps its permissions and extended attributes. A new one gets
+    /// `newFileMode`, or 0600 inside a Claude Code folder, which is what Claude Code uses.
+    public static func write(_ data: Data, to url: URL, newFileMode: mode_t? = nil) throws {
         try WriteFence.check(url)
-        let directory = url.deletingLastPathComponent()
+        let target = try resolvingLinks(url)
+        if target != url.standardizedFileURL { try WriteFence.check(target) }
+        let directory = target.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
+        var existing = stat()
+        let replacing = stat(target.path, &existing) == 0 && (existing.st_mode & S_IFMT) == S_IFREG
+        let mode = newFileMode ?? (isClaudeCodeLocation(target) ? 0o600 : 0o644)
+
         let temporary = directory.appendingPathComponent(temporaryName(prefix: "write"))
-        let fd = Darwin.open(temporary.path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
+        let fd = Darwin.open(temporary.path, O_WRONLY | O_CREAT | O_EXCL, mode)
         guard fd >= 0 else {
             throw AtomicWriteError.openFailed(path: temporary.path, code: errno)
         }
 
         do {
+            if replacing {
+                let source = Darwin.open(target.path, O_RDONLY)
+                if source >= 0 {
+                    // Best effort: an attribute the system won't let us set is not worth failing over.
+                    _ = fcopyfile(source, fd, nil, copyfile_flags_t(COPYFILE_XATTR | COPYFILE_ACL))
+                    Darwin.close(source)
+                }
+                _ = fchmod(fd, existing.st_mode & 0o7777)
+            }
             try writeAll(data, to: fd, path: temporary.path)
             guard Darwin.fsync(fd) == 0 else {
                 throw AtomicWriteError.syncFailed(path: temporary.path, code: errno)
@@ -73,12 +92,32 @@ public enum AtomicWrite {
         }
         Darwin.close(fd)
 
-        guard Darwin.rename(temporary.path, url.path) == 0 else {
+        guard Darwin.rename(temporary.path, target.path) == 0 else {
             let code = errno
             try? FileManager.default.removeItem(at: temporary)
-            throw AtomicWriteError.renameFailed(from: temporary.path, to: url.path, code: code)
+            throw AtomicWriteError.renameFailed(from: temporary.path, to: target.path, code: code)
         }
         syncDirectory(directory)
+    }
+
+    /// The file a path finally names, following a symlink at the last component (and any it
+    /// points to). The folders above are left as written: `rename(2)` follows those itself.
+    static func resolvingLinks(_ url: URL) throws -> URL {
+        var current = url.standardizedFileURL
+        for _ in 0..<32 {
+            guard let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: current.path)
+            else { return current }
+            current = (destination.hasPrefix("/")
+                ? URL(fileURLWithPath: destination)
+                : current.deletingLastPathComponent().appendingPathComponent(destination)).standardizedFileURL
+        }
+        throw AtomicWriteError.openFailed(path: url.path, code: ELOOP)
+    }
+
+    /// Inside `~/.claude`, a `.claude-*` copy, `~/.claude.json`, or the configured config folder.
+    static func isClaudeCodeLocation(_ url: URL) -> Bool {
+        let config = HostPaths.current.claudeCodeConfigDir.standardizedFileURL.path
+        return url.pathComponents.contains { $0.hasPrefix(".claude") } || url.path.hasPrefix(config + "/")
     }
 
     /// Install a fully built directory at `finalURL`, replacing whatever is there.

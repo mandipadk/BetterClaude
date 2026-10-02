@@ -38,6 +38,8 @@ public struct Transcript: Sendable {
         var lineNumber = 0
         for line in Self.splitLines(data) {
             lineNumber += 1
+            // A reader that moved on to another conversation stops paying for this one.
+            if lineNumber % 4_096 == 0, Task.isCancelled { throw CancellationError() }
             guard !line.isEmpty else { continue }
             do {
                 parsed.append(try JSONValue.parse(line))
@@ -62,31 +64,10 @@ public struct Transcript: Sendable {
     ///
     /// The temp file must be a sibling because `rename(2)` is only atomic within a
     /// filesystem, and Claude Desktop's session workspaces are routinely on a different
-    /// volume from `NSTemporaryDirectory()`.
+    /// volume from `NSTemporaryDirectory()`. A new transcript is readable only by you, as
+    /// Claude Code writes its own.
     public func write(to url: URL) throws {
-        try WriteFence.check(url)
-        let directory = url.deletingLastPathComponent()
-        let tempURL = directory.appendingPathComponent(
-            ".\(url.lastPathComponent).\(UUID().uuidString).tmp")
-
-        do {
-            try serializedData().write(to: tempURL)
-        } catch {
-            throw TranscriptError.writeFailed(url: tempURL, underlying: String(describing: error))
-        }
-
-        let moved = tempURL.withUnsafeFileSystemRepresentation { source -> Int32 in
-            url.withUnsafeFileSystemRepresentation { destination -> Int32 in
-                guard let source, let destination else { return -1 }
-                return rename(source, destination)
-            }
-        }
-        guard moved == 0 else {
-            let code = errno
-            try? FileManager.default.removeItem(at: tempURL)
-            throw TranscriptError.renameFailed(
-                from: tempURL, to: url, code: code, message: String(cString: strerror(code)))
-        }
+        try AtomicWrite.write(serializedData(), to: url, newFileMode: 0o600)
     }
 
     /// Exactly the bytes ``write(to:)`` installs: one compact JSON object per line, each
@@ -204,14 +185,42 @@ public struct Transcript: Sendable {
 
     // MARK: - Title
 
+    /// The title Claude Code would show, from the same two windows it reads. Only the
+    /// records that reach into those windows are serialized.
     public func resolvedTitle() -> (title: String, source: TitleSource) {
-        let data = serializedData()
         let window = Self.pickerWindowBytes
-        let headEnd = min(data.count, window)
-        let tailStart = max(headEnd, data.count - window)
-        let head = data.subdata(in: 0..<headEnd)
-        let tail = data.subdata(in: tailStart..<data.count)
-        return TitleResolver.resolve(head: head, tail: tail)
+        var front = Data()
+        var frontEnd = 0
+        while frontEnd < storage.count, front.count < window {
+            front.append(storage[frontEnd].serialized())
+            front.append(0x0A)
+            frontEnd += 1
+        }
+        var backPieces: [Data] = []
+        var backCount = 0
+        var backStart = storage.count
+        while backStart > frontEnd, backCount < window {
+            backStart -= 1
+            var line = storage[backStart].serialized()
+            line.append(0x0A)
+            backCount += line.count
+            backPieces.append(line)
+        }
+        let back = Data(backPieces.reversed().joined())
+        let head: Data
+        let tail: Data
+        if backStart == frontEnd {
+            // The windows meet or overlap: exactly as if the whole file had been read.
+            let data = front + back
+            let headEnd = min(data.count, window)
+            head = data.subdata(in: 0..<headEnd)
+            tail = data.subdata(in: max(headEnd, data.count - window)..<data.count)
+        } else {
+            head = front.prefix(window)
+            tail = back.suffix(window)
+        }
+        return TitleResolver.resolve(head: Data(head), tail: Data(tail),
+                                     sidecarTitle: sourceURL.flatMap(TitleResolver.sidecarTitle(forTranscript:)))
     }
 
     // MARK: - Picker filter

@@ -42,12 +42,15 @@ public enum OtherMacs {
 
         let kept = staging.appendingPathComponent("Kept", isDirectory: true)
         guard fm.fileExists(atPath: kept.appendingPathComponent("entries").path) else { return 0 }
-        if fm.fileExists(atPath: folder.path) { try fm.removeItem(at: folder) }
-        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
-        try fm.moveItem(at: kept, to: folder.appendingPathComponent("Kept", isDirectory: true))
+        // Built whole beside the old one, then swapped in, so a failure leaves the copy opened
+        // last time as it was.
+        let built = staging.appendingPathComponent("mac", isDirectory: true)
+        try fm.createDirectory(at: built, withIntermediateDirectories: true)
+        try fm.moveItem(at: kept, to: built.appendingPathComponent("Kept", isDirectory: true))
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        try AtomicWrite.write(try encoder.encode(Mac(name: name, openedAt: Date())), to: folder.appendingPathComponent("mac.json"))
+        try AtomicWrite.write(try encoder.encode(Mac(name: name, openedAt: Date())), to: built.appendingPathComponent("mac.json"))
+        try AtomicWrite.replaceDirectory(stagedAt: built, with: folder)
         return conversations(in: folder).count
     }
 

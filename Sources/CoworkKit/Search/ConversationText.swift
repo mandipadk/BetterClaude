@@ -12,13 +12,16 @@ public struct MessageText: Sendable, Identifiable {
     public let timestamp: Date?
     /// Position in the transcript, used to order results within one conversation.
     public let index: Int
+    /// What the person attached, by name: "Image", or a document's title.
+    public let attachments: [String]
 
-    public init(id: String, role: Role, text: String, timestamp: Date?, index: Int) {
+    public init(id: String, role: Role, text: String, timestamp: Date?, index: Int, attachments: [String] = []) {
         self.id = id
         self.role = role
         self.text = text
         self.timestamp = timestamp
         self.index = index
+        self.attachments = attachments
     }
 }
 
@@ -63,6 +66,30 @@ public enum ConversationText {
                 index: index))
         }
         return out
+    }
+
+    /// The text blocks of one `message` value, in order; string content is one block.
+    public static func textBlocks(of message: JSONValue) -> [String] {
+        guard let content = message["content"] else { return [] }
+        if let direct = content.stringValue { return [direct] }
+        return (content.arrayValue ?? []).compactMap { block in
+            if let raw = block.stringValue { return raw }
+            guard let type = block["type"]?.stringValue, textualBlockTypes.contains(type) else { return nil }
+            return block["text"]?.stringValue
+        }
+    }
+
+    /// Images and documents attached to one `message` value, by name.
+    public static func attachmentNames(of message: JSONValue) -> [String] {
+        (message["content"]?.arrayValue ?? []).compactMap { block in
+            switch block["type"]?.stringValue {
+            case "image": return "Image"
+            case "document":
+                let name = block["title"]?.stringValue ?? block["source"]?["file_name"]?.stringValue
+                return name.flatMap { $0.isEmpty ? nil : $0 } ?? "Document"
+            default: return nil
+            }
+        }
     }
 
     /// The prose inside one `message` value.

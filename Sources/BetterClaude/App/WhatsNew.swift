@@ -12,6 +12,18 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "1.4.0": [
+            Item(symbol: "text.bubble", title: "Conversations read the way they happened",
+                 detail: "What Claude Code adds to a conversation (task reports, command output, reminders) no longer shows as something you typed. Prompts you queued while Claude worked appear, rewound attempts fold into one line, each message shows once, and days are marked."),
+            Item(symbol: "dollarsign.circle", title: "Usage you can trust",
+                 detail: "A resumed or copied conversation's replies were counted again, about 7% too much. Each reply now counts once, Fable 5 is priced right, and per-model weekly limits like Fable's are shown and used."),
+            Item(symbol: "magnifyingglass", title: "Search finds every match",
+                 detail: "A conversation with your words far apart, with accents, or with underscores was sometimes missed. Keys in what Claude can look up are hidden before it's cut, and sub-agents are swept for secrets too."),
+            Item(symbol: "arrow.uturn.backward", title: "Undo never costs you an edit",
+                 detail: "Undo puts a file back only if it's still what Better Claude wrote, keeps a copy of whatever it replaces, and leaves alone a conversation you kept using. Writes keep a file's links and permissions."),
+            Item(symbol: "sidebar.left", title: "Calmer, steadier app",
+                 detail: "Archived conversations have a place, counts match their lists, project pages and inspector tabs no longer spin forever, ⌘F finds in a conversation, and live updates don't stall while Claude writes."),
+        ],
         "1.3.2": [
             Item(symbol: "checklist", title: "How it's counted",
                  detail: "This Mac → How It's Counted checks every number against what's on this Mac: what each Claude lists, what was found but left out and why, and anything that doesn't add up."),

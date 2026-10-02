@@ -51,6 +51,7 @@ public enum AskRetrieval {
         var options = HistorySearch.Options(accountIDs: accountIDs, includeAbsent: true,
                                             limit: maxSources, excerptsPerHit: 3)
         options.requireAllWords = false
+        options.redactSecrets = true
         options.limit = maxSources * 2
         // A conversation sharing one common word with the question is noise; keep the ones
         // with at least half its words, and always the best one.
@@ -68,7 +69,7 @@ public enum AskRetrieval {
                 SELECT text FROM messages WHERE conversation_id = ? AND kind IN ('recap', 'compaction')
                 ORDER BY ordinal DESC LIMIT 1
                 """, [.text(hit.conversationID)]).first?.text(0)
-            if let recap { passages.append("Claude's recap: " + clip(recap, 500)) }
+            if let recap { passages.append("Claude's recap: " + clip(SecretSweep.redact(recap), 500)) }
 
             var block = "[\(number)] \(hit.title) (\(hit.place)"
             if let date = hit.lastActivity { block += ", \(date.formatted(.dateTime.day().month().year()))" }

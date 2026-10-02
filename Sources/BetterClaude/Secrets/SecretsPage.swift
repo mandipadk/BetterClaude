@@ -134,9 +134,7 @@ private struct FindingRow: View {
             ForEach(Array(finding.sightings.prefix(4).enumerated()), id: \.offset) { _, sighting in
                 if let conversation = services.snapshot.conversations.first(where: { $0.id == sighting.conversationID }) {
                     Button {
-                        services.filter = .all
-                        services.destination = .conversations
-                        services.selectedConversationID = conversation.id
+                        services.show(conversation)
                     } label: {
                         Text("\(Text("\(sighting.source.description) in ").foregroundStyle(.secondary))\(Text(conversation.title).foregroundStyle(Theme.accent))")
                             .font(Theme.Font.callout)

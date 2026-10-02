@@ -54,17 +54,26 @@ public enum ModelDrift {
         }
     }
 
-    /// Unexplained switches since `since`, newest first, with the conversation's title.
-    public static func unexplained(index: HistoryIndex, since: Date) async throws -> [(title: String, change: Switch)] {
+    /// Unexplained switches between `since` and `until`, newest first, with the conversation's
+    /// title; in these accounts' conversations, when given. A switch copied into a resumed
+    /// conversation is listed once.
+    public static func unexplained(index: HistoryIndex, accountIDs: Set<String>? = nil, since: Date,
+                                   until: Date = .distantFuture) async throws -> [(title: String, change: Switch)] {
+        if accountIDs?.isEmpty == true { return [] }
+        let accounts = DistinctUsage.accounts(accountIDs)
         let candidates = try await index.rows("""
             SELECT u.conversation_id, c.title FROM usage u JOIN conversations c ON c.id = u.conversation_id
-            WHERE u.agent_id IS NULL AND u.timestamp >= ? AND u.model != '<synthetic>'
+            WHERE u.agent_id IS NULL AND u.timestamp >= ? AND u.timestamp < ? AND u.model != '<synthetic>'\(accounts.sql)
             GROUP BY u.conversation_id HAVING COUNT(DISTINCT u.model) > 1
-            """, [.date(since)])
+            ORDER BY MIN(c.first_activity)
+            """, [.date(since), .date(until)] + accounts.values)
         var all: [(String, Switch)] = []
+        var seen = Set<String>()
         for row in candidates {
             guard let id = row.text(0) else { continue }
-            for change in try await switches(conversationID: id, index: index) where change.cause == .unexplained && change.at >= since {
+            for change in try await switches(conversationID: id, index: index)
+            where change.cause == .unexplained && change.at >= since && change.at < until {
+                guard seen.insert("\(change.at.timeIntervalSince1970)|\(change.from)|\(change.to)").inserted else { continue }
                 all.append((row.text(1) ?? "Untitled", change))
             }
         }

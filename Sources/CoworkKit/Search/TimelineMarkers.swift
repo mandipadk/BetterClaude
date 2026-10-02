@@ -8,7 +8,8 @@ public struct TimelineMarker: Sendable, Identifiable, Equatable {
         /// Top-level sub-agents that set off together.
         case subagents(count: Int, descriptions: [String], cost: Double)
         case modelSwitch(ModelDrift.Switch)
-        /// A reply after a break long enough for the cache to expire.
+        /// A reply after a break long enough for the cache to expire, and what rewriting the
+        /// cache cost beyond reading it.
         case cacheBreak(gap: TimeInterval, cost: Double)
     }
 
@@ -53,7 +54,7 @@ public enum TimelineMarkers {
         for reply in record?.replies ?? [] {
             guard let gap = reply.afterBreak else { continue }
             markers.append(TimelineMarker(id: "break.\(reply.id)", at: reply.timestamp,
-                                          kind: .cacheBreak(gap: gap, cost: reply.cost)))
+                                          kind: .cacheBreak(gap: gap, cost: reply.breakExtra ?? reply.cost)))
         }
         return markers.sorted { $0.at < $1.at }
     }
@@ -70,7 +71,10 @@ public enum TimelineMarkers {
         }
         var anchors: [Int: [TimelineMarker]] = [:]
         for marker in markers {
-            let index = filled.firstIndex { ($0 ?? .distantPast) >= marker.at } ?? times.count
+            // Marker times come back from the index as floating-point seconds and can land a
+            // hair after the message they belong before.
+            let at = marker.at.addingTimeInterval(-0.001)
+            let index = filled.firstIndex { ($0 ?? .distantPast) >= at } ?? times.count
             anchors[index, default: []].append(marker)
         }
         return anchors

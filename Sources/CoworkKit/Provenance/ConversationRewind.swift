@@ -121,20 +121,20 @@ public enum ConversationRewind {
         for file in files where file.canPutBack {
             guard let before = file.before else { continue }
             let target = URL(fileURLWithPath: file.path)
-            if fm.fileExists(atPath: file.path) {
-                let saved = try FileProvenance.saveCurrent(target, paths: paths)
-                receipt.modified.append(.init(path: file.path, backupPath: saved.path,
-                                              sha256Before: try FileDigest.hex(contentsOf: target)))
+            let existed = fm.fileExists(atPath: file.path)
+            if existed {
+                try receipt.backUp(target, paths: paths)
                 try Undo.save(receipt)
             }
             if before.didNotExist {
                 try fm.removeItem(at: target)
             } else if let copy = before.copy {
-                let existed = fm.fileExists(atPath: file.path)
-                try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try receipt.createDirectories(at: target.deletingLastPathComponent())
+                try Undo.save(receipt)
                 try AtomicWrite.write(try Data(contentsOf: copy), to: target)
                 if !existed { try receipt.recordCreatedFile(at: target) }
             }
+            if existed { try receipt.recordModified(at: target) }
             try Undo.save(receipt)
         }
         receipt.completed = true

@@ -116,6 +116,9 @@ public struct TranscriptScan: Sendable {
     /// Where the next pass should start: just past the last complete line read.
     public var endOffset: Int64 = 0
     public var malformedLines = 0
+    /// Record uuids already read in this pass: a transcript can repeat a record thousands of
+    /// lines later, and the first copy is the one that counts.
+    var seenUUIDs = Set<String>()
 }
 
 public enum TranscriptScanner {
@@ -178,6 +181,7 @@ public enum TranscriptScanner {
 
     static func absorb(_ record: JSONValue, into result: inout TranscriptScan) {
         guard let type = record["type"]?.stringValue else { return }
+        if let uuid = record["uuid"]?.stringValue, !result.seenUUIDs.insert(uuid).inserted { return }
         let timestamp = record["timestamp"]?.stringValue.flatMap(Transcript.parseTimestamp)
         if let timestamp {
             if result.firstTimestamp == nil || timestamp < result.firstTimestamp! { result.firstTimestamp = timestamp }
@@ -207,15 +211,21 @@ public enum TranscriptScanner {
                 absorbReply(message, uuid: uuid, timestamp: timestamp, into: &result)
             }
             if record["isMeta"]?.boolValue == true { return }
-            let text = ConversationText.plainText(of: message)
-            guard !text.isEmpty else { return }
-            if type == "user", InjectedContext.contains(text) {
-                if text.contains("<command-name>/model") {
+            // An API error is written as a reply, but Claude didn't say it.
+            if type == "assistant", record["isApiErrorMessage"]?.boolValue == true { return }
+            let isCompaction = record["isCompactSummary"]?.boolValue == true
+            let text: String
+            if type == "user", !isCompaction {
+                let parts = InjectedContext.parts(ofBlocks: ConversationText.textBlocks(of: message))
+                if parts.contains(where: { if case .command(name: "/model", _) = $0 { return true }; return false }) {
                     result.modelMarkers.append(.init(kind: .requested, timestamp: timestamp))
                 }
-                return
+                guard let typed = InjectedContext.typedText(parts) else { return }
+                text = typed
+            } else {
+                text = ConversationText.plainText(of: message)
             }
-            let isCompaction = record["isCompactSummary"]?.boolValue == true
+            guard !text.isEmpty else { return }
             result.messages.append(.init(uuid: uuid, role: type == "user" ? .user : .assistant,
                                          kind: isCompaction ? .compaction : .message,
                                          timestamp: timestamp, text: text))
@@ -236,6 +246,10 @@ public enum TranscriptScanner {
         case "attachment":
             guard let attachment = record["attachment"] else { return }
             switch attachment["type"]?.stringValue {
+            case "queued_command":
+                guard let text = queuedPrompt(record) else { return }
+                result.messages.append(.init(uuid: record["uuid"]?.stringValue, role: .user, kind: .message,
+                                             timestamp: timestamp, text: text))
             case "model":
                 result.modelMarkers.append(.init(kind: .requested, timestamp: timestamp))
             case "deferred_tools_delta":
@@ -288,6 +302,19 @@ public enum TranscriptScanner {
         }
     }
 
+    /// A prompt the person typed while Claude was still working, which Claude Code queued and
+    /// later handed over as an attachment rather than a user record. `nil` for anything else
+    /// queued, such as a task notification or a message from another session.
+    static func queuedPrompt(_ record: JSONValue) -> String? {
+        guard record["isMeta"]?.boolValue != true, let attachment = record["attachment"],
+              attachment["type"]?.stringValue == "queued_command",
+              attachment["commandMode"]?.stringValue == "prompt",
+              attachment["origin"]?["kind"]?.stringValue == "human",
+              let prompt = attachment["prompt"] else { return nil }
+        let blocks = ConversationText.textBlocks(of: .object(JSONObject([("content", prompt)])))
+        return InjectedContext.typedText(InjectedContext.parts(ofBlocks: blocks))
+    }
+
     static func absorbReply(_ message: JSONValue, uuid: String?, timestamp: Date?,
                             into result: inout TranscriptScan) {
         if let id = message["id"]?.stringValue, let usage = message["usage"],
@@ -304,7 +331,11 @@ public enum TranscriptScanner {
                 cacheRead: usage["cache_read_input_tokens"]?.intValue ?? 0,
                 cacheWrite5m: max(0, write5m), cacheWrite1h: write1h)
             if let last = result.usage.last, last.messageID == id {
-                result.usage[result.usage.count - 1] = entry
+                // The reply started with its first record; later ones only finish it.
+                result.usage[result.usage.count - 1] = TranscriptScan.Usage(
+                    messageID: id, model: model, timestamp: last.timestamp ?? timestamp, input: entry.input,
+                    output: entry.output, cacheRead: entry.cacheRead, cacheWrite5m: entry.cacheWrite5m,
+                    cacheWrite1h: entry.cacheWrite1h)
             } else {
                 result.usage.append(entry)
             }

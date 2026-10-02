@@ -63,7 +63,7 @@ struct QuotaTests {
 
             let history = [QuotaSample(date: Date(timeIntervalSince1970: 1_000_000), fiveHour: 0, weekly: 50),
                            QuotaSample(date: Date(timeIntervalSince1970: 1_003_000), fiveHour: 0, weekly: 3)]
-            let reset = QuotaReader.estimatedWeeklyReset(history, now: Date(timeIntervalSince1970: 1_004_000))
+            let reset = QuotaReader.estimatedWeeklyReset(history)
             #expect(reset == Date(timeIntervalSince1970: 1_000_800 + 7 * 86_400))
         }
     }
@@ -95,7 +95,8 @@ struct FlightRecorderTests {
             let record = try await FlightRecord.load(conversationID: conversation.id, index: index)
             #expect(record.replies.count >= 72)
             #expect(record.compactions.count == 1)
-            #expect(record.peakContext > 150_000 && record.window == 200_000)
+            // Sonnet 5 reads up to a million tokens.
+            #expect(record.peakContext > 150_000 && record.window == 1_000_000)
             #expect(record.totalCost > 0)
             #expect(record.expensive.count == 3 && record.expensive[0].cost >= record.expensive[2].cost)
             #expect(record.replies.map(\.timestamp) == record.replies.map(\.timestamp).sorted())
@@ -175,17 +176,28 @@ struct ContextCoachTests {
             let url = try #require(conversation.transcriptURL)
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let record = #"{"type":"assistant","isSidechain":true,"timestamp":"\#(formatter.string(from: sample.now.addingTimeInterval(-60)))","message":{"role":"assistant","model":"claude-opus-5","id":"msg_full","usage":{"input_tokens":5,"output_tokens":300,"cache_read_input_tokens":170000,"cache_creation_input_tokens":1000},"content":[]}}"#
-            let handle = try FileHandle(forWritingTo: url)
-            try handle.seekToEnd()
-            try handle.write(contentsOf: Data((record + "\n").utf8))
-            try handle.close()
+            func append(_ id: String, model: String, read: Int, at: Date) throws {
+                let record = #"{"type":"assistant","isSidechain":true,"timestamp":"\#(formatter.string(from: at))","message":{"role":"assistant","model":"\#(model)","id":"\#(id)","usage":{"input_tokens":5,"output_tokens":300,"cache_read_input_tokens":\#(read),"cache_creation_input_tokens":1000},"content":[]}}"#
+                let handle = try FileHandle(forWritingTo: url)
+                try handle.seekToEnd()
+                try handle.write(contentsOf: Data((record + "\n").utf8))
+                try handle.close()
+            }
+            // Haiku reads 200K at most.
+            try append("msg_full", model: "claude-haiku-4-5-20251001", read: 170_000, at: sample.now.addingTimeInterval(-60))
             try await index.update(from: snapshot)
 
             let live = [ContextCoach.Live(sessionID: "s1", conversationID: conversation.id, project: "billing-service")]
             let nudges = try await ContextCoach.due(live, index: index, alreadySent: [], now: sample.now)
-            #expect(nudges.count == 1 && nudges[0].percent == 86 && nudges[0].key == "s1|75|0")
+            #expect(nudges.count == 1 && nudges[0].percent == 86 && nudges[0].key == "s1|200000|75|0")
             #expect(try await ContextCoach.due(live, index: index, alreadySent: Set(nudges.map(\.key)), now: sample.now).isEmpty)
+
+            // On a million-token model the same share is a new heads-up, at 750K rather than 150K.
+            try append("msg_big", model: "claude-opus-5", read: 800_000, at: sample.now.addingTimeInterval(-30))
+            try await index.update(from: snapshot)
+            let wide = try await ContextCoach.due(live, index: index, alreadySent: Set(nudges.map(\.key)), now: sample.now)
+            #expect(wide.count == 1 && wide[0].window == 1_000_000 && wide[0].percent == 80 && wide[0].key == "s1|1000000|75|0")
+
             // An hour later with nothing new, it's not running hot any more.
             #expect(try await ContextCoach.due(live, index: index, alreadySent: [], now: sample.now.addingTimeInterval(3_600)).isEmpty)
         }

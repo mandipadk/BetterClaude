@@ -45,6 +45,8 @@ struct MenuBarPanel: View {
             if !services.hasLoaded { services.refresh() }
             searchFocused = true
         }
+        // Matches for the last query go as soon as it changes, so Return never opens one of them.
+        .onChange(of: query) { found = nil }
         .task(id: query) {
             let needle = query.trimmingCharacters(in: .whitespaces)
             guard !needle.isEmpty, services.index.isReady, let index = services.index.index else {
@@ -71,7 +73,7 @@ struct MenuBarPanel: View {
     private var search: some View {
         HStack(spacing: 7) {
             Image(systemName: "magnifyingglass").font(.system(size: 12.5)).foregroundStyle(Theme.Surface.secondary)
-            TextField("Search or ask", text: $query)
+            TextField("Search", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .focused($searchFocused)
@@ -107,7 +109,7 @@ struct MenuBarPanel: View {
                     Text(HomePage.minutes(since: session.since)).font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Theme.attention)
                 } else {
-                    Text(session.state == .working ? "Working" : "Done").font(.system(size: 12))
+                    Text(session.state == .working ? "Working" : "Finished").font(.system(size: 12))
                         .foregroundStyle(Theme.Surface.secondary)
                 }
             }
@@ -139,8 +141,8 @@ struct MenuBarPanel: View {
     private var matches: [ConversationRef] {
         if let found { return found }
         let needle = query.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return services.recentConversations(5) }
         let all = services.snapshot.conversations.filter { !$0.isArchived }
-        guard !needle.isEmpty else { return Array(all.prefix(5)) }
         return Array(all.filter {
             $0.title.localizedCaseInsensitiveContains(needle)
                 || ($0.projectName?.localizedCaseInsensitiveContains(needle) ?? false)

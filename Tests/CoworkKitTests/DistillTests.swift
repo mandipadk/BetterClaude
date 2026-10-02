@@ -39,6 +39,71 @@ struct DistillTests {
         #expect(found.first?.text == "Run all the tests and fix anything that fails")
     }
 
+    @Test("Thousands of different prompts are grouped quickly, and near-identical ones still fold together")
+    func promptLibraryScales() throws {
+        let config = FileManager.default.temporaryDirectory.appendingPathComponent("prompts-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: config) }
+        var prompts = (0..<6_000).map { ("Look into ticket number \($0) about the item \($0 + 100_000) please", "/p/a") }
+        prompts += [
+            ("Summarise the open pull requests and flag risky ones", "/p/b"),
+            ("Summarise the open pull requests and flag the risky ones", "/p/b"),
+            ("summarise the open pull requests, and flag risky ones", "/p/b"),
+        ]
+        try Self.history(prompts, in: config)
+        let started = Date()
+        let found = PromptLibrary.repeated(configDirs: [config], minimumUses: 3)
+        #expect(Date().timeIntervalSince(started) < 10)
+        #expect(found.count == 1)
+        #expect(found.first?.uses == 3)
+        #expect(found.first?.variants == 1)
+    }
+
+    @Test("Grouping finds the same groups as comparing every pair")
+    func promptGroupingMatchesPairwise() throws {
+        let config = FileManager.default.temporaryDirectory.appendingPathComponent("prompts-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: config) }
+        let vocabulary = ["fix", "the", "tests", "build", "deploy", "docs", "review", "pull", "request", "and", "then",
+                          "check", "logs", "for", "errors", "update", "readme", "release", "notes", "please"]
+        var seed: UInt64 = 42
+        func next(_ bound: Int) -> Int {
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return Int((seed >> 33) % UInt64(bound))
+        }
+        let prompts = (0..<800).map { _ in
+            ((0..<(4 + next(4))).map { _ in vocabulary[next(vocabulary.count)] }.joined(separator: " ") + " now", "/p")
+        }
+        try Self.history(prompts, in: config)
+        let found = PromptLibrary.repeated(configDirs: [config], minimumUses: 1)
+
+        // Every remaining group against every other, biggest first, as before.
+        let texts = prompts.map(\.0).filter { $0.split(separator: " ").count >= 4 && $0.count >= 20 }
+        var groups: [String: Int] = [:]
+        for text in texts { groups[PromptLibrary.normalize(text), default: 0] += 1 }
+        var keys = groups.keys.sorted { (groups[$0]!, $1) > (groups[$1]!, $0) }
+        var expected: [String: (uses: Int, variants: Int)] = [:]
+        while let key = keys.first {
+            keys.removeFirst()
+            let own = Set(key.split(separator: " "))
+            var uses = groups[key]!, variants = 0
+            if own.count >= 4 {
+                keys.removeAll { other in
+                    let theirs = Set(other.split(separator: " "))
+                    guard theirs.count >= 4,
+                          Double(own.intersection(theirs).count) / Double(own.union(theirs).count) >= 0.75 else { return false }
+                    uses += groups[other]!
+                    variants += 1
+                    return true
+                }
+            }
+            expected[key] = (uses, variants)
+        }
+        #expect(found.count == expected.count)
+        for prompt in found {
+            #expect(expected[prompt.key]?.uses == prompt.uses, "\(prompt.key)")
+            #expect(expected[prompt.key]?.variants == prompt.variants, "\(prompt.key)")
+        }
+    }
+
     @Test("A prompt becomes a skill with a sensible name, and Undo takes it out")
     func skills() throws {
         try FixtureHomeTests.withSample { sample in

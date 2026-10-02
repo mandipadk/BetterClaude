@@ -30,14 +30,22 @@ public enum Subagents {
 
     /// A conversation's sub-agent transcripts, if it has any.
     public static func files(beside transcript: URL) -> [File] {
+        transcripts(beside: transcript).map { load($0.url, agentID: $0.agentID) }
+    }
+
+    /// Where a conversation's sub-agent transcripts are, without opening any of them.
+    static func transcripts(beside transcript: URL) -> [(url: URL, agentID: String)] {
         let folder = transcript.deletingPathExtension().appendingPathComponent("subagents", isDirectory: true)
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else { return [] }
         return names.filter { $0.hasPrefix("agent-") && $0.hasSuffix(".jsonl") }.sorted().map { name in
-            let agentID = String(name.dropFirst("agent-".count).dropLast(".jsonl".count))
-            let meta = (try? Data(contentsOf: folder.appendingPathComponent("agent-\(agentID).meta.json")))
-                .flatMap { try? JSONDecoder().decode(Meta.self, from: $0) }
-            return File(url: folder.appendingPathComponent(name), agentID: agentID, meta: meta)
+            (folder.appendingPathComponent(name), String(name.dropFirst("agent-".count).dropLast(".jsonl".count)))
         }
+    }
+
+    static func load(_ url: URL, agentID: String) -> File {
+        let meta = (try? Data(contentsOf: url.deletingLastPathComponent().appendingPathComponent("agent-\(agentID).meta.json")))
+            .flatMap { try? JSONDecoder().decode(Meta.self, from: $0) }
+        return File(url: url, agentID: agentID, meta: meta)
     }
 
     /// One sub-agent's run, as the index keeps it.

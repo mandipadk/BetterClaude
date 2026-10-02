@@ -273,9 +273,11 @@ public enum CodexSessions {
     /// A user message's text, unless it's context Codex injected rather than something typed.
     static func userText(_ message: JSONValue) -> String? {
         guard message["type"]?.stringValue == "message", message["role"]?.stringValue == "user" else { return nil }
-        let text = messageText(message)
-        guard !text.isEmpty, !isInjected(text) else { return nil }
-        return text
+        let blocks = (message["content"]?.arrayValue ?? []).compactMap { block -> String? in
+            guard let type = block["type"]?.stringValue, type.hasSuffix("text") else { return nil }
+            return block["text"]?.stringValue
+        }
+        return InjectedContext.typedText(InjectedContext.parts(ofBlocks: blocks))
     }
 
     static func messageText(_ message: JSONValue) -> String {
@@ -284,8 +286,6 @@ public enum CodexSessions {
             return block["text"]?.stringValue
         }.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
-
-    static func isInjected(_ text: String) -> Bool { InjectedContext.contains(text) }
 
     public static func scan(_ url: URL) throws -> TranscriptScan {
         let data: Data

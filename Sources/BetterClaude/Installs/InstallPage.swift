@@ -191,7 +191,8 @@ struct InstallPage: View {
     }
 
     private var conversations: some View {
-        let list = services.snapshot.conversations(in: install.id)
+        // Counted the way the sidebar and the timeline count: archived ones left out.
+        let list = services.snapshot.conversations(in: install.id).filter { !$0.isArchived }
         return DetailSection(title: "Conversations", subtitle: conversationsSubtitle(list) + leftOut) {
             if !list.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
@@ -217,8 +218,7 @@ struct InstallPage: View {
                 .padding(.horizontal, -8)
                 if list.count > 5 {
                     Button("Show All \(list.count)") {
-                        services.filter = .install(install.id)
-                        services.destination = .conversations
+                        services.showConversations(.install(install.id))
                     }
                     .buttonStyle(.secondary)
                 }

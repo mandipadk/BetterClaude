@@ -40,13 +40,20 @@ public enum SecretSweep {
         Kind(id: "npm", name: "npm token", rotateURL: URL(string: "https://docs.npmjs.com/revoking-access-tokens"),
              prefixes: ["npm_"], pattern: #"npm_[A-Za-z0-9]{36}(?![A-Za-z0-9])"#),
         Kind(id: "private-key", name: "Private key", rotateURL: nil,
-             prefixes: ["PRIVATE KEY-----"], pattern: #"-----BEGIN (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----(?:\\n|\s)+[A-Za-z0-9+/=]{40}"#),
+             // Line breaks as themselves, as JSON's \n, or escaped again inside a JSON string.
+             prefixes: ["PRIVATE KEY-----"], pattern: #"-----BEGIN (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----(?:\\+[nr]|\s)+[A-Za-z0-9+/=]{40}"#),
     ]
 
     static let expressions: [(Kind, NSRegularExpression)] = kinds.compactMap { kind in
-        // Not the tail of a longer word: "task-…" isn't an OpenAI key.
-        (try? NSRegularExpression(pattern: "(?<![A-Za-z0-9_])" + kind.pattern)).map { (kind, $0) }
+        // Not the tail of a longer word: "task-…" isn't an OpenAI key. A JSON escape just
+        // before it (`\n`, `\t`, `\u0022`) ends the word before, though it ends in a letter.
+        let boundary = #"(?:(?<![A-Za-z0-9_])|(?<=\\[nrtbf])|(?<=\\u[0-9A-Fa-f]{4}))"#
+        return (try? NSRegularExpression(pattern: boundary + kind.pattern)).map { (kind, $0) }
     }
+
+    /// The rest of a private key after what its pattern matched, through its END line.
+    static let privateKeyBody = try? NSRegularExpression(
+        pattern: #"\G(?:[A-Za-z0-9+/=]|\\+[nr]|\s)*(?:-----END (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----)?"#)
 
     /// Where in a conversation a key appeared.
     public enum Source: String, Sendable, Codable {
@@ -114,17 +121,26 @@ public enum SecretSweep {
         let hits = matches(in: text)
         guard !hits.isEmpty else { return text }
         let result = NSMutableString(string: text)
+        let length = (text as NSString).length
         for hit in hits.sorted(by: { $0.range.location > $1.range.location }) {
-            result.replaceCharacters(in: hit.range, with: "[\(hit.kind.name.lowercased()) hidden]")
+            var range = hit.range
+            // A private key's pattern stops after its first line; the rest is just as secret.
+            if hit.kind.id == "private-key", let body = privateKeyBody?.firstMatch(
+                in: text, options: [.anchored], range: NSRange(location: NSMaxRange(range), length: length - NSMaxRange(range))) {
+                range.length += body.range.length
+            }
+            result.replaceCharacters(in: range, with: "[\(hit.kind.name.lowercased()) hidden]")
         }
         return result as String
     }
 
-    /// Every conversation file on the Mac: Claude's transcripts, Codex sessions and imported
-    /// claude.ai conversations.
+    /// Every conversation file on the Mac: Claude's transcripts and their sub-agents', Codex
+    /// sessions and imported claude.ai conversations.
     public static func files(in snapshot: CatalogSnapshot) -> [(conversationID: String, url: URL)] {
-        snapshot.conversations.compactMap { conversation in
-            (conversation.transcriptURL ?? conversation.external?.fileURL).map { (conversation.id, $0) }
+        snapshot.conversations.flatMap { conversation -> [(conversationID: String, url: URL)] in
+            guard let url = conversation.transcriptURL ?? conversation.external?.fileURL else { return [] }
+            let agents = conversation.transcriptURL.map { Subagents.transcripts(beside: $0) } ?? []
+            return [(conversation.id, url)] + agents.map { (conversation.id, $0.url) }
         }
     }
 
@@ -141,8 +157,16 @@ public enum SecretSweep {
             var local: [(Kind, String, String, Source)] = []
             if let data = try? Data(contentsOf: file.url, options: .mappedIfSafe) {
                 for hit in candidates(in: data, needles: needles) {
-                    let hits = matches(in: String(decoding: data[hit.window], as: UTF8.self))
+                    let window = String(decoding: data[hit.window], as: UTF8.self)
+                    var hits = matches(in: window)
                     guard !hits.isEmpty else { continue }
+                    // A key running on past the window would be taken cut short: match its whole line.
+                    let length = (window as NSString).length
+                    if hits.contains(where: { NSMaxRange($0.range) == length }),
+                       hit.window.upperBound < data.count, data[hit.window.upperBound] != 0x0A {
+                        // Other keys on the line come along too; each is counted once all the same.
+                        hits = matches(in: String(decoding: data[line(around: hit.at, in: data)], as: UTF8.self))
+                    }
                     let source = Self.source(of: data[line(around: hit.at, in: data)])
                     for match in hits { local.append((match.kind, match.value, fingerprint(match.value), source)) }
                 }
@@ -185,11 +209,8 @@ public enum SecretSweep {
                     position = at + needle.count
                     // Keys start a word: "task-" and "desk-" aren't worth decoding. (Stripe's
                     // prefix starts mid-word by design, and a key block's by its dashes.)
-                    if at > 0, needle.first != UInt8(ascii: "k"), needle.first != UInt8(ascii: "P") {
-                        let before = raw[at - 1]
-                        if before == UInt8(ascii: "_") || (before >= 0x30 && before <= 0x39)
-                            || ((before | 0x20) >= 0x61 && (before | 0x20) <= 0x7A) { continue }
-                    }
+                    if at > 0, needle.first != UInt8(ascii: "k"), needle.first != UInt8(ascii: "P"),
+                       isWordByte(raw[at - 1]), !endsEscape(raw, at: at) { continue }
                     // Anthropic keys contain "sk-", so one hit's window covers the other.
                     if windows.contains(at) { continue }
                     // Within its own line: a key in the next record belongs to that record.
@@ -203,6 +224,21 @@ public enum SecretSweep {
             }
         }
         return found
+    }
+
+    static func isWordByte(_ byte: UInt8) -> Bool {
+        byte == UInt8(ascii: "_") || (byte >= 0x30 && byte <= 0x39) || ((byte | 0x20) >= 0x61 && (byte | 0x20) <= 0x7A)
+    }
+
+    /// Whether a JSON escape, `\n` or `\u0022`, ends just before `at`.
+    static func endsEscape(_ raw: UnsafeRawBufferPointer, at: Int) -> Bool {
+        let backslash = UInt8(ascii: "\\")
+        if at >= 2, raw[at - 2] == backslash, "nrtbf".utf8.contains(raw[at - 1]) { return true }
+        guard at >= 6, raw[at - 6] == backslash, raw[at - 5] == UInt8(ascii: "u") else { return false }
+        return (at - 4..<at).allSatisfy { index in
+            let byte = raw[index] | 0x20
+            return (byte >= 0x30 && byte <= 0x39) || (byte >= 0x61 && byte <= 0x66)
+        }
     }
 
     /// Who put the key there, from the record around it.

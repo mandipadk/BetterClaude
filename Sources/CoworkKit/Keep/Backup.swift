@@ -15,8 +15,13 @@ public enum Backup {
     public static let minimumPasswordLength = 20
 
     /// What goes in, by folder or file within Better Claude's own folder. The index isn't
-    /// here: it's rebuilt from Claude's files and the kept copies.
-    static let included = ["Kept", "Imports", "receipts", "Recall", "Backups", "Restores"]
+    /// here: it's rebuilt from Claude's files and the kept copies. Nor is `Backups`: its
+    /// copies of Claude's settings carry the `env` values MCP servers are given, API keys
+    /// among them, and a backup is a file people put in iCloud.
+    static let included = ["Kept", "Imports", "receipts", "Recall", "Restores"]
+
+    /// Copies of a Desktop config set aside before a change. Left out for the same reason.
+    static let excludedNames: Set<String> = ["claude_desktop_config.json"]
 
     public enum Failure: Error, CustomStringConvertible {
         case passwordTooShort
@@ -83,6 +88,7 @@ public enum Backup {
                 guard message == .searchPruneDirectory || message == .searchExclude else { return .ok }
                 let components = path.components.map(\.string)
                 guard let top = components.first else { return .ok }
+                if let name = components.last, excludedNames.contains(name) { return .skip }
                 return included.contains(top) ? .ok : .skip
             })
             try encoder.close()
@@ -99,14 +105,47 @@ public enum Backup {
             guard let walker = fm.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey]) else { continue }
             for case let item as URL in walker {
                 let values = try? item.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-                guard values?.isRegularFile == true else { continue }
+                guard values?.isRegularFile == true, !excludedNames.contains(item.lastPathComponent) else { continue }
                 report.files += 1
                 report.bytes += Int64(values?.fileSize ?? 0)
             }
         }
-        if fm.fileExists(atPath: destination.path) { try fm.removeItem(at: destination) }
-        try fm.moveItem(at: partial, to: destination)
+        // The new archive has to open before it takes the old one's place.
+        guard opens(partial, password: password) else {
+            throw Failure.couldNotWrite("the new backup couldn't be read back")
+        }
+        do {
+            if fm.fileExists(atPath: destination.path) {
+                _ = try fm.replaceItemAt(destination, withItemAt: partial)
+            } else {
+                try fm.moveItem(at: partial, to: destination)
+            }
+        } catch {
+            throw Failure.couldNotWrite(error.localizedDescription)
+        }
         return report
+    }
+
+    /// Whether `backup` decrypts with `password` far enough to read its first entry.
+    static func opens(_ backup: URL, password: String) -> Bool {
+        guard let input = ArchiveByteStream.fileStream(path: FilePath(backup.path), mode: .readOnly, options: [],
+                                                       permissions: FilePermissions(rawValue: 0o644)),
+              let context = ArchiveEncryptionContext(from: input) else { return false }
+        defer { try? input.close() }
+        guard (try? context.setPassword(password)) != nil,
+              let decrypted = ArchiveByteStream.decryptionStream(readingFrom: input, encryptionContext: context),
+              let decoder = ArchiveStream.decodeStream(readingFrom: decrypted)
+        else { return false }
+        defer {
+            try? decoder.close()
+            try? decrypted.close()
+        }
+        do {
+            _ = try decoder.readHeader()
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// Opens a backup and adds whatever it holds that isn't here already. Nothing already on

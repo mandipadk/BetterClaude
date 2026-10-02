@@ -136,6 +136,120 @@ struct HistoryIndexTests {
         }
     }
 
+    private func append(_ lines: [String], to url: URL) throws {
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data((lines.joined(separator: "\n") + "\n").utf8))
+        try handle.close()
+    }
+
+    @Test("A stretch another process already appended isn't appended twice")
+    func appendsOnlyAtTheRecordedOffset() async throws {
+        try await Self.withSample { _, snapshot, index in
+            try await index.update(from: snapshot)
+            let conversation = try #require(snapshot.conversations.first {
+                $0.title == "Retry failed webhook deliveries with backoff" })
+            let url = try #require(conversation.transcriptURL)
+            let stored = try #require(try await index.rows(
+                "SELECT indexed_bytes, message_count FROM conversations WHERE id = ?", [.text(conversation.id)]).first)
+            let before = try await index.messages(in: conversation.id).count
+
+            try append([line(["type": "user", "uuid": "late", "message": ["role": "user", "content": "One more thing"]])], to: url)
+            // What a second writer read from the old offset, still to be written back.
+            let stale = try TranscriptScanner.scan(url, from: stored.int(0))
+            #expect(try await index.update(from: snapshot) == 1)
+            let size = try #require((try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value)
+            try await index.writeBatch([(conversation, url, size, 0, stored.int(0), stored.int(1), stale)])
+            #expect(try await index.messages(in: conversation.id).count == before + 1)
+        }
+    }
+
+    @Test("A transcript touched but not grown isn't read again")
+    func touchedButNotGrown() async throws {
+        try await Self.withSample { _, snapshot, index in
+            try await index.update(from: snapshot)
+            let conversation = try #require(snapshot.conversations.first {
+                $0.title == "Retry failed webhook deliveries with backoff" })
+            let url = try #require(conversation.transcriptURL)
+            let before = try await index.messages(in: conversation.id)
+            try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: url.path)
+            #expect(try await index.update(from: snapshot) == 0)
+            #expect(try await index.update(from: snapshot) == 0)
+            #expect(try await index.messages(in: conversation.id) == before)
+        }
+    }
+
+    @Test("File versions written later in a session are placed in the folder it started in")
+    func fileVersionsUseTheFirstFolder() async throws {
+        try await Self.withSample { _, snapshot, index in
+            let conversation = try #require(snapshot.conversations.first {
+                $0.title == "Retry failed webhook deliveries with backoff" })
+            let url = try #require(conversation.transcriptURL)
+            try append([line(["type": "user", "uuid": "first", "cwd": "/work/start",
+                              "message": ["role": "user", "content": "Begin here"]])], to: url)
+            try await index.update(from: snapshot)
+            let first = try #require(try await index.rows(
+                "SELECT first_cwd FROM conversations WHERE id = ?", [.text(conversation.id)]).first?.text(0))
+
+            try append([
+                line(["type": "user", "uuid": "moved", "cwd": "/work/elsewhere",
+                      "message": ["role": "user", "content": "Now over here"]]),
+                line(["type": "file-history-delta", "trackingPath": "Sources/Late.swift",
+                      "backup": ["version": 1, "backupFileName": "late@v1", "backupTime": "2026-09-01T10:00:00.000Z"]]),
+            ], to: url)
+            #expect(try await index.update(from: snapshot) == 1)
+            let paths = try await index.rows("SELECT file_path FROM file_versions WHERE conversation_id = ? AND file_path LIKE '%Late.swift'",
+                                             [.text(conversation.id)]).compactMap { $0.text(0) }
+            #expect(paths == [URL(fileURLWithPath: first).appendingPathComponent("Sources/Late.swift").standardizedFileURL.path])
+        }
+    }
+
+    @Test("A rebuild empties the index in place and fills it again")
+    func rebuildsInPlace() async throws {
+        try await Self.withSample { _, snapshot, index in
+            try await index.update(from: snapshot)
+            let full = try await index.summary()
+            try await index.reset()
+            #expect(try await index.summary().messages == 0)
+            try await index.update(from: snapshot)
+            #expect(try await index.summary() == full)
+        }
+    }
+
+    @Test("A new version's index starts from the last one, keeping what only it remembers")
+    func carriesTheLastVersionForward() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("carry-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let previous = HistoryIndex.schemaVersion - 1
+        let old = folder.appendingPathComponent("history-v\(previous).sqlite")
+        do {
+            let index = try HistoryIndex(url: old)
+            try await HistorySearchTests.add([("gone", "Deleted long ago", ["the zeppelin migration notes"]),
+                                              ("here", "Still here", ["the zeppelin rollout"])], to: index)
+            _ = try await index.rows("UPDATE conversations SET present = 0 WHERE id = 'gone'")
+            _ = try await index.rows("UPDATE conversations SET indexed_bytes = 99, source_size = 99 WHERE id = 'here'")
+        }
+        // What the previous version's file looked like.
+        do {
+            let raw = try SQLiteDatabase(url: old)
+            try raw.execute("""
+                ALTER TABLE conversations DROP COLUMN first_cwd;
+                ALTER TABLE tool_calls DROP COLUMN tool_use_id;
+                PRAGMA user_version = \(previous);
+                """)
+        }
+
+        let index = try HistoryIndex(url: folder.appendingPathComponent("history-v\(HistoryIndex.schemaVersion).sqlite"))
+        let kept = try await index.search("zeppelin", options: .init(includeAbsent: true))
+        #expect(Set(kept.map(\.conversationID)) == ["gone", "here"])
+        let rows = try await index.rows("SELECT id, indexed_bytes, source_size, first_cwd FROM conversations ORDER BY id")
+        #expect(rows.map { $0.int(1) } == [0, 0])
+        #expect(rows.last?.int(2) == -1)
+        #expect(!FileManager.default.fileExists(atPath: old.path))
+        let left = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        #expect(left.allSatisfy { $0.hasPrefix("history-v\(HistoryIndex.schemaVersion)") }, "\(left)")
+    }
+
     @Test("Tokens are recorded once per reply")
     func recordsUsage() async throws {
         try await Self.withSample { _, snapshot, index in

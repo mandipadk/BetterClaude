@@ -26,7 +26,7 @@ struct SetupSection: View {
                 }
             }
         }
-        .task(id: install.id) { services.loadSetup(for: install) }
+        .task(id: "\(install.id)#\(services.generation)") { services.loadSetup(for: install) }
     }
 
     private func kinds(in items: [ConfigItem]) -> [ConfigKind] {

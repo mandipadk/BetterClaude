@@ -64,7 +64,7 @@ public struct MonthStats: Sendable, Equatable {
         var models: [String: Int] = [:]
         for row in try await index.rows("""
             SELECT model, COUNT(*), SUM(input), SUM(output), SUM(cache_read), SUM(cache_write_5m), SUM(cache_write_1h)
-            FROM usage WHERE timestamp >= ? AND timestamp < ? GROUP BY model
+            FROM \(DistinctUsage.table) WHERE timestamp >= ? AND timestamp < ? GROUP BY model
             """, range) {
             guard let model = row.text(0) else { continue }
             let count = Int(row.int(1))

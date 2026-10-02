@@ -15,6 +15,8 @@ public struct FlightRecord: Sendable, Equatable {
         /// When this reply came after the prompt cache had expired and had to write the
         /// conversation back into it: how long the break was.
         public var afterBreak: TimeInterval? = nil
+        /// What rewriting the cache cost beyond reading it, when `afterBreak` is set.
+        public var breakExtra: Double? = nil
     }
 
     public let replies: [Reply]
@@ -26,8 +28,9 @@ public struct FlightRecord: Sendable, Equatable {
 
     public var totalCost: Double { replies.reduce(0) { $0 + $1.cost } + agentCost }
     public var peakContext: Int { replies.map(\.context).max() ?? 0 }
-    /// The model's context window: 200K, or a million once a conversation went past that.
-    public var window: Int { peakContext > 200_000 ? 1_000_000 : 200_000 }
+    /// The context window of the model the conversation is on now; a million once it has
+    /// gone past 200K, whatever the model.
+    public var window: Int { Pricing.contextWindow(for: replies.last?.model ?? "", peak: peakContext) }
     /// The most expensive replies, most expensive first.
     public var expensive: [Reply] { Array(replies.sorted { $0.cost > $1.cost }.prefix(3)) }
     /// Share of the conversation's own replies' cost the most expensive tenth of them made.
@@ -38,12 +41,14 @@ public struct FlightRecord: Sendable, Equatable {
         return replies.map(\.cost).sorted(by: >).prefix(count).reduce(0, +) / own
     }
 
+    /// Every reply in the conversation's file, including any copied from the session it was
+    /// resumed from: this is the conversation as it reads.
     public static func load(conversationID: String, index: HistoryIndex) async throws -> FlightRecord {
         let rows = try await index.rows("""
             SELECT model, timestamp, input, output, cache_read, cache_write_5m, cache_write_1h FROM usage
             WHERE conversation_id = ? AND agent_id IS NULL AND timestamp IS NOT NULL ORDER BY timestamp
             """, [.text(conversationID)])
-        let breaks = Dictionary(CacheBreaks.detect(conversationID: conversationID, rows: rows).map { ($0.at, $0.gap) },
+        let breaks = Dictionary(CacheBreaks.detect(conversationID: conversationID, rows: rows).map { ($0.at, $0) },
                                 uniquingKeysWith: { first, _ in first })
         let replies = rows.enumerated().compactMap { offset, row -> Reply? in
             guard let model = row.text(0), let time = row.date(1) else { return nil }
@@ -52,7 +57,7 @@ public struct FlightRecord: Sendable, Equatable {
                          output: Int(output),
                          cost: Pricing.cost(model: model, input: input, output: output, cacheRead: read,
                                             cacheWrite5m: write5, cacheWrite1h: write1),
-                         afterBreak: breaks[time])
+                         afterBreak: breaks[time]?.gap, breakExtra: breaks[time]?.extra)
         }
         let compactions = try await index.rows("""
             SELECT timestamp FROM messages WHERE conversation_id = ? AND kind = 'compaction' AND timestamp IS NOT NULL
@@ -91,22 +96,33 @@ public enum CacheBreaks {
     /// Only conversations this big are worth a word: re-reading a small one costs little.
     static let minimumContext: Int64 = 20_000
 
+    /// What writing tokens into the cache costs beyond reading them from it, at list prices.
+    /// Every place that prices a cache break uses this.
+    public static func extra(model: String, written5m: Int64, written1h: Int64) -> Double {
+        let rate = Pricing.rate(for: model)
+        let written = Double(written5m) * 1.25 + Double(written1h) * 2
+        return (written - Double(written5m + written1h) * rate.cacheReadFactor) * rate.input / 1_000_000
+    }
+
     /// Breaks in a conversation, from its usage rows: model, timestamp, input, output,
-    /// cache read, 5-minute write, 1-hour write, in time order.
-    static func detect(conversationID: String, rows: [SQLiteRow]) -> [Break] {
+    /// cache read, 5-minute write, 1-hour write, in time order. A row `counts` rejects still
+    /// keeps the time, but isn't reported as a break.
+    static func detect(conversationID: String, rows: [SQLiteRow],
+                       counts: (SQLiteRow) -> Bool = { _ in true }) -> [Break] {
         var found: [Break] = []
+        // How the cache was last written decides how long it lasts.
+        var hourLong = false
         for index in rows.indices.dropFirst() {
             let previous = rows[index - 1], row = rows[index]
+            if previous.int(5) + previous.int(6) > 0 { hourLong = previous.int(6) > 0 }
             guard let then = previous.date(1), let now = row.date(1), let model = row.text(0) else { continue }
-            let ttl: TimeInterval = previous.int(6) > 0 ? 3_600 : 300
+            let ttl: TimeInterval = hourLong ? 3_600 : 300
             let gap = now.timeIntervalSince(then)
             let written = row.int(5) + row.int(6)
             let context = row.int(2) + row.int(4) + written
-            guard gap > ttl, context >= minimumContext, written * 2 > context else { continue }
-            let rate = Pricing.rate(for: model)
-            let multiplier = row.int(6) > 0 ? 2.0 : 1.25
-            let extra = Double(written) * rate.input * (multiplier - rate.cacheReadFactor) / 1_000_000
-            found.append(Break(conversationID: conversationID, at: now, gap: gap, tokens: written, extra: extra))
+            guard gap > ttl, context >= minimumContext, written * 2 > context, counts(row) else { continue }
+            found.append(Break(conversationID: conversationID, at: now, gap: gap, tokens: written,
+                               extra: extra(model: model, written5m: row.int(5), written1h: row.int(6))))
         }
         return found
     }
@@ -121,25 +137,48 @@ public enum CacheBreaks {
         public let hourLong: Bool
         /// The longest gap, and which conversation it was in.
         public var longest: Break?
+
+        /// Summaries of separate accounts or stretches, as one.
+        public static func combined(_ summaries: [Summary]) -> Summary {
+            var projects: [String: (Double, Int)] = [:]
+            for project in summaries.flatMap(\.projects) {
+                projects[project.name] = ((projects[project.name]?.0 ?? 0) + project.extra,
+                                          (projects[project.name]?.1 ?? 0) + project.breaks)
+            }
+            return Summary(breaks: summaries.reduce(0) { $0 + $1.breaks }, tokens: summaries.reduce(0) { $0 + $1.tokens },
+                           extra: summaries.reduce(0) { $0 + $1.extra },
+                           projects: projects.map { ($0.key, $0.value.0, $0.value.1) }.sorted { $0.1 > $1.1 },
+                           hourLong: summaries.filter(\.hourLong).count * 2 >= summaries.count,
+                           longest: summaries.compactMap(\.longest).max { $0.gap < $1.gap })
+        }
     }
 
-    public static func summary(index: HistoryIndex, since: Date, until: Date = .distantFuture) async throws -> Summary {
-        let rows = try await index.rows("""
+    /// Breaks between `since` and `until`, in these accounts' conversations when given. A reply
+    /// copied into a resumed conversation is counted where it first appeared.
+    public static func summary(index: HistoryIndex, accountIDs: Set<String>? = nil, since: Date,
+                               until: Date = .distantFuture) async throws -> Summary {
+        let accounts = DistinctUsage.accounts(accountIDs)
+        let rows = accountIDs?.isEmpty == true ? [] : try await index.rows("""
             SELECT u.model, u.timestamp, u.input, u.output, u.cache_read, u.cache_write_5m, u.cache_write_1h,
-                   u.conversation_id, c.project_path
-            FROM usage u JOIN conversations c ON c.id = u.conversation_id
-            WHERE u.agent_id IS NULL AND u.timestamp >= ? ORDER BY u.conversation_id, u.timestamp
-            """, [.date(since.addingTimeInterval(-3_600))])
+                   u.conversation_id, c.project_path, u.copy
+            FROM \(DistinctUsage.numbered) u JOIN conversations c ON c.id = u.conversation_id
+            WHERE u.agent_id IS NULL AND u.timestamp >= ? AND u.timestamp < ?\(accounts.sql)
+            ORDER BY u.conversation_id, u.timestamp
+            """, [.date(since.addingTimeInterval(-3_600)), .date(until)] + accounts.values)
+        let original: (SQLiteRow) -> Bool = { $0.int(9) == 1 }
         var all: [Break] = []
         var projectOf: [String: String] = [:]
         var start = 0
         var hourWrites = 0, fiveWrites = 0
         for (index, row) in rows.enumerated() {
-            if row.int(6) > 0 { hourWrites += 1 } else if row.int(5) > 0 { fiveWrites += 1 }
+            if original(row) {
+                if row.int(6) > 0 { hourWrites += 1 } else if row.int(5) > 0 { fiveWrites += 1 }
+            }
             let isLast = index == rows.count - 1 || rows[index + 1].text(7) != row.text(7)
             guard isLast, let id = row.text(7) else { continue }
             if let project = row.text(8) { projectOf[id] = URL(fileURLWithPath: Projects.root(of: project)).lastPathComponent }
-            all += detect(conversationID: id, rows: Array(rows[start...index])).filter { $0.at >= since && $0.at < until }
+            all += detect(conversationID: id, rows: Array(rows[start...index]), counts: original)
+                .filter { $0.at >= since && $0.at < until }
             start = index + 1
         }
         var byProject: [String: (Double, Int)] = [:]
@@ -152,15 +191,31 @@ public enum CacheBreaks {
                        hourLong: hourWrites >= fiveWrites, longest: all.max { $0.gap < $1.gap })
     }
 
+    public struct Expiry: Sendable, Equatable {
+        /// When the cache goes cold.
+        public let at: Date
+        /// Tokens the next reply would have to write again.
+        public let context: Int64
+        public let model: String
+        /// The cache lasts an hour after each reply, rather than five minutes.
+        public let hourLong: Bool
+        /// What the next reply would cost beyond reading the cache, once it has gone cold.
+        public let extra: Double
+    }
+
     /// When a conversation's cache goes cold: an hour or five minutes after its last reply,
-    /// depending on how that reply wrote it. Nil when the last reply wrote nothing.
-    public static func expiry(conversationID: String, index: HistoryIndex) async throws -> (at: Date, context: Int64, model: String)? {
-        guard let row = try await index.rows("""
+    /// depending on how the cache was last written.
+    public static func expiry(conversationID: String, index: HistoryIndex) async throws -> Expiry? {
+        let rows = try await index.rows("""
             SELECT model, timestamp, input, cache_read, cache_write_5m, cache_write_1h FROM usage
-            WHERE conversation_id = ? AND agent_id IS NULL AND timestamp IS NOT NULL ORDER BY timestamp DESC LIMIT 1
-            """, [.text(conversationID)]).first, let model = row.text(0), let at = row.date(1) else { return nil }
-        let ttl: TimeInterval = row.int(5) > 0 ? 3_600 : 300
-        return (at.addingTimeInterval(ttl), row.int(2) + row.int(3) + row.int(4) + row.int(5), model)
+            WHERE conversation_id = ? AND agent_id IS NULL AND timestamp IS NOT NULL ORDER BY timestamp DESC LIMIT 20
+            """, [.text(conversationID)])
+        guard let row = rows.first, let model = row.text(0), let at = row.date(1) else { return nil }
+        let hourLong = rows.first { $0.int(4) + $0.int(5) > 0 }.map { $0.int(5) > 0 } ?? false
+        let context = row.int(2) + row.int(3) + row.int(4) + row.int(5)
+        return Expiry(at: at.addingTimeInterval(hourLong ? 3_600 : 300), context: context, model: model,
+                      hourLong: hourLong,
+                      extra: extra(model: model, written5m: hourLong ? 0 : context, written1h: hourLong ? context : 0))
     }
 }
 
@@ -173,6 +228,8 @@ public enum LimitAlerts {
         public let key: String
         public let account: String
         public let window: QuotaWindow.Kind
+        /// What a weekly limit for part of the plan covers, like "Fable".
+        public let scope: String?
         public let percent: Double
         public let threshold: Double
         public let resetsAt: Date?
@@ -184,27 +241,28 @@ public enum LimitAlerts {
         }
     }
 
+    /// The five-hour limit and whichever weekly limit is closest to full.
     public static func due(_ quotas: [AccountQuota], thresholds: [Double] = [80, 95], alreadySent: Set<String>,
                            now: Date = Date()) -> [Alert] {
         var alerts: [Alert] = []
         for quota in quotas where now.timeIntervalSince(quota.asOf) < 2 * 3_600 {
-            for kind in [QuotaWindow.Kind.fiveHour, .weekly] {
-                guard let window = quota.window(kind) else { continue }
+            for window in [quota.window(.fiveHour), quota.tightestWeekly].compactMap({ $0 }) where !window.isStale {
                 if let reset = window.resetsAt, reset <= now { continue }
                 // Only the highest threshold crossed: 95% says what 80% would have.
                 guard let threshold = thresholds.sorted(by: >).first(where: { window.percent >= $0 }) else { continue }
-                let period = window.resetsAt.map { String(Int($0.timeIntervalSince1970 / 3_600)) } ?? "open"
-                let key = "\(quota.account.id)|\(kind.rawValue)|\(Int(threshold))|\(period)"
+                // Without a reset time, the five hours the reading falls in stand for the window.
+                let period = window.resetsAt.map { String(Int($0.timeIntervalSince1970 / 3_600)) }
+                    ?? "p\(Int(quota.asOf.timeIntervalSince1970 / (5 * 3_600)))"
+                let name = window.kind == .weeklyScoped ? "\(window.kind.rawValue):\(window.scope ?? "")" : window.kind.rawValue
+                let key = "\(quota.account.id)|\(name)|\(Int(threshold))|\(period)"
                 guard !alreadySent.contains(key) else { continue }
                 let others = quotas.filter { $0.account.id != quota.account.id && $0.account.id != ClaudeAccount.codex.id }
-                    .compactMap { other -> (String, Double)? in
-                        let used = [other.window(.fiveHour)?.percent, other.window(.weekly)?.percent].compactMap { $0 }.max()
-                        return used.map { (other.account.displayName, max(0, 100 - $0)) }
-                    }
+                    .compactMap { other in other.headroom.map { (other.account.displayName, $0) } }
                     .filter { $0.1 > max(20, 100 - window.percent) }
                     .max { $0.1 < $1.1 }
-                alerts.append(Alert(key: key, account: quota.account.displayName, window: kind, percent: window.percent,
-                                    threshold: threshold, resetsAt: window.resetsAt, alternative: others))
+                alerts.append(Alert(key: key, account: quota.account.displayName, window: window.kind, scope: window.scope,
+                                    percent: window.percent, threshold: threshold, resetsAt: window.resetsAt,
+                                    alternative: others))
             }
         }
         return alerts
@@ -243,14 +301,16 @@ public enum ContextCoach {
         for session in live {
             let record = try await FlightRecord.load(conversationID: session.conversationID, index: index)
             guard let last = record.replies.last, now.timeIntervalSince(last.timestamp) < 20 * 60 else { continue }
-            let share = Double(last.context) / Double(record.window)
+            let window = record.window
+            let share = Double(last.context) / Double(window)
             guard let threshold = thresholds.sorted(by: >).first(where: { share >= $0 }) else { continue }
-            // A compaction starts a new stretch: crossing again after it is worth saying again.
-            let key = "\(session.sessionID)|\(Int(threshold * 100))|\(record.compactions.count)"
+            // A compaction starts a new stretch, and a bigger window a new scale: crossing
+            // again after either is worth saying again.
+            let key = "\(session.sessionID)|\(window)|\(Int(threshold * 100))|\(record.compactions.count)"
             guard !alreadySent.contains(key) else { continue }
             nudges.append(Nudge(key: key, sessionID: session.sessionID, conversationID: session.conversationID,
                                 project: session.project, percent: Int((share * 100).rounded()),
-                                context: last.context, window: record.window))
+                                context: last.context, window: window))
         }
         return nudges
     }

@@ -43,7 +43,7 @@ struct ConversationActions: View {
             }
         }
         // Exports read what the reader has open.
-        if conversation.id == services.reader.conversation?.id {
+        if services.reader.canExport(conversation) {
             Button("Export as Markdown…") { services.reader.exportMarkdown() }
             Button("Export as Web Page…") { services.reader.exportWebPage() }
         }
@@ -65,9 +65,11 @@ struct ShareActions: View {
     let conversation: ConversationRef
 
     var body: some View {
-        Button("Export as Markdown…") { services.reader.exportMarkdown() }
-        Button("Export as Web Page…") { services.reader.exportWebPage() }
-        Divider()
+        if services.reader.canExport(conversation) {
+            Button("Export as Markdown…") { services.reader.exportMarkdown() }
+            Button("Export as Web Page…") { services.reader.exportWebPage() }
+            Divider()
+        }
         Button("Write a Handoff…") { services.beginHandoff(conversation) }.disabled(conversation.isTranscriptMissing)
         Button("Replay on Another Model…") { services.replaying = ReplayModel(conversation: conversation) }
             .disabled(conversation.isTranscriptMissing)
@@ -91,7 +93,7 @@ struct MoreActions: View {
             Button("Move Project “\(project.name)” to Claude Code…") { services.beginPort(project) }
             Button("Copy Project “\(project.name)” to…") { services.beginProjectCopy(project) }
         }
-        Button("Find in Conversation") { services.reader.showsFind = true }.keyboardShortcut("f")
+        Button("Find in Conversation") { services.reader.find() }
         Divider()
         Button("Show in Finder") { services.revealInFinder(conversation) }
         Button("Copy Link") {

@@ -38,6 +38,69 @@ struct SecretsTests {
         #expect(SecretSweep.matches(in: "OPENAI_API_KEY=\(real)").first?.kind.id == "openai")
     }
 
+    static let anthropic = "sk-" + "ant-" + "api03-" + String(repeating: "Wd4kP9test", count: 9) + "AA"
+    static let github = "gh" + "p_" + String(repeating: "T3stK3yAbc", count: 4)
+
+    private func sweep(_ lines: [String]) throws -> [SecretSweep.Finding] {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("sweep-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: file)
+        return SecretSweep.sweep([("c", file)])
+    }
+
+    private func record(_ content: String) throws -> String {
+        String(decoding: try JSONSerialization.data(withJSONObject: [
+            "type": "user", "message": ["role": "user", "content": content]]), as: UTF8.self)
+    }
+
+    @Test("A key right after an escaped line break or tab in the raw file is still a key")
+    func keysAfterEscapes() throws {
+        let found = try sweep([try record("first line\n\(Self.anthropic)"), try record("col\t\(Self.github)")])
+        #expect(Set(found.map(\.kind.id)) == ["anthropic", "github"])
+        #expect(found.first { $0.kind.id == "anthropic" }?.fingerprint == SecretSweep.fingerprint(Self.anthropic))
+        #expect(SecretSweep.matches(in: #"quoted\u0022"# + Self.github).first?.value == Self.github)
+        // Still not the tail of a longer word.
+        #expect(SecretSweep.matches(in: "an" + Self.github).isEmpty)
+    }
+
+    @Test("A key running past the stretch read around an earlier prefix is taken whole")
+    func keysPastTheWindow() throws {
+        let line = try record("sk-x is not a key. " + String(repeating: "y", count: 290) + " " + Self.anthropic + " done")
+        let found = try sweep([line])
+        #expect(found.map(\.fingerprint) == [SecretSweep.fingerprint(Self.anthropic)])
+    }
+
+    @Test("Private keys are found escaped twice over, and hidden through their last line")
+    func privateKeys() {
+        let body = (0..<3).map { "MIIEv" + String(repeating: "QUFBQkNE", count: 7) + "\($0)" }
+        let begin = "-----BEGIN " + "PRIVATE KEY-----"
+        let end = "-----END " + "PRIVATE KEY-----"
+        let doubled = begin + #"\\n"# + body.joined(separator: #"\\n"#) + #"\\n"# + end
+        #expect(SecretSweep.matches(in: doubled).first?.kind.id == "private-key")
+        let plain = "key:\n" + begin + "\n" + body.joined(separator: "\n") + "\n" + end + "\nafter"
+        let hidden = SecretSweep.redact(plain)
+        #expect(body.allSatisfy { !hidden.contains($0) })
+        #expect(hidden.hasSuffix("[private key hidden]\nafter"))
+        #expect(body.allSatisfy { !SecretSweep.redact(doubled).contains($0) })
+    }
+
+    @Test("Sub-agents' transcripts are swept too, as part of their conversation")
+    func subagentTranscripts() async throws {
+        try await HistoryIndexTests.withSample { _, snapshot, _ in
+            let conversation = try #require(snapshot.conversations.first { $0.transcriptURL != nil && $0.external == nil })
+            let transcript = try #require(conversation.transcriptURL)
+            let folder = transcript.deletingPathExtension().appendingPathComponent("subagents", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data((try record("use \(Self.github) for the clone") + "\n").utf8)
+                .write(to: folder.appendingPathComponent("agent-a1b2.jsonl"))
+
+            #expect(SecretSweep.files(in: snapshot).contains { $0.url.lastPathComponent == "agent-a1b2.jsonl" })
+            let github = try #require(SecretSweep.sweep(SecretSweep.files(in: snapshot)).first { $0.kind.id == "github" })
+            #expect(github.conversations == [conversation.id])
+            #expect(github.sightings.first?.source == .pasted)
+        }
+    }
+
     @Test("A rotated key is remembered by its fingerprint only")
     func handled() throws {
         try FixtureHomeTests.withSample { sample in

@@ -30,7 +30,7 @@ public enum GuardsError: Error, CustomStringConvertible {
     public var description: String {
         switch self {
         case .couldNotTerminate(let pid):
-            return "process \(pid) did not exit after SIGTERM and SIGKILL"
+            return "Claude (process \(pid)) didn't quit in time, so nothing was written. Quit it yourself, then try again."
         case .relaunchFailed(let path, let status, let output):
             let detail = output.trimmingCharacters(in: .whitespacesAndNewlines)
             return "could not relaunch \(path) (open exited \(status))"
@@ -149,16 +149,77 @@ public enum Guards {
             // process holding the store, so nothing can conflict.
             return []
         case .cowork(let account):
-            let target = canonical(account.store.userDataDir).path
-            return try runningVariants().filter { $0.userDataDir.path == target }
+            return try holders(ofStore: account.store.userDataDir)
         }
     }
 
-    /// Ask the app to quit, then insist.
+    /// Processes with a store open: those whose argv names it, and whichever process holds its
+    /// Chromium lock. The lock catches what argv can't: a Parallex copy runs under its own
+    /// bundle id, and a wrapper may pass the folder some other way.
+    public static func holders(ofStore userDataDir: URL) throws -> [RunningVariant] {
+        let target = WriteFence.realPath(userDataDir)
+        var found = try runningVariants().filter { WriteFence.realPath($0.userDataDir) == target }
+        if !HostPaths.current.isFixture, let locked = lockedVariant(userDataDir: userDataDir),
+           !found.contains(where: { $0.pid == locked.pid }) {
+            found.append(locked)
+        }
+        return found
+    }
+
+    /// Processes holding any Cowork store these paths sit in.
+    public static func holders(ofStoresContaining paths: [URL]) throws -> [RunningVariant] {
+        var stores: [String] = []
+        for path in paths {
+            let components = path.standardizedFileURL.pathComponents
+            guard let at = components.firstIndex(of: StoreLayout.sessionsDirName), at > 0 else { continue }
+            let store = NSString.path(withComponents: Array(components[..<at]))
+            if !stores.contains(store) { stores.append(store) }
+        }
+        var found: [RunningVariant] = []
+        for store in stores {
+            for variant in try holders(ofStore: URL(fileURLWithPath: store, isDirectory: true))
+            where !found.contains(where: { $0.pid == variant.pid }) {
+                found.append(variant)
+            }
+        }
+        return found
+    }
+
+    /// The live process named by a user data folder's `SingletonLock`, a symlink Chromium
+    /// points at `<host>-<pid>` while it runs. A lock left by a crash names a dead process, or
+    /// one that has since been reused by something that isn't an app, and is ignored.
+    static func lockHolder(userDataDir: URL) -> (pid: pid_t, bundleURL: URL)? {
+        let lock = userDataDir.appendingPathComponent("SingletonLock")
+        guard let target = try? FileManager.default.destinationOfSymbolicLink(atPath: lock.path),
+              let dash = target.lastIndex(of: "-"),
+              let pid = pid_t(target[target.index(after: dash)...]), pid > 0,
+              String(target[..<dash]) == hostName(), isAlive(pid)
+        else { return nil }
+        var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        guard proc_pidpath(pid, &path, UInt32(path.count)) > 0 else { return nil }
+        let executable = String(cString: path)
+        guard let marker = executable.range(of: ".app/Contents/MacOS/", options: .backwards) else { return nil }
+        return (pid, URL(fileURLWithPath: String(executable[..<marker.lowerBound]) + ".app"))
+    }
+
+    static func lockedVariant(userDataDir: URL) -> RunningVariant? {
+        guard let holder = lockHolder(userDataDir: userDataDir) else { return nil }
+        return RunningVariant(pid: holder.pid, bundleURL: canonical(holder.bundleURL),
+                              userDataDir: canonical(userDataDir))
+    }
+
+    static func hostName() -> String {
+        var buffer = [CChar](repeating: 0, count: 256)
+        guard gethostname(&buffer, buffer.count) == 0 else { return "" }
+        return String(cString: buffer)
+    }
+
+    /// Ask the app to quit, and wait.
     ///
     /// `terminate()` sends the Quit Apple event rather than a signal, which gives Electron a
     /// chance to flush its own writes to the store — the whole reason we quit it before
-    /// importing. SIGKILL is the fallback only after `timeout` has passed.
+    /// importing. An app that hasn't quit by `timeout` is left running and this throws: killing
+    /// it would cut those writes short, and the import must not go ahead beside it.
     public static func quit(_ variant: RunningVariant, timeout: TimeInterval) throws {
         let app = NSRunningApplication(processIdentifier: variant.pid)
         if let app {
@@ -170,9 +231,6 @@ public enum Guards {
         }
 
         if waitForExit(variant.pid, app: app, timeout: timeout) { return }
-
-        _ = Darwin.kill(variant.pid, SIGKILL)
-        if waitForExit(variant.pid, app: app, timeout: 5) { return }
         throw GuardsError.couldNotTerminate(pid: variant.pid)
     }
 

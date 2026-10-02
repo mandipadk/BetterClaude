@@ -57,15 +57,11 @@ public enum Fleet {
         var receipt = ImportReceipt(direction: .fleet, destination: target.name)
         receipt.title = "MCP server \(name)"
         receipt.itemCount = 1
-        if FileManager.default.fileExists(atPath: config.path) {
-            let saved = try FileProvenance.saveCurrent(config, paths: paths)
-            receipt.modified.append(.init(path: config.path, backupPath: saved.path,
-                                          sha256Before: try FileDigest.hex(contentsOf: config)))
-        }
-        try Undo.save(receipt)
         let existed = FileManager.default.fileExists(atPath: config.path)
+        if existed { try receipt.backUp(config, paths: paths) }
+        try Undo.save(receipt)
         try RecallConnection.editDesktopConfig(target.dataRoot, paths: paths) { servers in servers[name] = entry }
-        if !existed { try receipt.recordCreatedFile(at: config) }
+        if existed { try receipt.recordModified(at: config) } else { try receipt.recordCreatedFile(at: config) }
         receipt.completed = true
         try Undo.save(receipt)
         return receipt

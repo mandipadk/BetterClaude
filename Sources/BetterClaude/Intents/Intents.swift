@@ -34,9 +34,12 @@ struct ShowLimitsIntent: AppIntent {
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let snapshot = await Catalog().snapshot()
         let lines = QuotaReader.accounts(in: snapshot).map { quota -> String in
-            let five = quota.window(.fiveHour).map { "\(Int($0.percent))% of five hours" }
-            let week = quota.window(.weekly).map { "\(Int($0.percent))% of the week" }
-            return "\(quota.account.displayName): " + [five, week].compactMap { $0 }.joined(separator: ", ")
+            let five = quota.window(.fiveHour).flatMap { $0.isStale ? nil : "\(Int($0.percent.rounded()))% of five hours" }
+            let weeks = quota.weeklyWindows.map { window in
+                "\(Int(window.percent.rounded()))% of the week" + (window.kind == .weekly ? "" : " for \(window.scope ?? "one model")")
+            }
+            let parts = [five].compactMap { $0 } + weeks
+            return "\(quota.account.displayName): " + (parts.isEmpty ? "nothing read lately" : parts.joined(separator: ", "))
         }
         let text = lines.isEmpty ? "No limits have been recorded on this Mac yet." : lines.joined(separator: ". ") + "."
         return .result(value: text, dialog: IntentDialog(stringLiteral: text))

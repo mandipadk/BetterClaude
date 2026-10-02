@@ -44,7 +44,7 @@ final class StorageModel {
                 Result { try Storage.moveToTrash(category, install: install, isRunning: isRunning) }
             }.value
             if case .failure(let error) = result {
-                errorMessage = "\(error)".prefix(1).uppercased() + "\(error)".dropFirst()
+                errorMessage = "Couldn't move it to the Trash. " + Self.explain(error)
             }
             measuredGeneration = nil
             done()
@@ -54,10 +54,20 @@ final class StorageModel {
     func putBack(_ removal: Storage.Removal, then done: @escaping () -> Void) {
         Task {
             let result = await Task.detached(priority: .userInitiated) { Result { try Storage.putBack(removal) } }.value
-            if case .failure(let error) = result { errorMessage = "Couldn't put it back: \(error)" }
+            if case .failure(let error) = result { errorMessage = "Couldn't put it back. " + Self.explain(error) }
             measuredGeneration = nil
             done()
         }
+    }
+
+    /// An error in words, not as a type dump.
+    private static func explain(_ error: Error) -> String {
+        // The system's own errors have a sentence; Better Claude's describe themselves.
+        let system = error as NSError
+        let text = [NSCocoaErrorDomain, NSPOSIXErrorDomain, NSOSStatusErrorDomain].contains(system.domain)
+            ? system.localizedDescription : String(describing: error)
+        let sentence = text.prefix(1).uppercased() + text.dropFirst()
+        return sentence.hasSuffix(".") ? sentence : sentence + "."
     }
 
     var total: Int64 { categories.reduce(0) { $0 + $1.bytes } }
@@ -68,6 +78,7 @@ final class StorageModel {
 struct StoragePage: View {
     @Environment(AppServices.self) private var services
     @State private var confirming: Storage.Category?
+    @State private var lastMeasured: Date?
 
     var body: some View {
         let storage = services.storage
@@ -111,14 +122,22 @@ struct StoragePage: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .task(id: services.generation) {
-            if services.hasLoaded { storage.measure(services.snapshot, generation: services.generation) }
+            guard services.hasLoaded else { return }
+            // Measuring walks every install's folders. On arriving, and after a removal, it
+            // runs at once; while Claude keeps writing, once things are quiet for ten seconds
+            // or a minute has passed.
+            if storage.measuredGeneration != nil, let last = lastMeasured, Date().timeIntervalSince(last) < 60 {
+                try? await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled else { return }
+            }
+            lastMeasured = Date()
+            storage.measure(services.snapshot, generation: services.generation)
         }
         .confirmationDialog(confirmTitle, isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
                             titleVisibility: .visible, presenting: confirming) { category in
             Button("Move to Trash") {
                 guard let install = services.install(category.installID) else { return }
-                let running = services.isRunning(install)
-                storage.remove(category, install: install, isRunning: { running }) { services.refresh() }
+                storage.remove(category, install: install, isRunning: { Storage.isInUse(install) }) { services.refresh() }
             }
             Button("Cancel", role: .cancel) {}
         } message: { category in

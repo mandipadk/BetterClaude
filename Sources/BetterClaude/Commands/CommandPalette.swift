@@ -130,10 +130,12 @@ enum CommandRegistry {
                     services.replaying = ReplayModel(conversation: conversation)
                 })
             }
-            commands.append(.init(id: "markdown", title: "Export as Markdown…", symbol: "square.and.arrow.up",
-                                  aliases: ["save", "md"], group: .conversation) { services.reader.exportMarkdown() })
-            commands.append(.init(id: "webpage", title: "Export as Web Page…", symbol: "safari",
-                                  aliases: ["html", "share"], group: .conversation) { services.reader.exportWebPage() })
+            if services.reader.canExport(conversation) {
+                commands.append(.init(id: "markdown", title: "Export as Markdown…", symbol: "square.and.arrow.up",
+                                      aliases: ["save", "md"], group: .conversation) { services.reader.exportMarkdown() })
+                commands.append(.init(id: "webpage", title: "Export as Web Page…", symbol: "safari",
+                                      aliases: ["html", "share"], group: .conversation) { services.reader.exportWebPage() })
+            }
             commands.append(.init(id: "finder", title: "Show in Finder", symbol: "folder",
                                   group: .conversation) { services.revealInFinder(conversation) })
             commands.append(.init(id: "link", title: "Copy Link", symbol: "link", group: .conversation) {
@@ -145,7 +147,7 @@ enum CommandRegistry {
                                                   .usage: "⌘4", .library: "⌘5", .thisMac: "⌘6"]
         for (page, aliases) in pages {
             commands.append(.init(id: "page.\(page.title)", title: page.title, symbol: page.symbol, keys: keys[page],
-                                  aliases: aliases, group: .goTo) { services.destination = page })
+                                  aliases: aliases, group: .goTo) { services.go(to: page) })
         }
         for install in services.installs {
             commands.append(.init(id: "install.\(install.id)", title: install.name, detail: "Install",
@@ -177,10 +179,7 @@ enum CommandRegistry {
     static func results(_ fixed: [PaletteCommand], query: String, services: AppServices) -> [PaletteCommand] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         if q.isEmpty {
-            let recent = services.snapshot.conversations
-                .sorted { $0.lastActivity > $1.lastActivity }
-                .prefix(5)
-                .map { conversationCommand($0, services: services) }
+            let recent = services.recentConversations(5).map { conversationCommand($0, services: services) }
             return fixed.filter { $0.group == .conversation || $0.group == .goTo } + recent
         }
         var scored: [(PaletteCommand, Int)] = fixed.compactMap { command in
@@ -193,8 +192,8 @@ enum CommandRegistry {
         }
         scored += conversations.sorted { $0.1 > $1.1 }.prefix(6)
         var projects: [String: (String, Date)] = [:]
-        for conversation in services.snapshot.conversations {
-            guard let path = conversation.projectPath, !path.isEmpty else { continue }
+        for conversation in services.snapshot.conversations where !conversation.isArchived {
+            guard let path = conversation.projectPath.map(Projects.root(of:)), !path.isEmpty else { continue }
             if (projects[path]?.1 ?? .distantPast) < conversation.lastActivity {
                 projects[path] = (URL(fileURLWithPath: path).lastPathComponent, conversation.lastActivity)
             }
@@ -203,8 +202,7 @@ enum CommandRegistry {
             guard let s = score(q, title: value.0.lowercased(), aliases: []), s >= 60 else { return nil }
             let command = PaletteCommand(id: "project.\(path)", title: value.0, detail: "Project",
                                          symbol: "folder", group: .projects) {
-                services.filter = .project(path)
-                services.destination = .conversations
+                services.showConversations(.project(path))
             }
             return (command, s)
         }
@@ -213,8 +211,7 @@ enum CommandRegistry {
             let words = query.trimmingCharacters(in: .whitespaces)
             scored.append((PaletteCommand(id: "search", title: "Search every message for “\(words)”", symbol: "text.magnifyingglass",
                                           group: .ask) {
-                services.filter = .all
-                services.destination = .conversations
+                services.showConversations(.all)
                 services.query = words
             }, 1))
         }

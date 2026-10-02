@@ -112,9 +112,17 @@ final class FilesModel {
 
     func undoLastRestore() {
         guard let receipt = lastRestore else { return }
+        lastRestore = nil
         Task {
-            _ = await Task.detached { try? Undo.revertAndRecord(receipt) }.value
-            lastRestore = nil
+            let result = await Task.detached { Result { try Undo.revertAndRecord(receipt) } }.value
+            switch result {
+            case .success(let outcome):
+                if let kept = outcome.leftInPlace.first {
+                    errorMessage = "The file wasn't put back: \(kept.reason)."
+                }
+            case .failure(let error):
+                errorMessage = "Couldn't undo it: \(ContinueModel.explain(error))"
+            }
             loadDiff()
         }
     }

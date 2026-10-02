@@ -116,6 +116,8 @@ struct Segmented<Value: Hashable>: View {
     @Binding var selection: Value
     var symbols = false
     var fill = false
+    /// With symbols: each segment's name, for its help tag and for VoiceOver.
+    var names: ((Value) -> String)?
 
     var body: some View {
         HStack(spacing: 2) {
@@ -141,13 +143,18 @@ struct Segmented<Value: Hashable>: View {
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .help(symbols ? "" : option.label)
+                .help(name(option))
+                .accessibilityLabel(name(option))
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
         .padding(2)
         .background(Theme.Surface.fill, in: .rect(cornerRadius: 8, style: .continuous))
         .fixedSize(horizontal: !fill, vertical: true)
+    }
+
+    private func name(_ option: (value: Value, label: String)) -> String {
+        symbols ? names?(option.value) ?? "" : option.label
     }
 }
 

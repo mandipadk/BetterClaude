@@ -5,6 +5,8 @@ import SwiftUI
 struct MainWindow: View {
     @Environment(AppServices.self) private var services
     @State private var showsOnboarding = false
+    /// Settings' Show Again clears this, and the welcome opens without a relaunch.
+    @AppStorage("onboardingCompleted") private var onboardingCompleted = true
 
     static var firstRun: Bool {
         #if DEBUG
@@ -67,20 +69,23 @@ struct MainWindow: View {
         .animation(Theme.Motion.fade, value: services.showsPalette)
 
         .background {
-            // ⌘↩ in search asks the question instead of matching words.
-            Button("") {
-                let question = services.query.trimmingCharacters(in: .whitespaces)
-                if !question.isEmpty { services.askHistory(question) }
+            // ⌘↩ on a search asks the question instead of matching words. Not while the
+            // palette is open: a shortcut here would take ⌘↩ before the palette's own Ask.
+            if !services.showsPalette {
+                Button("") {
+                    let question = services.query.trimmingCharacters(in: .whitespaces)
+                    if !question.isEmpty { services.askHistory(question) }
+                }
+                .keyboardShortcut(.return, modifiers: .command)
+                .opacity(0)
+                .accessibilityHidden(true)
             }
-            .keyboardShortcut(.return, modifiers: .command)
-            .opacity(0)
-            .accessibilityHidden(true)
         }
         .background {
             // ⌘F finds in the conversation you're reading, or opens ⌘K elsewhere.
             Button("") {
                 if services.destination == .conversations, services.reader.conversation != nil {
-                    services.reader.showsFind = true
+                    services.reader.find()
                 } else {
                     services.showsPalette = true
                 }
@@ -103,6 +108,9 @@ struct MainWindow: View {
                 try? await Task.sleep(for: .milliseconds(350))
                 showsOnboarding = true
             }
+        }
+        .onChange(of: onboardingCompleted) { _, completed in
+            if !completed { showsOnboarding = true }
         }
         .sheet(isPresented: $showsOnboarding) {
             OnboardingView { showsOnboarding = false }
@@ -279,7 +287,7 @@ struct Sidebar: View {
 
     private func item(_ destination: SidebarDestination, _ title: String, _ symbol: String,
                       count: Int = 0, attention: Bool = false) -> some View {
-        SidebarRow(isSelected: selected == destination, action: { services.destination = destination }) {
+        SidebarRow(isSelected: selected == destination, action: { services.go(to: destination) }) {
             Image(systemName: symbol)
                 .font(.system(size: 13.5))
                 .foregroundStyle(Theme.accent)
@@ -308,10 +316,7 @@ struct Sidebar: View {
         }
         .help(services.isRunning(install) ? "\(install.name) is open" : install.name)
         .contextMenu {
-            Button("Show Conversations") {
-                services.filter = .install(install.id)
-                services.destination = .conversations
-            }
+            Button("Show Conversations") { services.showConversations(.install(install.id)) }
             if install.appURL != nil {
                 Button(services.isRunning(install) ? "Show \(install.name)" : "Open \(install.name)") { services.open(install) }
             }

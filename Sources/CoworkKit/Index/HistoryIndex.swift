@@ -9,8 +9,17 @@ import Foundation
 /// app keeps it current.
 public actor HistoryIndex {
 
-    /// Bumped whenever the schema or what gets extracted changes; an older file is rebuilt.
-    public static let schemaVersion = 12
+    /// Bumped whenever the schema or what gets extracted changes; the new file starts from a
+    /// copy of the last one when there's an upgrade for it, and from nothing otherwise.
+    public static let schemaVersion = 13
+
+    /// How an index of one version becomes the next, for ``carryForward(to:)``.
+    static let upgrades: [Int: String] = [
+        12: """
+            ALTER TABLE conversations ADD COLUMN first_cwd TEXT;
+            ALTER TABLE tool_calls ADD COLUMN tool_use_id TEXT;
+            """,
+    ]
 
     /// One file per schema, so an older copy of the app still running during an update
     /// keeps its own index instead of rebuilding this one back and forth.
@@ -42,6 +51,7 @@ public actor HistoryIndex {
     /// Opens the index at `url`, creating or rebuilding it as needed; `nil` keeps it in memory.
     public init(url: URL?) throws {
         self.url = url
+        if let url { Self.carryForward(to: url) }
         var database = try SQLiteDatabase(url: url)
         if let url { Self.removeOlderIndexes(beside: url) }
         if database.userVersion != Self.schemaVersion {
@@ -79,10 +89,57 @@ public actor HistoryIndex {
         return try SQLiteDatabase(url: url)
     }
 
+    /// Starts a new version's index from a copy of the last one, when there's no index for
+    /// this version yet. Conversations whose transcripts Claude has since deleted live only
+    /// here, so they come along; the rest are read again in full on the next update, so
+    /// they get whatever this version extracts that the last one didn't.
+    static func carryForward(to url: URL) {
+        let manager = FileManager.default
+        guard !manager.fileExists(atPath: url.path) else { return }
+        let folder = url.deletingLastPathComponent()
+        guard let from = stride(from: schemaVersion - 1, to: 0, by: -1).first(where: {
+            manager.fileExists(atPath: folder.appendingPathComponent("history-v\($0).sqlite").path)
+        }), (from..<schemaVersion).allSatisfy({ upgrades[$0] != nil }) else { return }
+        let staging = folder.appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString)")
+        defer { for suffix in ["", "-wal", "-shm", "-journal"] { try? manager.removeItem(atPath: staging.path + suffix) } }
+        do {
+            let previous = try SQLiteDatabase(readOnly: folder.appendingPathComponent("history-v\(from).sqlite"))
+            guard previous.userVersion == from else { return }
+            try previous.run("VACUUM INTO ?", [.text(staging.path)])
+            do {
+                let copy = try SQLiteDatabase(url: staging)
+                try copy.transaction {
+                    for version in from..<schemaVersion { try copy.execute(upgrades[version]!) }
+                    try copy.run("UPDATE conversations SET source_size = -1, indexed_bytes = 0, message_count = 0 WHERE present = 1")
+                    try copy.execute("PRAGMA user_version = \(schemaVersion)")
+                }
+            }
+            // Only if no other process got there first: one may already have it open.
+            _ = renamex_np(staging.path, url.path, UInt32(RENAME_EXCL))
+        } catch {}
+    }
+
+    /// Empties the index for a full rebuild, in place: another process may have it open, and
+    /// deleting a database out from under a connection corrupts it.
+    public func reset() throws {
+        try database.transaction {
+            for table in ["messages_fts", "messages", "conversations", "usage", "tool_calls", "file_versions",
+                          "health", "pull_requests", "model_markers", "subagents"] {
+                try database.execute("DROP TABLE IF EXISTS \(table)")
+            }
+            try database.execute(Self.tables)
+        }
+    }
+
     static func createSchema(in database: SQLiteDatabase) throws {
         try database.execute("""
         PRAGMA journal_mode = WAL;
         PRAGMA synchronous = NORMAL;
+        \(tables)
+        """)
+    }
+
+    static let tables = """
         CREATE TABLE IF NOT EXISTS conversations (
             id TEXT PRIMARY KEY,
             session_id TEXT,
@@ -105,7 +162,8 @@ public actor HistoryIndex {
             cost_usd REAL,
             lines_added INTEGER,
             lines_removed INTEGER,
-            present INTEGER NOT NULL DEFAULT 1
+            present INTEGER NOT NULL DEFAULT 1,
+            first_cwd TEXT
         );
         CREATE INDEX IF NOT EXISTS conversations_session ON conversations(session_id);
         CREATE INDEX IF NOT EXISTS conversations_project ON conversations(project_path);
@@ -150,7 +208,8 @@ public actor HistoryIndex {
             file_path TEXT,
             detail TEXT,
             agent_id TEXT,
-            failed INTEGER NOT NULL DEFAULT 0
+            failed INTEGER NOT NULL DEFAULT 0,
+            tool_use_id TEXT
         );
         CREATE INDEX IF NOT EXISTS tool_calls_conversation ON tool_calls(conversation_id);
         CREATE INDEX IF NOT EXISTS tool_calls_file ON tool_calls(file_path) WHERE file_path IS NOT NULL;
@@ -209,8 +268,7 @@ public actor HistoryIndex {
             PRIMARY KEY (conversation_id, agent_id)
         );
         PRAGMA user_version = \(schemaVersion);
-        """)
-    }
+        """
 
     // MARK: Keeping it current
 
@@ -266,11 +324,19 @@ public actor HistoryIndex {
                 let previous = stored[conversation.id]
                 if let previous, previous.sourcePath == url.path,
                    previous.size == size, previous.mtime == mtime { continue }
+                let resumable = conversation.external == nil && previous.map {
+                    $0.sourcePath == url.path && size >= $0.indexedBytes && $0.indexedBytes > 0
+                        && TranscriptScanner.canResume(url, at: $0.indexedBytes)
+                } ?? false
+                // Touched but not grown: nothing new to read.
+                if resumable, size == previous?.indexedBytes {
+                    try database.run("UPDATE conversations SET source_size = ?, source_mtime = ? WHERE id = ?",
+                                     [.int(size), .double(mtime), .text(conversation.id)])
+                    continue
+                }
                 var offset: Int64 = 0
                 var ordinal: Int64 = 0
-                if conversation.external == nil, let previous, previous.sourcePath == url.path,
-                   size > previous.indexedBytes, previous.indexedBytes > 0,
-                   TranscriptScanner.canResume(url, at: previous.indexedBytes) {
+                if resumable, let previous {
                     offset = previous.indexedBytes
                     ordinal = previous.messageCount
                 }
@@ -304,14 +370,14 @@ public actor HistoryIndex {
                 done += 1
                 if let scan { pending.append((job, scan)) }
                 if pending.count >= 16 {
-                    try await writeBatch(pending.map { ($0.0.conversation, $0.0.url, $0.0.size, $0.0.mtime, $0.0.offset, $0.0.ordinalStart, $0.1) })
+                    try writeBatch(pending.map { ($0.0.conversation, $0.0.url, $0.0.size, $0.0.mtime, $0.0.offset, $0.0.ordinalStart, $0.1) })
                     pending = []
                 }
                 progress?(Progress(done: done, total: jobs.count))
                 if Task.isCancelled { group.cancelAll(); break }
                 addNext()
             }
-            try await writeBatch(pending.map { ($0.0.conversation, $0.0.url, $0.0.size, $0.0.mtime, $0.0.offset, $0.0.ordinalStart, $0.1) })
+            try writeBatch(pending.map { ($0.0.conversation, $0.0.url, $0.0.size, $0.0.mtime, $0.0.offset, $0.0.ordinalStart, $0.1) })
         }
         return done
     }
@@ -326,30 +392,53 @@ public actor HistoryIndex {
         for row in try database.rows("SELECT source_path, source_size, source_mtime FROM subagents") {
             if let path = row.text(0) { stored[path] = (row.int(1), row.double(2)) }
         }
-        struct Job: Sendable { let conversationID: String; let file: Subagents.File; let size: Int64; let mtime: Double }
+        struct Job: Sendable { let conversationID: String; let url: URL; let agentID: String; let size: Int64; let mtime: Double }
         var jobs: [Job] = []
         for conversation in snapshot.conversations where conversation.external == nil {
             guard let transcript = conversation.transcriptURL else { continue }
-            for file in Subagents.files(beside: transcript) {
-                let attributes = try? FileManager.default.attributesOfItem(atPath: file.url.path)
+            for (url, agentID) in Subagents.transcripts(beside: transcript) {
+                let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
                 let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
                 let mtime = (attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
-                if let previous = stored[file.url.path], previous == (size, mtime) { continue }
-                jobs.append(Job(conversationID: conversation.id, file: file, size: size, mtime: mtime))
+                if let previous = stored[url.path], previous == (size, mtime) { continue }
+                jobs.append(Job(conversationID: conversation.id, url: url, agentID: agentID, size: size, mtime: mtime))
             }
         }
         guard !jobs.isEmpty else { return 0 }
-        let scanned = await withTaskGroup(of: (Job, TranscriptScan?).self) { group in
-            for job in jobs { group.addTask(priority: .utility) { (job, try? TranscriptScanner.scan(job.file.url)) } }
-            var all: [(Job, TranscriptScan?)] = []
-            for await result in group { all.append(result) }
-            return all
+        // As many at once as the main pass, written back in batches as they come in.
+        let limit = max(2, ProcessInfo.processInfo.activeProcessorCount - 1)
+        return try await withThrowingTaskGroup(of: (Job, Subagents.File, TranscriptScan?).self) { group in
+            var iterator = jobs.makeIterator()
+            func addNext() {
+                guard let job = iterator.next() else { return }
+                group.addTask(priority: .utility) {
+                    (job, Subagents.load(job.url, agentID: job.agentID), try? TranscriptScanner.scan(job.url))
+                }
+            }
+            for _ in 0..<limit { addNext() }
+            var done = 0
+            var pending: [(String, Subagents.File, Int64, Double, TranscriptScan)] = []
+            while let (job, file, scan) = try await group.next() {
+                done += 1
+                if let scan { pending.append((job.conversationID, file, job.size, job.mtime, scan)) }
+                if pending.count >= 16 {
+                    try writeSubagents(pending)
+                    pending = []
+                }
+                if Task.isCancelled { group.cancelAll(); break }
+                addNext()
+            }
+            try writeSubagents(pending)
+            return done
         }
+    }
+
+    private func writeSubagents(_ batch: [(String, Subagents.File, Int64, Double, TranscriptScan)]) throws {
+        guard !batch.isEmpty else { return }
         try database.transaction {
-            for (job, scan) in scanned {
-                guard let scan else { continue }
-                let id = SQLiteValue.text(job.conversationID)
-                let agent = SQLiteValue.text(job.file.agentID)
+            for (conversationID, file, size, mtime, scan) in batch {
+                let id = SQLiteValue.text(conversationID)
+                let agent = SQLiteValue.text(file.agentID)
                 try database.run("DELETE FROM usage WHERE conversation_id = ? AND agent_id = ?", [id, agent])
                 try database.run("DELETE FROM tool_calls WHERE conversation_id = ? AND agent_id = ?", [id, agent])
                 let insertUsage = try database.prepare("""
@@ -363,16 +452,18 @@ public actor HistoryIndex {
                                          .int(usage.cacheWrite5m), .int(usage.cacheWrite1h), agent])
                 }
                 let insertTool = try database.prepare("""
-                    INSERT INTO tool_calls (conversation_id, message_uuid, timestamp, name, file_path, detail, agent_id, failed)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO tool_calls (conversation_id, message_uuid, timestamp, name, file_path, detail, agent_id, failed,
+                                            tool_use_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """)
                 for call in scan.toolCalls {
                     try insertTool.run([id, .optional(call.messageUUID), .date(call.timestamp), .text(call.name),
-                                        .optional(call.filePath), .optional(call.detail), agent, .int(call.failed ? 1 : 0)])
+                                        .optional(call.filePath), .optional(call.detail), agent, .int(call.failed ? 1 : 0),
+                                        .optional(call.toolUseID)])
                 }
                 let prompt = scan.messages.first { $0.role == .user }?.text
                 let result = scan.messages.last { $0.role == .assistant }?.text
-                let meta = job.file.meta
+                let meta = file.meta
                 try database.run("""
                     INSERT OR REPLACE INTO subagents (conversation_id, agent_id, agent_type, requested_model, description, tool_use_id,
                         parent_agent_id, depth, model, first_activity, last_activity, replies, tools, prompt, result,
@@ -383,18 +474,17 @@ public actor HistoryIndex {
                           .optional(scan.usage.last?.model), .date(scan.firstTimestamp), .date(scan.lastTimestamp),
                           .int(Int64(scan.usage.count)), .int(Int64(scan.toolCalls.count)),
                           .optional(prompt.map { String($0.prefix(4_000)) }), .optional(result.map { String($0.prefix(8_000)) }),
-                          .text(job.file.url.path), .int(job.size), .double(job.mtime)])
+                          .text(file.url.path), .int(size), .double(mtime)])
             }
         }
-        return scanned.count
     }
 
-    private func writeBatch(_ batch: [(ConversationRef, URL, Int64, Double, Int64, Int64, TranscriptScan)]) throws {
+    func writeBatch(_ batch: [(ConversationRef, URL, Int64, Double, Int64, Int64, TranscriptScan)]) throws {
         guard !batch.isEmpty else { return }
         try database.transaction {
             for (conversation, url, size, mtime, offset, ordinalStart, scan) in batch {
                 try write(scan, for: conversation, url: url, size: size, mtime: mtime,
-                          replacing: offset == 0, ordinalStart: ordinalStart)
+                          offset: offset, ordinalStart: ordinalStart)
             }
         }
     }
@@ -425,8 +515,13 @@ public actor HistoryIndex {
     }
 
     private func write(_ scan: TranscriptScan, for conversation: ConversationRef, url: URL,
-                       size: Int64, mtime: Double, replacing: Bool, ordinalStart: Int64) throws {
+                       size: Int64, mtime: Double, offset: Int64, ordinalStart: Int64) throws {
         let id = SQLiteValue.text(conversation.id)
+        let replacing = offset == 0
+        let stored = try database.rows("SELECT indexed_bytes, first_cwd FROM conversations WHERE id = ?", [id]).first
+        // Another process keeping the same index may have read this stretch already, or read
+        // the file again from the top, since this pass looked.
+        if !replacing, stored?.int(0) != offset { return }
         if replacing {
             try database.run("DELETE FROM messages WHERE conversation_id = ?", [id])
             // A sub-agent's rows are its own, rewritten when its transcript changes.
@@ -458,12 +553,13 @@ public actor HistoryIndex {
                                  .int(usage.cacheWrite5m), .int(usage.cacheWrite1h)])
         }
         let insertTool = try database.prepare("""
-            INSERT INTO tool_calls (conversation_id, message_uuid, timestamp, name, file_path, detail, failed)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tool_calls (conversation_id, message_uuid, timestamp, name, file_path, detail, failed, tool_use_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """)
         for call in scan.toolCalls {
             try insertTool.run([id, .optional(call.messageUUID), .date(call.timestamp), .text(call.name),
-                                .optional(call.filePath), .optional(call.detail), .int(call.failed ? 1 : 0)])
+                                .optional(call.filePath), .optional(call.detail), .int(call.failed ? 1 : 0),
+                                .optional(call.toolUseID)])
         }
         let insertHealth = try database.prepare("""
             INSERT INTO health (conversation_id, kind, name, detail, timestamp) VALUES (?, ?, ?, ?, ?)
@@ -478,8 +574,10 @@ public actor HistoryIndex {
             VALUES (?, ?, ?, ?, ?, ?)
             """)
         // Claude Code keys most files relative to the folder the session started in; tool
-        // calls name them absolutely, and the two have to meet.
-        let root = scan.firstCwd ?? conversation.projectPath
+        // calls name them absolutely, and the two have to meet. A later stretch of the file
+        // may have moved elsewhere, so it's the folder of the session's first record.
+        let firstCwd = replacing ? scan.firstCwd : stored?.text(1) ?? scan.firstCwd
+        let root = firstCwd ?? conversation.projectPath
         for version in scan.fileVersions {
             let path = version.path.hasPrefix("/") || root == nil ? version.path
                 : URL(fileURLWithPath: root!).appendingPathComponent(version.path).standardizedFileURL.path
@@ -505,13 +603,13 @@ public actor HistoryIndex {
                 git_branch = COALESCE(?, git_branch), entrypoint = COALESCE(?, entrypoint),
                 model = COALESCE(?, model),
                 cost_usd = COALESCE(?, cost_usd), lines_added = COALESCE(?, lines_added),
-                lines_removed = COALESCE(?, lines_removed)
+                lines_removed = COALESCE(?, lines_removed), first_cwd = ?
             WHERE id = ?
             """, [.text(url.path), .int(size), .double(mtime), .int(scan.endOffset), .int(ordinal),
                   .int(replacing ? 1 : 0), .date(scan.firstTimestamp), .date(scan.firstTimestamp),
                   .optional(scan.gitBranch), .optional(scan.entrypoint), .optional(latestModel),
                   scan.cost.map { .double($0.totalUSD) } ?? .null,
-                  .optional(scan.cost?.linesAdded), .optional(scan.cost?.linesRemoved), id])
+                  .optional(scan.cost?.linesAdded), .optional(scan.cost?.linesRemoved), .optional(firstCwd), id])
     }
 
     // MARK: Reading

@@ -270,9 +270,10 @@ public enum Importer {
 
         var computed: [SlotComputation] = []
         var willCreate: [URL] = []
+        // Folders count as well as transcripts: `<id>/` holds a conversation's subagents, and
+        // one left behind by a deleted transcript would otherwise be adopted.
         var used = Set((try? fm.contentsOfDirectory(atPath: encodedDir.path))?
-            .filter { StoreLayout.isTranscriptFileName($0) }
-            .map { String($0.dropLast(6)) } ?? [])
+            .map { (StoreLayout.isTranscriptFileName($0) ? String($0.dropLast(6)) : $0).lowercased() } ?? [])
 
         let sidecars = sidecarNames(manifest)
         var existingSidecars: [String] = []
@@ -280,10 +281,10 @@ public enum Importer {
             let sidecar = importSidecarDir(in: projectDir, name: sidecars[entry.slot] ?? entry.slot)
             if fm.fileExists(atPath: sidecar.path) { existingSidecars.append(sidecar.lastPathComponent) }
             var sessionId = entry.origin.cliSessionId ?? UUID().uuidString.lowercased()
-            if options.regenerateCliSessionId || used.contains(sessionId) || !StoreLayout.isFullUUID(sessionId) {
+            if options.regenerateCliSessionId || used.contains(sessionId.lowercased()) || !StoreLayout.isFullUUID(sessionId) {
                 sessionId = UUID().uuidString.lowercased()
             }
-            used.insert(sessionId)
+            used.insert(sessionId.lowercased())
 
             let transcriptURL = encodedDir.appendingPathComponent("\(sessionId).jsonl")
             let map = RewriteMap(orderedRules: [
@@ -328,12 +329,17 @@ public enum Importer {
         case .claudeCode(let projectDir, _): try WriteFence.check(projectDir)
         }
 
-        if !plan.conflicts.isEmpty {
-            guard options.quitRunningVariant else { throw TransferError.variantRunning(plan.conflicts) }
-            for variant in plan.conflicts {
+        // Asked again rather than trusted from the plan: Claude may have been opened, or a
+        // different copy of it, while the plan sat on screen.
+        let conflicts = try Guards.conflicts(with: plan.endpoint)
+        if !conflicts.isEmpty {
+            guard options.quitRunningVariant else { throw TransferError.variantRunning(conflicts) }
+            for variant in conflicts {
                 progress?("Quitting Claude (pid \(variant.pid))…")
                 try Guards.quit(variant, timeout: 30)
             }
+            let remaining = try Guards.conflicts(with: plan.endpoint)
+            guard remaining.isEmpty else { throw TransferError.variantRunning(remaining) }
         }
 
         var receipt = ImportReceipt(
@@ -358,7 +364,7 @@ public enum Importer {
             try? Undo.save(receipt)
             // Say so when something was written: "nothing happened" would be a lie, and the
             // receipt is exactly what undoes it.
-            if !receipt.created.isEmpty || !(receipt.createdSpaces ?? []).isEmpty {
+            if !receipt.created.isEmpty || !(receipt.createdSpaces ?? []).isEmpty || !receipt.modified.isEmpty {
                 throw TransferError.partiallyApplied(
                     receiptID: receipt.id,
                     written: receipt.created.filter { !$0.isDirectory }.count,
@@ -391,7 +397,8 @@ public enum Importer {
                               receipt: inout ImportReceipt) throws -> [String: String?] {
         var resolved: [String: String?] = [:]
         var known = SpaceStore.spaces(inOrg: account.root)
-        var created: [ImportReceipt.CreatedSpace] = []
+        let spacesFile = SpaceStore.url(inOrg: account.root)
+        var backedUp = false
 
         for entry in plan.manifest.sessions {
             guard let space = entry.space else { continue }
@@ -399,10 +406,21 @@ public enum Importer {
             case .sameId(let existing), .equivalent(let existing):
                 resolved[entry.slot] = existing.id
             case .absent:
-                try SpaceStore.add(space, toOrg: account.root)
+                // Copied aside before the first change, so Undo can put the whole file back if
+                // nothing else has written to it since.
+                if !backedUp, FileManager.default.fileExists(atPath: spacesFile.path) {
+                    try receipt.backUp(spacesFile)
+                    try Undo.save(receipt)
+                    backedUp = true
+                }
+                let added = try SpaceStore.add(space, toOrg: account.root)
+                if backedUp { try receipt.recordModified(at: spacesFile) }
+                if added {
+                    receipt.createdSpaces = (receipt.createdSpaces ?? []) + [ImportReceipt.CreatedSpace(
+                        spaceId: space.id, orgRoot: account.root.path, name: space.name)]
+                }
+                try Undo.save(receipt)
                 known.append(space)
-                created.append(ImportReceipt.CreatedSpace(
-                    spaceId: space.id, orgRoot: account.root.path, name: space.name))
                 resolved[entry.slot] = space.id
                 // Only for a project brought into being here. A project that already existed
                 // has its own memory, written by conversations that live in it, and copying
@@ -411,7 +429,6 @@ public enum Importer {
                                        account: account, receipt: &receipt)
             }
         }
-        if !created.isEmpty { receipt.createdSpaces = created }
         return resolved
     }
 
@@ -433,8 +450,7 @@ public enum Importer {
         // Create-only, like every other write this tool makes.
         guard !fm.fileExists(atPath: destination.path) else { return }
 
-        try fm.createDirectory(at: destination.deletingLastPathComponent(),
-                               withIntermediateDirectories: true)
+        try receipt.createDirectories(at: destination.deletingLastPathComponent())
         try fm.copyItem(at: source, to: destination)
         // Fingerprinted, so undo refuses to delete anything edited since the import.
         try receipt.recordCreatedTree(at: destination)
@@ -520,8 +536,11 @@ public enum Importer {
             try receipt.recordCreatedTree(at: workspaceDestination)
 
             try metadata.write(to: metadataDestination)
-            receipt.created.append(.init(path: metadataDestination.path, isDirectory: false,
+            receipt.created.append(.init(path: metadataDestination.standardizedFileURL.path, isDirectory: false,
                                          sha256: try? FileDigest.hex(contentsOf: metadataDestination)))
+            receipt.conversations = (receipt.conversations ?? []) + [.init(
+                anchors: [metadataDestination.standardizedFileURL.path, computation.transcriptURL.standardizedFileURL.path],
+                folders: [workspaceDestination.standardizedFileURL.path])]
             try Undo.save(receipt)
         }
     }
@@ -534,17 +553,20 @@ public enum Importer {
             progress?("Importing \(computation.title)…")
             let slotDir = BundleReader.slotURL(computation.slot, in: plan.bundleURL)
             let encodedDir = computation.transcriptURL.deletingLastPathComponent()
-            let createdEncodedDir = !fm.fileExists(atPath: encodedDir.path)
-            try fm.createDirectory(at: encodedDir, withIntermediateDirectories: true)
-            if createdEncodedDir {
-                receipt.created.append(.init(path: encodedDir.path, isDirectory: true, sha256: nil))
+            let sidecar = importSidecarDir(in: projectDir, name: sidecarNames(plan.manifest)[computation.slot] ?? computation.slot)
+            let subagentsHome = encodedDir.appendingPathComponent(computation.cliSessionId, isDirectory: true)
+            let extras = (try? fm.contentsOfDirectory(atPath: slotDir.path)) ?? []
+            let hasFiles = extras.contains { ["uploads", "outputs", "subagents", "memory"].contains($0) }
+            // Checked again here, not only in the plan: Undo removes what it created, so a
+            // folder that turned up since must not be adopted.
+            for existing in [computation.transcriptURL] + (hasFiles ? [sidecar] : [])
+                + (extras.contains("subagents") ? [subagentsHome] : [])
+            where fm.fileExists(atPath: existing.path) {
+                throw TransferError.destinationExists(existing)
             }
-            guard !fm.fileExists(atPath: computation.transcriptURL.path) else {
-                throw TransferError.destinationExists(computation.transcriptURL)
-            }
+            try receipt.createDirectories(at: encodedDir)
 
             var transcript = try Transcript(contentsOf: slotDir.appendingPathComponent("transcript.jsonl"))
-            let sidecar = importSidecarDir(in: projectDir, name: sidecarNames(plan.manifest)[computation.slot] ?? computation.slot)
             let rewritten = RewriteEngine.apply(computation.rewriteMap, to: transcript.records)
             transcript = Transcript(records: rewritten.0)
 
@@ -575,32 +597,32 @@ public enum Importer {
             if !violations.isEmpty { throw TransferError.pickerFilterViolation(violations) }
 
             try transcript.write(to: computation.transcriptURL)
-            receipt.created.append(.init(path: computation.transcriptURL.path, isDirectory: false,
+            receipt.created.append(.init(path: computation.transcriptURL.standardizedFileURL.path, isDirectory: false,
                                          sha256: try? FileDigest.hex(contentsOf: computation.transcriptURL)))
+            receipt.conversations = (receipt.conversations ?? []) + [.init(
+                anchors: [computation.transcriptURL.standardizedFileURL.path],
+                folders: hasFiles ? [sidecar.standardizedFileURL.path, subagentsHome.standardizedFileURL.path] : [])]
 
-            let extras = (try? fm.contentsOfDirectory(atPath: slotDir.path)) ?? []
-            if extras.contains(where: { ["uploads", "outputs", "subagents", "memory"].contains($0) }) {
-                let sidecarRoot = sidecar.deletingLastPathComponent()
-                if !fm.fileExists(atPath: sidecarRoot.path) {
-                    try fm.createDirectory(at: sidecarRoot, withIntermediateDirectories: true)
-                    receipt.created.append(.init(path: sidecarRoot.path, isDirectory: true, sha256: nil))
-                }
-                try fm.createDirectory(at: sidecar, withIntermediateDirectories: true)
-                receipt.created.append(.init(path: sidecar.path, isDirectory: true, sha256: nil))
-                for name in ["uploads", "outputs", "memory"] where extras.contains(name) {
-                    try? fm.copyItem(at: slotDir.appendingPathComponent(name),
-                                     to: sidecar.appendingPathComponent(name))
+            if hasFiles {
+                try receipt.createDirectories(at: sidecar)
+                do {
+                    for name in ["uploads", "outputs", "memory"] where extras.contains(name) {
+                        try fm.copyItem(at: slotDir.appendingPathComponent(name),
+                                        to: sidecar.appendingPathComponent(name))
+                    }
+                    if extras.contains("subagents") {
+                        try receipt.createDirectories(at: subagentsHome)
+                        try fm.copyItem(at: slotDir.appendingPathComponent("subagents"),
+                                        to: subagentsHome.appendingPathComponent("subagents"))
+                    }
+                } catch {
+                    // Whatever made it across is still ours to take back.
+                    recordTree(under: sidecar, into: &receipt)
+                    if fm.fileExists(atPath: subagentsHome.path) { recordTree(under: subagentsHome, into: &receipt) }
+                    throw error
                 }
                 recordTree(under: sidecar, into: &receipt)
-                if extras.contains("subagents") {
-                    let dest = encodedDir.appendingPathComponent(computation.cliSessionId)
-                        .appendingPathComponent("subagents")
-                    try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    try? fm.copyItem(at: slotDir.appendingPathComponent("subagents"), to: dest)
-                    receipt.created.append(.init(path: dest.deletingLastPathComponent().path,
-                                                 isDirectory: true, sha256: nil))
-                    recordTree(under: dest.deletingLastPathComponent(), into: &receipt)
-                }
+                if extras.contains("subagents") { recordTree(under: subagentsHome, into: &receipt) }
             }
             try Undo.save(receipt)
         }
@@ -643,6 +665,10 @@ public enum Importer {
     /// Slot → folder name: the conversation's title, made safe for a file name, with the slot
     /// added when two conversations in one bundle share a title.
     static func sidecarNames(_ manifest: Manifest) -> [String: String] {
+        sidecarNames(titles: manifest.sessions.map { ($0.slot, $0.chat.title) })
+    }
+
+    static func sidecarNames(titles slotTitles: [(slot: String, title: String)]) -> [String: String] {
         func clean(_ title: String) -> String {
             let replaced = title.map { "/:\\\n\r\t".contains($0) ? " " : $0 }
             let collapsed = String(replaced).split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
@@ -650,11 +676,14 @@ public enum Importer {
             while name.hasPrefix(".") { name.removeFirst() }
             return name.isEmpty ? "Conversation" : name
         }
-        let titles = manifest.sessions.map { ($0.slot, clean($0.chat.title)) }
+        // Compared the way APFS compares names: "Notes" and "notes", or an é typed two ways,
+        // are one folder.
+        func key(_ name: String) -> String { name.precomposedStringWithCanonicalMapping.lowercased() }
+        let titles = slotTitles.map { ($0.slot, clean($0.title)) }
         var counts: [String: Int] = [:]
-        for (_, title) in titles { counts[title, default: 0] += 1 }
+        for (_, title) in titles { counts[key(title), default: 0] += 1 }
         return Dictionary(uniqueKeysWithValues: titles.map { slot, title in
-            (slot, counts[title, default: 0] > 1 ? "\(title) (\(slot))" : title)
+            (slot, counts[key(title), default: 0] > 1 ? "\(title) (\(slot))" : title)
         })
     }
 

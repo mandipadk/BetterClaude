@@ -91,8 +91,10 @@ public enum Storage {
             add("file-history", "File history",
                 "Earlier versions of files Claude Code edited, so a change can be rewound.", .yours,
                 existing(["file-history"]))
+            // Not shell-snapshots: a running claude sources its snapshot before every command,
+            // and Better Claude can't tell which claude is using which.
             add("logs", "Debug logs", "Diagnostic logs Claude Code wrote. Safe to remove.", .reclaimable,
-                existing(["debug", "telemetry", "shell-snapshots", "paste-cache"]))
+                existing(["debug", "telemetry", "paste-cache"]))
         case .science:
             add("environment", "Python environment",
                 "The scientific Python Claude Science runs its analyses in.", .yours, existing(["conda"]))
@@ -178,6 +180,21 @@ public enum Storage {
             case .notAllowed(let path): return "\(path) isn't something Better Claude removes"
             case .running(let name): return "\(name) is open. Quit it first."
             }
+        }
+    }
+
+    /// Whether the app that owns an install's folder has it open right now. Asked fresh each
+    /// time, for `moveToTrash` to check before every item.
+    public static func isInUse(_ install: Install) -> Bool {
+        switch install.kind {
+        case .desktop, .parallex:
+            return !((try? Guards.holders(ofStore: install.dataRoot)) ?? []).isEmpty
+        case .science:
+            return NSWorkspace.shared.runningApplications.contains {
+                $0.bundleIdentifier == InstallDiscovery.scienceBundleIdentifier
+            }
+        case .claudeCode, .external:
+            return false
         }
     }
 

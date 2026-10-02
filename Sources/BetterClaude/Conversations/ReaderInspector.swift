@@ -37,7 +37,7 @@ struct ReaderInspector: View {
         @Bindable var services = services
         VStack(alignment: .leading, spacing: 0) {
             Segmented(options: InspectorTab.allCases.map { ($0, $0.symbol) }, selection: $services.inspectorTab,
-                      symbols: true, fill: true)
+                      symbols: true, fill: true, names: { $0.title })
                 .padding(.horizontal, 14)
                 .padding(.top, 12)
             if let conversation = services.reader.conversation, services.reader.state == .ready {
@@ -54,8 +54,9 @@ struct ReaderInspector: View {
                 }
                 .id("\(conversation.id)#\(services.inspectorTab.rawValue)")
             } else {
-                Text("Pick a conversation to see its details.")
+                Text(placeholder)
                     .font(.system(size: 12.5)).foregroundStyle(Theme.Surface.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(16)
             }
             Spacer(minLength: 0)
@@ -92,6 +93,17 @@ struct ReaderInspector: View {
                 ModelSwitchesView(conversation: conversation)
                 ClaimsView(conversation: conversation, alwaysOpen: true)
             }
+        }
+    }
+
+    /// What the inspector says when there's nothing to show yet.
+    private var placeholder: String {
+        guard services.reader.conversation != nil else { return "Pick a conversation to see its details." }
+        switch services.reader.state {
+        case .idle, .loading: return "Reading this conversation…"
+        case .missing: return "This conversation's messages were removed, so there's nothing more to show about it."
+        case .failed: return "Couldn't read this conversation, so its details can't be shown."
+        case .ready: return ""
         }
     }
 
@@ -140,7 +152,7 @@ struct ConversationFacts: View {
                     HStack {
                         Text(item.label).foregroundStyle(Theme.Surface.secondary)
                         Spacer()
-                        Button(item.conversation.title) { services.selectedConversationID = item.conversation.id }
+                        Button(item.conversation.title) { services.show(item.conversation) }
                             .buttonStyle(.plain).foregroundStyle(Theme.accent).lineLimit(1)
                     }
                     .font(.system(size: 12))
@@ -148,7 +160,7 @@ struct ConversationFacts: View {
             }
             if services.kept.entries.contains(where: { $0.sessionId == conversation.cliSessionId }) { KV("Kept", "Yes") }
         }
-        .task(id: conversation.id) {
+        .task(id: InspectorKey(conversation.id, services.index.generation)) {
             guard conversation.external == nil, let index = services.index.index else { return }
             cost = (try? await FlightRecord.load(conversationID: conversation.id, index: index))?.totalCost
         }
@@ -202,7 +214,7 @@ struct InspectorLanes: View {
             }
         }
         }
-            .task(id: conversation.id) {
+            .task(id: InspectorKey(conversation.id, services.index.generation)) {
                 guard let index = services.index.index else { return }
                 let runs = ((try? await Subagents.runs(conversationID: conversation.id, index: index)) ?? [])
                     .filter { $0.started != nil }
@@ -256,7 +268,7 @@ struct InspectorFiles: View {
             }
         }
         }
-            .task(id: conversation.id) {
+            .task(id: InspectorKey(conversation.id, services.index.generation)) {
                 guard let index = services.index.index,
                       let changes = try? await ConversationRewind.changes(conversationID: conversation.id, index: index) else { files = []; return }
                 let list = changes.files
@@ -277,10 +289,17 @@ struct ChangesSummary: View {
     @Environment(AppServices.self) private var services
     let conversation: ConversationRef
     @State private var changes: ConversationChanges?
+    @State private var failed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
-            if let changes {
+            if changes == nil, failed || services.index.index == nil {
+                Text("Couldn't read what this conversation changed.")
+                    .font(Theme.Font.callout).foregroundStyle(.secondary)
+            } else if changes == nil, !services.index.isReady {
+                Text("Reading your conversations. What this one changed shows up when that's done.")
+                    .font(Theme.Font.callout).foregroundStyle(.secondary)
+            } else if let changes {
                 if changes.files.isEmpty {
                     Text("This conversation didn't change any files Claude Code kept versions of.")
                         .font(Theme.Font.callout).foregroundStyle(.secondary)
@@ -307,9 +326,26 @@ struct ChangesSummary: View {
                 ProgressView().controlSize(.small)
             }
         }
-        .task(id: conversation.id) {
+        .task(id: InspectorKey(conversation.id, services.index.generation)) {
             guard let index = services.index.index else { return }
-            changes = try? await ConversationRewind.changes(conversationID: conversation.id, index: index)
+            do {
+                changes = try await ConversationRewind.changes(conversationID: conversation.id, index: index)
+                failed = false
+            } catch is CancellationError {
+            } catch {
+                failed = true
+            }
         }
+    }
+}
+
+/// What the inspector's sections read again on: another conversation, or the index taking in
+/// more of it. A section that read before the index had caught up fills in once it has.
+struct InspectorKey: Hashable {
+    let conversationID: String
+    let generation: Int
+    init(_ conversationID: String, _ generation: Int) {
+        self.conversationID = conversationID
+        self.generation = generation
     }
 }

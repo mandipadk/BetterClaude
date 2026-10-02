@@ -83,6 +83,23 @@ public struct ImportReceipt: Codable, Sendable {
     public var itemCount: Int?
     /// When this was undone, if it was.
     public var revertedAt: Date?
+    /// Each conversation's files, so Undo can leave a conversation whole when it has been used
+    /// since. Optional so older receipts still decode.
+    public var conversations: [ConversationFiles]?
+
+    /// One conversation's share of `created`: the files that change when it is used, and the
+    /// folders that belong to it.
+    public struct ConversationFiles: Codable, Sendable {
+        /// Transcripts and session records. When any of these has changed, the conversation is
+        /// in use and nothing in it is removed.
+        public let anchors: [String]
+        public let folders: [String]
+
+        public init(anchors: [String], folders: [String]) {
+            self.anchors = anchors
+            self.folders = folders
+        }
+    }
 
     /// One project added to an organisation, and where to take it back out of.
     public struct CreatedSpace: Codable, Sendable {
@@ -119,11 +136,19 @@ public struct ImportReceipt: Codable, Sendable {
         public let path: String
         public let backupPath: String
         public let sha256Before: String
+        /// What Better Claude left there: its fingerprint, or `removed` when the change took
+        /// the file away. `nil` until the write lands, and on receipts written before this was
+        /// recorded; Undo then can't tell a later edit from ours, so it restores only a file
+        /// that is unchanged or missing.
+        public var sha256After: String?
 
-        public init(path: String, backupPath: String, sha256Before: String) {
+        public static let removed = "removed"
+
+        public init(path: String, backupPath: String, sha256Before: String, sha256After: String? = nil) {
             self.path = path
             self.backupPath = backupPath
             self.sha256Before = sha256Before
+            self.sha256After = sha256After
         }
     }
 
@@ -160,6 +185,36 @@ public struct ImportReceipt: Codable, Sendable {
             isDirectory: false,
             sha256: try FileDigest.hex(contentsOf: url)
         ))
+    }
+
+    /// Copy a file aside before changing it and list it in `modified`, so Undo can put it back.
+    public mutating func backUp(_ url: URL, paths: HostPaths = .current) throws {
+        let saved = try FileProvenance.saveCurrent(url, paths: paths)
+        modified.append(ModifiedFile(path: url.standardizedFileURL.path, backupPath: saved.path,
+                                     sha256Before: try FileDigest.hex(contentsOf: saved)))
+    }
+
+    /// Fingerprint what a change left in a file listed in `modified`. Call it straight after
+    /// the write, for the same reason as `recordCreatedFile`.
+    public mutating func recordModified(at url: URL) throws {
+        let path = url.standardizedFileURL.path
+        guard let index = modified.lastIndex(where: { URL(fileURLWithPath: $0.path).standardizedFileURL.path == path })
+        else { return }
+        modified[index].sha256After = FileManager.default.fileExists(atPath: path)
+            ? try FileDigest.hex(contentsOf: url) : ModifiedFile.removed
+    }
+
+    /// `createDirectory(withIntermediateDirectories:)`, recording each folder it makes.
+    public mutating func createDirectories(at url: URL) throws {
+        let fm = FileManager.default
+        var missing: [URL] = []
+        var probe = url.standardizedFileURL
+        while !fm.fileExists(atPath: probe.path), probe.path != "/" {
+            missing.append(probe)
+            probe = probe.deletingLastPathComponent().standardizedFileURL
+        }
+        try fm.createDirectory(at: url, withIntermediateDirectories: true)
+        for directory in missing.reversed() { recordCreatedDirectory(at: directory) }
     }
 
     public mutating func recordCreatedDirectory(at url: URL) {

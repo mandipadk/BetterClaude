@@ -26,6 +26,7 @@ final class PulseModel {
     private var timer: Timer?
     private var hasBaseline = false
     private var reading = false
+    private var readAgain = false
     let notifier = PulseNotifier()
 
     init(paths: HostPaths) {
@@ -52,13 +53,16 @@ final class PulseModel {
     }
 
     func read() {
-        guard !reading else { return }
+        // A change during a read may have landed after it looked: look again once it's done.
+        guard !reading else { readAgain = true; return }
         reading = true
+        readAgain = false
         let paths = paths
         Task {
             let (fresh, events) = await Task.detached(priority: .utility) { Self.look(paths) }.value
             reading = false
             apply(fresh, events: events)
+            if readAgain { read() }
         }
     }
 

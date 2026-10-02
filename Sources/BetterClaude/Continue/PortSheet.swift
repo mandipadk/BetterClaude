@@ -22,6 +22,9 @@ final class PortModel: Identifiable {
     private(set) var failure: String?
     private(set) var receipt: ImportReceipt?
     private(set) var undone = false
+    private(set) var isUndoing = false
+    private(set) var undoNote: String?
+    private(set) var undoFailure: String?
     private var staging: URL?
     private var planning: Task<Void, Never>?
 
@@ -32,7 +35,8 @@ final class PortModel: Identifiable {
     }
 
     func replan(services: AppServices) {
-        planning?.cancel()
+        guard step == .choose else { return }
+        cleanUp()
         plan = nil
         failure = nil
         guard let folder else { failure = "Choose the folder Claude Code should work in."; return }
@@ -40,22 +44,27 @@ final class PortModel: Identifiable {
         let project = project
         let index = services.index.index
         let codeTabRoot = codeTabInstallID.flatMap { services.install($0)?.codeTabRoot }
-        cleanUp()
         let staging = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("BetterClaude-port-\(UUID().uuidString)", isDirectory: true)
         self.staging = staging
         planning = Task {
-            let result = await Task.detached(priority: .userInitiated) { () -> Result<(CoworkPort.Plan, Int), Error> in
+            let work = Task.detached(priority: .userInitiated) { () -> Result<(CoworkPort.Plan, Int), Error> in
                 do {
                     try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
                     let conversations = await CoworkPort.conversations(project.sessions, index: index)
+                    try Task.checkCancellation()
                     let plan = try CoworkPort.plan(name: project.name, space: project.space, conversations: conversations,
                                                    folder: URL(fileURLWithPath: folder), codeTabRoot: codeTabRoot,
                                                    staging: staging)
                     return .success((plan, conversations.filter { $0.brief != nil }.count))
                 } catch { return .failure(error) }
-            }.value
-            guard !Task.isCancelled else { return }
+            }
+            let result = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
+            // A plan replaced while it was being made: its staging is no one else's to remove.
+            guard !Task.isCancelled else {
+                try? FileManager.default.removeItem(at: staging)
+                return
+            }
             isPlanning = false
             switch result {
             case .success(let (plan, briefs)):
@@ -71,13 +80,16 @@ final class PortModel: Identifiable {
     }
 
     func apply() {
-        guard let plan, plan.isExecutable else { return }
+        guard let plan, plan.isExecutable, step == .choose, !isPlanning else { return }
         step = .working
+        let staging = staging
         Task {
             let result = await Task.detached(priority: .userInitiated) {
                 Result { try CoworkPort.apply(plan) }
             }.value
-            cleanUp()
+            // Only now: the move reads its bundle out of the staging folder until it returns.
+            if let staging { try? FileManager.default.removeItem(at: staging) }
+            self.staging = nil
             switch result {
             case .success(let receipt):
                 self.receipt = receipt
@@ -93,20 +105,34 @@ final class PortModel: Identifiable {
     }
 
     func undo() {
-        guard let receipt else { return }
+        guard let receipt, !isUndoing, !undone else { return }
+        isUndoing = true
+        undoFailure = nil
         Task {
             let result = await Task.detached(priority: .userInitiated) {
                 Result { try Undo.revertAndRecord(receipt) }
             }.value
+            isUndoing = false
             switch result {
-            case .success: undone = true
-            case .failure(let error): failure = "Couldn't undo it: \(ContinueModel.explain(error))"
+            case .success(let outcome):
+                undone = true
+                undoNote = ContinueModel.leftBehind(outcome)
+            case .failure(let error): undoFailure = "Couldn't undo it: \(ContinueModel.explain(error))"
             }
         }
     }
 
+    /// Drops the staging folder. While a plan is still being made, its task removes the folder
+    /// once it's done with it; while the move runs, `apply` does.
     func cleanUp() {
-        if let staging { try? FileManager.default.removeItem(at: staging) }
+        guard step != .working else { return }
+        if isPlanning {
+            planning?.cancel()
+            isPlanning = false
+        } else if let staging {
+            try? FileManager.default.removeItem(at: staging)
+        }
+        planning = nil
         staging = nil
     }
 }
@@ -135,6 +161,7 @@ struct PortSheet: View {
         }
         .frame(width: 560, height: 600)
         .background(Theme.Surface.window)
+        .interactiveDismissDisabled(model.step == .working)
         .task { model.replan(services: services) }
         .onDisappear { model.cleanUp() }
     }
@@ -158,7 +185,7 @@ struct PortSheet: View {
                 detail: model.folder.map { services.snapshot.paths.abbreviating($0) } ?? "The project's folder isn't on this Mac") {
                 RowSymbol(name: "folder")
             } trailing: {
-                Button("Change…") { chooseFolder() }.buttonStyle(.quiet)
+                Button("Change…") { chooseFolder() }.buttonStyle(.quiet).disabled(model.step == .working)
             }
             Row(title: "Show in the Code tab", detail: "Lists each conversation in that app's Code tab too") {
                 RowSymbol(name: "sidebar.left")
@@ -171,6 +198,7 @@ struct PortSheet: View {
                 }
                 .labelsHidden()
                 .fixedSize()
+                .disabled(model.step == .working)
                 .onChange(of: model.codeTabInstallID) { model.replan(services: services) }
             }
         }
@@ -212,7 +240,7 @@ struct PortSheet: View {
         Text(model.undone ? "Taken back" : "It's in Claude Code")
             .font(.system(size: 16, weight: .bold))
         Text(model.undone
-             ? "Everything the move wrote is gone. The Cowork tasks were never changed."
+             ? (model.undoNote ?? "Everything the move wrote is gone. The Cowork tasks were never changed.")
              : "\(conversationCount.prefix(1).uppercased() + conversationCount.dropFirst()) in \(folderName), ready to resume. Attach From Cowork/Brief for a new project.md to a new project's first message to start it informed.")
             .font(.system(size: 13))
             .foregroundStyle(Theme.Surface.secondary)
@@ -225,9 +253,21 @@ struct PortSheet: View {
                     if let brief = model.plan?.brief { NSWorkspace.shared.activateFileViewerSelecting([brief]) }
                 }
                 .buttonStyle(.secondary)
-                Button("Undo") { model.undo() }.buttonStyle(.quiet)
+                Button("Undo") { model.undo() }.buttonStyle(.quiet).disabled(model.isUndoing)
             }
             .padding(.top, 18)
+        }
+        undoFailure
+    }
+
+    @ViewBuilder
+    private var undoFailure: some View {
+        if let failure = model.undoFailure {
+            Text(failure)
+                .font(.system(size: 12.5))
+                .foregroundStyle(Theme.attention)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 12)
         }
     }
 
@@ -239,9 +279,18 @@ struct PortSheet: View {
             .foregroundStyle(Theme.Surface.secondary)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.top, 3)
+        if model.undone, let note = model.undoNote {
+            Text(note)
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.Surface.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
+        }
         if model.receipt != nil, !model.undone {
             Button("Undo What It Wrote") { model.undo() }.buttonStyle(.secondary).padding(.top, 14)
+                .disabled(model.isUndoing)
         }
+        undoFailure
     }
 
     // MARK: Footer
@@ -252,6 +301,7 @@ struct PortSheet: View {
             switch model.step {
             case .choose, .working:
                 Button("Cancel", action: onClose).buttonStyle(.secondary).keyboardShortcut(.cancelAction)
+                    .disabled(model.step == .working)
                 Button {
                     model.apply()
                 } label: {

@@ -5,7 +5,7 @@ import Foundation
 public enum ConversationPage {
 
     public static func render(_ conversation: ReadableConversation, title: String, model: String?,
-                              home: String, exported: Date = Date()) -> String {
+                              home: String, assistantName: String = "Claude", exported: Date = Date()) -> String {
         func clean(_ text: String) -> String {
             let redacted = SecretSweep.redact(text)
             return home.count > 1 ? redacted.replacingOccurrences(of: home, with: "~") : redacted
@@ -14,10 +14,11 @@ public enum ConversationPage {
         for entry in conversation.entries {
             switch entry {
             case .message(let message):
-                let who = message.role == .user ? "You" : message.role == .assistant ? "Claude" : "Note"
+                let who = message.role == .user ? "You" : message.role == .assistant ? escape(assistantName) : "Note"
                 let stamp = message.timestamp.map { " <time>\(escape($0.formatted(date: .abbreviated, time: .shortened)))</time>" } ?? ""
+                let attached = message.attachments.map { "<p class=\"attachment\">\(escape(clean($0)))</p>" }.joined()
                 body += "<section class=\"message \(message.role == .user ? "you" : "claude")\">"
-                body += "<h2>\(who)\(stamp)</h2>\(markdown(clean(message.text)))</section>\n"
+                body += "<h2>\(who)\(stamp)</h2>\(markdown(clean(message.text)))\(attached)</section>\n"
             case .tools(_, let names):
                 let unique = names.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
                 body += "<p class=\"tools\">Used \(names.count) tool\(names.count == 1 ? "" : "s"): \(escape(unique.joined(separator: ", ")))</p>\n"
@@ -26,7 +27,9 @@ public enum ConversationPage {
                 if let summary = compaction.summary { body += markdown(clean(summary)) }
                 body += "</details>\n"
             case .recap(_, let text, _):
-                body += "<p class=\"recap\"><strong>Claude's recap.</strong> \(inline(escape(clean(text))))</p>\n"
+                body += "<p class=\"recap\"><strong>\(escape(assistantName))'s recap.</strong> \(inline(escape(clean(text))))</p>\n"
+            case .notice(let notice):
+                body += "<p class=\"tools\">\(escape(clean(notice.text)))</p>\n"
             }
         }
         var facts: [String] = []

@@ -110,8 +110,9 @@ public enum Handoff {
             .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Keys are hidden first: one cut in half is no longer recognisable as a key.
     static func clip(_ text: String, _ length: Int) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = SecretSweep.redact(text).trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.count > length ? String(trimmed.prefix(length)) + "…" : trimmed
     }
 }

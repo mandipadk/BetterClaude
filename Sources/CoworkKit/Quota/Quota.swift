@@ -15,13 +15,29 @@ public struct AccountQuota: Sendable, Identifiable {
 
     public func window(_ kind: QuotaWindow.Kind) -> QuotaWindow? { windows.first { $0.kind == kind } }
 
+    /// The plan's weekly limit and any weekly limit for one model or product, plan's first.
+    public var weeklyWindows: [QuotaWindow] { windows.filter { $0.kind != .fiveHour } }
+
+    /// The weekly limit closest to full: the one that stops you first.
+    public var tightestWeekly: QuotaWindow? { weeklyWindows.max { $0.percent < $1.percent } }
+
     /// When the current week of the weekly limit began, if that's known.
-    public var weekStart: Date? { window(.weekly)?.resetsAt.map { $0.addingTimeInterval(-7 * 86_400) } }
+    public var weekStart: Date? {
+        (window(.weekly) ?? tightestWeekly)?.resetsAt.map { $0.addingTimeInterval(-7 * 86_400) }
+    }
+
+    /// How much of the tightest limit is left, 0 to 100. A five-hour reading too old to
+    /// say anything doesn't count.
+    public var headroom: Double? {
+        let five = window(.fiveHour).flatMap { $0.isStale ? nil : $0.percent }
+        let used = [five, tightestWeekly?.percent].compactMap { $0 }.max()
+        return used.map { max(0, 100 - $0) }
+    }
 }
 
 public struct QuotaWindow: Sendable, Equatable {
     public enum Kind: String, Sendable, CaseIterable {
-        case fiveHour, weekly, weeklyOpus, weeklySonnet, weeklyCowork
+        case fiveHour, weekly, weeklyOpus, weeklySonnet, weeklyCowork, weeklyScoped
 
         public var title: String {
             switch self {
@@ -30,6 +46,17 @@ public struct QuotaWindow: Sendable, Equatable {
             case .weeklyOpus: return "Weekly limit for Opus"
             case .weeklySonnet: return "Weekly limit for Sonnet"
             case .weeklyCowork: return "Weekly limit for Cowork"
+            case .weeklyScoped: return "Weekly limit for one model"
+            }
+        }
+
+        /// What the limit covers, when it's narrower than the whole plan.
+        var scope: String? {
+            switch self {
+            case .weeklyOpus: return "Opus"
+            case .weeklySonnet: return "Sonnet"
+            case .weeklyCowork: return "Cowork"
+            default: return nil
             }
         }
     }
@@ -40,6 +67,28 @@ public struct QuotaWindow: Sendable, Equatable {
     public let resetsAt: Date?
     /// The reset time was worked out from when usage last dropped, not reported by Claude.
     public let resetIsEstimate: Bool
+    /// What a weekly limit for part of the plan covers, like "Fable".
+    public let scope: String?
+    /// A five-hour reading so old the window has certainly moved on, with nothing newer to say
+    /// where it is now.
+    public let isStale: Bool
+
+    public init(kind: Kind, percent: Double, resetsAt: Date?, resetIsEstimate: Bool, scope: String? = nil,
+                isStale: Bool = false) {
+        self.kind = kind
+        self.percent = percent
+        self.resetsAt = resetsAt
+        self.resetIsEstimate = resetIsEstimate
+        self.scope = scope ?? kind.scope
+        self.isStale = isStale
+    }
+
+    public var title: String { kind == .weeklyScoped ? scope.map { "Weekly limit for \($0)" } ?? kind.title : kind.title }
+
+    func with(percent: Double, resetsAt: Date?, isStale: Bool = false) -> QuotaWindow {
+        QuotaWindow(kind: kind, percent: percent, resetsAt: resetsAt, resetIsEstimate: resetIsEstimate, scope: scope,
+                    isStale: isStale)
+    }
 }
 
 public struct QuotaSample: Sendable, Equatable {
@@ -86,45 +135,51 @@ public enum QuotaReader {
             let history = dedupe(samples[id] ?? [])
             let account = known[id] ?? (cached?.accountID == id ? snapshot.claudeCodeAccount : nil)
                 ?? ClaudeAccount(id: id, email: nil)
-            let fromCache = cached?.accountID == id ? cached : nil
-            let latest = history.last
-            var windows: [QuotaWindow]
-            let asOf: Date
-            if let fromCache, fromCache.fetchedAt >= (latest?.date ?? .distantPast) {
-                windows = fromCache.windows
-                asOf = fromCache.fetchedAt
-            } else if let latest {
-                asOf = latest.date
-                let weeklyReset = fromCache?.windows.first { $0.kind == .weekly }?.resetsAt
-                    ?? estimatedWeeklyReset(history, now: now)
-                windows = [
-                    QuotaWindow(kind: .fiveHour, percent: latest.fiveHour, resetsAt: nil, resetIsEstimate: true),
-                    QuotaWindow(kind: .weekly, percent: latest.weekly, resetsAt: weeklyReset,
-                                resetIsEstimate: fromCache == nil),
-                ]
-            } else {
-                return nil
-            }
-            // A reset time that has passed moves on to the next one. If it passed after the
-            // reading was taken, the window has started over since; if before, the reading
-            // already belongs to the new window.
-            windows = windows.map { window in
-                guard let reset = window.resetsAt, reset <= now else { return window }
-                if window.kind == .fiveHour {
-                    return QuotaWindow(kind: .fiveHour, percent: reset > asOf ? 0 : window.percent,
-                                       resetsAt: nil, resetIsEstimate: true)
-                }
-                var next = reset
-                while next <= now { next.addTimeInterval(7 * 86_400) }
-                let startedOver = next.addingTimeInterval(-7 * 86_400) > asOf
-                return QuotaWindow(kind: window.kind, percent: startedOver ? 0 : window.percent, resetsAt: next,
-                                   resetIsEstimate: window.resetIsEstimate)
-            }
-            let forecast = weeklyForecast(windows.first { $0.kind == .weekly }, asOf: asOf, now: now)
-            return AccountQuota(account: account, installIDs: (installs[id] ?? []).sorted(), asOf: asOf,
-                                windows: windows, history: history, forecast: forecast)
+            guard let resolved = resolve(cached: cached?.accountID == id ? cached : nil, history: history,
+                                         now: now) else { return nil }
+            let tightest = resolved.windows.filter { $0.kind != .fiveHour }.max { $0.percent < $1.percent }
+            return AccountQuota(account: account, installIDs: (installs[id] ?? []).sorted(), asOf: resolved.asOf,
+                                windows: resolved.windows, history: history,
+                                forecast: weeklyForecast(tightest, asOf: resolved.asOf, now: now))
         }
-        .sorted { ($0.window(.weekly)?.percent ?? 0) > ($1.window(.weekly)?.percent ?? 0) }
+        .sorted { ($0.tightestWeekly?.percent ?? 0) > ($1.tightestWeekly?.percent ?? 0) }
+    }
+
+    /// An account's limits as of now, from whichever reading is freshest.
+    static func resolve(cached: Cached?, history: [QuotaSample], now: Date) -> (asOf: Date, windows: [QuotaWindow])? {
+        let latest = history.last
+        var windows: [QuotaWindow]
+        let asOf: Date
+        if let cached, cached.fetchedAt >= (latest?.date ?? .distantPast) {
+            windows = cached.windows
+            asOf = cached.fetchedAt
+        } else if let latest {
+            asOf = latest.date
+            let weeklyReset = cached?.windows.first { $0.kind == .weekly }?.resetsAt ?? estimatedWeeklyReset(history)
+            windows = [
+                QuotaWindow(kind: .fiveHour, percent: latest.fiveHour, resetsAt: nil, resetIsEstimate: true),
+                QuotaWindow(kind: .weekly, percent: latest.weekly, resetsAt: weeklyReset, resetIsEstimate: cached == nil),
+            ]
+        } else {
+            return nil
+        }
+        // A reset time that has passed moves on to the next one. If it passed after the
+        // reading was taken, the window has started over since; if before, the reading
+        // already belongs to the new window.
+        windows = windows.map { window in
+            guard let reset = window.resetsAt, reset <= now else { return window }
+            if window.kind == .fiveHour { return window.with(percent: reset > asOf ? 0 : window.percent, resetsAt: nil) }
+            var next = reset
+            while next <= now { next.addTimeInterval(7 * 86_400) }
+            let startedOver = next.addingTimeInterval(-7 * 86_400) > asOf
+            return window.with(percent: startedOver ? 0 : window.percent, resetsAt: next)
+        }
+        // Without a reset time, a five-hour reading older than five hours says nothing about now.
+        windows = windows.map { window in
+            guard window.kind == .fiveHour, window.resetsAt == nil, now.timeIntervalSince(asOf) > 5 * 3_600 else { return window }
+            return window.with(percent: 0, resetsAt: nil, isStale: true)
+        }
+        return (asOf, windows)
     }
 
     // MARK: Sources
@@ -156,20 +211,46 @@ public enum QuotaReader {
         let state = config.standardizedFileURL == paths.home.appendingPathComponent(".claude").standardizedFileURL
             ? paths.home.appendingPathComponent(".claude.json")
             : config.appendingPathComponent(".claude.json")
-        guard let data = try? Data(contentsOf: state), let value = try? JSONValue.parse(data),
-              let cache = value["cachedUsageUtilization"], let account = cache["accountUuid"]?.stringValue,
+        guard let data = try? Data(contentsOf: state), let value = try? JSONValue.parse(data) else { return nil }
+        return cached(from: value)
+    }
+
+    /// `cachedUsageUtilization` in Claude Code's state: the plan's windows by key, and a list
+    /// of limits that also holds weekly ones for a single model.
+    static func cached(from value: JSONValue) -> Cached? {
+        guard let cache = value["cachedUsageUtilization"], let account = cache["accountUuid"]?.stringValue,
               let fetched = cache["fetchedAtMs"]?.doubleValue, let utilization = cache["utilization"] else { return nil }
         let keys: [(String, QuotaWindow.Kind)] = [
             ("five_hour", .fiveHour), ("seven_day", .weekly), ("seven_day_opus", .weeklyOpus),
             ("seven_day_sonnet", .weeklySonnet), ("seven_day_cowork", .weeklyCowork),
         ]
-        let windows = keys.compactMap { key, kind -> QuotaWindow? in
+        var windows = keys.compactMap { key, kind -> QuotaWindow? in
             guard let entry = utilization[key], let percent = entry["utilization"]?.doubleValue else { return nil }
             return QuotaWindow(kind: kind, percent: percent,
                                resetsAt: entry["resets_at"]?.stringValue.flatMap(parseDate), resetIsEstimate: false)
         }
+        for limit in utilization["limits"]?.arrayValue ?? cache["limits"]?.arrayValue ?? [] {
+            guard limit["kind"]?.stringValue == "weekly_scoped", limit["is_active"]?.boolValue != false,
+                  let percent = limit["percent"]?.doubleValue ?? limit["utilization"]?.doubleValue,
+                  let scope = scopeName(limit["scope"]),
+                  !windows.contains(where: { $0.scope?.lowercased() == scope.lowercased() }) else { continue }
+            windows.append(QuotaWindow(kind: .weeklyScoped, percent: percent,
+                                       resetsAt: limit["resets_at"]?.stringValue.flatMap(parseDate),
+                                       resetIsEstimate: false, scope: scope))
+        }
         guard !windows.isEmpty else { return nil }
         return Cached(accountID: account, fetchedAt: Date(timeIntervalSince1970: fetched / 1000), windows: windows)
+    }
+
+    /// "Fable" for a limit scoped to a model, or the product's name for one scoped to a surface.
+    static func scopeName(_ scope: JSONValue?) -> String? {
+        guard let scope else { return nil }
+        for key in ["model", "surface"] {
+            guard let part = scope[key] else { continue }
+            if let name = part["display_name"]?.stringValue ?? part.stringValue, !name.isEmpty { return name }
+            if let id = part["id"]?.stringValue, !id.isEmpty { return MonthStats.modelName(id) }
+        }
+        return nil
     }
 
     static func parseDate(_ text: String) -> Date? {
@@ -188,8 +269,10 @@ public enum QuotaReader {
     }
 
     /// The weekly limit resets at the same time each week, so the last big drop in the
-    /// history, carried forward a week at a time, says when it resets next.
-    static func estimatedWeeklyReset(_ history: [QuotaSample], now: Date) -> Date? {
+    /// history, carried forward a week at a time, says when it resets next after the last
+    /// reading. Whether that has passed by now is for the caller, which also knows to start
+    /// the week over if it has.
+    static func estimatedWeeklyReset(_ history: [QuotaSample]) -> Date? {
         var lastDrop: Date?
         let calendar = Calendar(identifier: .gregorian)
         // Within a week the figure only rises, so any fall is a reset. It happened between
@@ -198,12 +281,12 @@ public enum QuotaReader {
             let hour = calendar.dateInterval(of: .hour, for: sample.date)?.start ?? sample.date
             lastDrop = max(hour, previous.date)
         }
-        guard var next = lastDrop else { return nil }
-        while next <= now { next.addTimeInterval(7 * 86_400) }
+        guard var next = lastDrop, let last = history.last?.date else { return nil }
+        while next <= last { next.addTimeInterval(7 * 86_400) }
         return next
     }
 
-    /// Where the weekly limit is heading, at the average pace since the week began.
+    /// Where a weekly limit is heading, at the average pace since the week began.
     static func weeklyForecast(_ weekly: QuotaWindow?, asOf: Date, now: Date) -> QuotaForecast? {
         guard let weekly, let reset = weekly.resetsAt, weekly.percent > 0 else { return nil }
         let weekStart = reset.addingTimeInterval(-7 * 86_400)
@@ -215,6 +298,30 @@ public enum QuotaReader {
         if full < reset { return .reachesLimit(max(full, now)) }
         let atReset = weekly.percent + perSecond * reset.timeIntervalSince(asOf)
         return .leftAtReset(percent: max(0, 100 - atReset))
+    }
+}
+
+/// Claude Code copies a session's earlier replies into the file of a session resumed or
+/// forked from it, under the same message id, so one reply can be in several conversations.
+/// Totals across conversations read this in place of `usage`: each reply once, in the
+/// conversation it first appeared in.
+enum DistinctUsage {
+    /// Every row, with `copy` 1 for a reply's first appearance and higher for its copies.
+    static let numbered = """
+        (SELECT usage.*, ROW_NUMBER() OVER (PARTITION BY message_id ORDER BY
+            timestamp IS NULL, timestamp,
+            (SELECT first_activity FROM conversations WHERE id = usage.conversation_id) IS NULL,
+            (SELECT first_activity FROM conversations WHERE id = usage.conversation_id),
+            usage.rowid) AS copy FROM usage)
+        """
+
+    /// Each reply once.
+    static let table = "(SELECT * FROM \(numbered) WHERE copy = 1)"
+
+    /// `AND c.account_id IN (…)` for a query joined to conversations as `c`, and its values.
+    static func accounts(_ ids: Set<String>?) -> (sql: String, values: [SQLiteValue]) {
+        guard let ids else { return ("", []) }
+        return (" AND c.account_id IN (\(ids.map { _ in "?" }.joined(separator: ",")))", ids.sorted().map(SQLiteValue.text))
     }
 }
 
@@ -233,18 +340,20 @@ public enum QuotaAttribution {
         public let replies: Int
     }
 
-    /// Every conversation that used tokens since `since`, heaviest first.
+    /// Every conversation that used tokens since `since`, heaviest first. A reply copied into
+    /// a resumed conversation counts only where it first appeared.
     public static func items(index: HistoryIndex, accountIDs: Set<String>, since: Date,
                              until: Date = .distantFuture) async throws -> [Item] {
         guard !accountIDs.isEmpty else { return [] }
+        let accounts = DistinctUsage.accounts(accountIDs)
         let rows = try await index.rows("""
             SELECT c.id, c.title, c.project_path, c.kind, c.install_name, u.model,
                    SUM(u.input), SUM(u.output), SUM(u.cache_read), SUM(u.cache_write_5m), SUM(u.cache_write_1h),
                    COUNT(*)
-            FROM usage u JOIN conversations c ON c.id = u.conversation_id
-            WHERE u.timestamp >= ? AND u.timestamp < ? AND c.account_id IN (\(accountIDs.map { _ in "?" }.joined(separator: ",")))
+            FROM \(DistinctUsage.table) u JOIN conversations c ON c.id = u.conversation_id
+            WHERE u.timestamp >= ? AND u.timestamp < ?\(accounts.sql)
             GROUP BY c.id, u.model
-            """, [.date(since), .date(until)] + accountIDs.sorted().map(SQLiteValue.text))
+            """, [.date(since), .date(until)] + accounts.values)
         var byConversation: [String: Item] = [:]
         for row in rows {
             let id = row.text(0) ?? ""
@@ -260,12 +369,17 @@ public enum QuotaAttribution {
         return byConversation.values.sorted { $0.cost > $1.cost }
     }
 
-    /// What each model's replies came to over a stretch, at list prices, largest first.
-    public static func models(index: HistoryIndex, since: Date, until: Date = .distantFuture) async throws -> [(name: String, cost: Double)] {
+    /// What each model's replies came to over a stretch, at list prices, largest first; only
+    /// these accounts' conversations, when given.
+    public static func models(index: HistoryIndex, accountIDs: Set<String>? = nil, since: Date,
+                              until: Date = .distantFuture) async throws -> [(name: String, cost: Double)] {
+        if accountIDs?.isEmpty == true { return [] }
+        let accounts = DistinctUsage.accounts(accountIDs)
         let rows = try await index.rows("""
-            SELECT model, SUM(input), SUM(output), SUM(cache_read), SUM(cache_write_5m), SUM(cache_write_1h)
-            FROM usage WHERE timestamp >= ? AND timestamp < ? AND model IS NOT NULL GROUP BY model
-            """, [.date(since), .date(until)])
+            SELECT u.model, SUM(u.input), SUM(u.output), SUM(u.cache_read), SUM(u.cache_write_5m), SUM(u.cache_write_1h)
+            FROM \(DistinctUsage.table) u LEFT JOIN conversations c ON c.id = u.conversation_id
+            WHERE u.timestamp >= ? AND u.timestamp < ?\(accounts.sql) GROUP BY u.model
+            """, [.date(since), .date(until)] + accounts.values)
         var byName: [String: Double] = [:]
         for row in rows {
             let model = row.text(0) ?? ""

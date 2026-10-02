@@ -63,6 +63,7 @@ struct BetterClaudeApp: App {
     @State private var updates = UpdateModel()
     @AppStorage("showInMenuBar") private var showInMenuBar = true
     @State private var showsWhatsNew = false
+    @State private var showsUpdate = false
 
     var body: some Scene {
         Window("Better Claude", id: "main") {
@@ -70,9 +71,20 @@ struct BetterClaudeApp: App {
                 .frame(minWidth: 900, minHeight: 580)
                 .environment(services)
                 .environment(updates)
-                .sheet(isPresented: Binding(get: { updates.isPresented },
-                                            set: { updates.isPresented = $0 })) {
+                .sheet(isPresented: $showsUpdate, onDismiss: { updates.isPresented = false }) {
                     UpdateSheet(model: updates) { updates.isPresented = false }
+                }
+                .onChange(of: updates.isPresented) { _, presented in
+                    guard presented else { showsUpdate = false; return }
+                    // A window shows one sheet at a time, and a second one asked for while
+                    // another is up never appears. The update waits for the other to close.
+                    Task {
+                        while updates.isPresented, !showsUpdate,
+                              NSApp.windows.contains(where: { $0.attachedSheet != nil }) {
+                            try? await Task.sleep(for: .milliseconds(250))
+                        }
+                        if updates.isPresented { showsUpdate = true }
+                    }
                 }
                 .sheet(isPresented: $showsWhatsNew) {
                     WhatsNewSheet(version: updates.currentVersion) { showsWhatsNew = false }
@@ -128,17 +140,17 @@ struct BetterClaudeApp: App {
                 Button("Look for New Conversations") { services.refresh() }
                     .keyboardShortcut("r", modifiers: .command)
                 Divider()
-                Button("Home") { services.destination = .home }
+                Button("Home") { services.go(to: .home) }
                     .keyboardShortcut("1", modifiers: .command)
-                Button("Conversations") { services.destination = .conversations }
+                Button("Conversations") { services.go(to: .conversations) }
                     .keyboardShortcut("2", modifiers: .command)
-                Button("Projects") { services.destination = .projects }
+                Button("Projects") { services.go(to: .projects) }
                     .keyboardShortcut("3", modifiers: .command)
-                Button("Usage") { services.destination = .usage }
+                Button("Usage") { services.go(to: .usage) }
                     .keyboardShortcut("4", modifiers: .command)
-                Button("Library") { services.destination = .library }
+                Button("Library") { services.go(to: .library) }
                     .keyboardShortcut("5", modifiers: .command)
-                Button("This Mac") { services.destination = .thisMac }
+                Button("This Mac") { services.go(to: .thisMac) }
                     .keyboardShortcut("6", modifiers: .command)
             }
         }

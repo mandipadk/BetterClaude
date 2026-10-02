@@ -132,13 +132,13 @@ struct Args {
 
 func cmdIndex(_ args: Args) throws {
     let url = HistoryIndex.defaultURL()
-    if args.flags.contains("rebuild") {
-        for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: url.path + suffix) }
-    }
+    let rebuild = args.flags.contains("rebuild")
     let started = Date()
     let (read, summary) = try runBlocking { () -> Result<(Int, HistoryIndex.Summary), Error> in
         do {
             let index = try HistoryIndex(url: url)
+            // Emptied rather than deleted: the app may have it open.
+            if rebuild { try await index.reset() }
             let snapshot = await Catalog().snapshot()
             let read = try await index.update(from: snapshot)
             return .success((read, try await index.summary()))
@@ -156,7 +156,7 @@ func cmdSearch(_ args: Args) throws {
     let started = Date()
     let hits = try runBlocking { () -> Result<[HistorySearch.Hit], Error> in
         do {
-            return .success(try await HistoryIndex(url: HistoryIndex.defaultURL()).search(query, options: .init(limit: limit)))
+            return .success(try await HistoryIndex(readingFrom: HistoryIndex.defaultURL()).search(query, options: .init(limit: limit)))
         } catch { return .failure(error) }
     }.get()
     let elapsed = Date().timeIntervalSince(started) * 1000
@@ -843,11 +843,13 @@ func cmdReceipts() throws {
 func cmdUndo(_ args: Args) throws {
     guard let id = args.positional.first else { fail("name a receipt id (see `cowork receipts`)") }
     guard let receipt = try Undo.receipts().first(where: { $0.id == id }) else { fail("no receipt \(id)") }
-    let result = try Undo.revert(receipt)
+    if receipt.revertedAt != nil { fail("receipt \(id) has already been undone") }
+    let result = try Undo.revertAndRecord(receipt)
     for path in result.deleted { print("removed  \(path)") }
     for path in result.restored { print("restored \(path)") }
     for skip in result.skipped { print("kept     \(skip.path) — \(skip.reason)") }
-    print(result.isClean ? "Reverted cleanly." : "Reverted, with \(result.skipped.count) path(s) left in place.")
+    let left = result.leftInPlace.count
+    print(left == 0 ? "Reverted cleanly." : "Reverted, with \(left) path(s) left in place. Run undo again once they're dealt with.")
 }
 
 func cmdLibrary(_ args: Args) throws {

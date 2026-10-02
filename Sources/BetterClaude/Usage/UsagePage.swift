@@ -26,9 +26,12 @@ struct UsagePage: View {
                     VStack(alignment: .leading, spacing: 0) {
                         SectionLabel(title: quota.account.displayName, detail: places(quota))
                         Card {
-                            HStack(alignment: .top, spacing: 24) {
-                                if let window = quota.window(.fiveHour) { half("Five hours", window: window, quota: quota) }
-                                if let window = quota.window(.weekly) { half("This week", window: window, quota: quota) }
+                            LazyVGrid(columns: [GridItem(.flexible(), spacing: 24, alignment: .top),
+                                                GridItem(.flexible(), spacing: 24, alignment: .top)],
+                                      alignment: .leading, spacing: 16) {
+                                ForEach(quota.windows, id: \.title) { window in
+                                    half(Self.label(for: window), window: window, quota: quota)
+                                }
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 14)
@@ -39,7 +42,7 @@ struct UsagePage: View {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 24, alignment: .top), count: 3),
                       alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 0) {
-                    SectionLabel(title: "What used it")
+                    SectionLabel(title: "What used it", detail: data.period)
                     Card {
                         let total = data.projects.reduce(0) { $0 + $1.cost }
                         if data.projects.isEmpty { Row(title: "Nothing yet", detail: period.emptyLine) }
@@ -143,7 +146,7 @@ struct UsagePage: View {
         VStack(alignment: .leading, spacing: 0) {
             Text(label).font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary)
             Figure(value: "\(Int(window.percent.rounded()))", unit: "%").padding(.top, 4)
-            ThinMeter(value: window.percent / 100, mark: window.kind == .weekly ? forecastMark(quota) : nil)
+            ThinMeter(value: window.percent / 100, mark: window == quota.tightestWeekly ? forecastMark(quota) : nil)
                 .padding(.top, 7).padding(.bottom, 6)
             Text(note(window, quota: quota)).font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -152,7 +155,8 @@ struct UsagePage: View {
     }
 
     private func note(_ window: QuotaWindow, quota: AccountQuota) -> String {
-        if window.kind == .weekly, let forecast = quota.forecast {
+        if window.isStale { return "No reading in the last five hours" }
+        if window == quota.tightestWeekly, let forecast = quota.forecast {
             switch forecast {
             case .reachesLimit(let date): return "Full by \(date.formatted(.dateTime.weekday(.wide).hour()))"
             case .leftAtReset(let left): return "Heading for \(Int((100 - left).rounded()))% by \((window.resetsAt ?? .now).formatted(.dateTime.weekday(.wide)))"
@@ -179,15 +183,28 @@ struct UsagePage: View {
         services.snapshot.conversations.first { $0.id == conversationID }?.title ?? "A conversation"
     }
 
-    static func dollars(_ value: Double) -> String {
-        value.formatted(.currency(code: "USD").precision(.fractionLength(value < 100 ? 2 : 0)))
+    static func dollars(_ value: Double) -> String { Pricing.dollars(value) }
+
+    /// What a limit's half of an account card is called: "Five hours", "This week", "Fable this week".
+    static func label(for window: QuotaWindow) -> String {
+        switch window.kind {
+        case .fiveHour: return "Five hours"
+        case .weekly: return "This week"
+        default: return "\(window.scope ?? "One model") this week"
+        }
+    }
+
+    /// "weekly limit", or "weekly limit for Fable" for one that covers a single model.
+    static func limitName(_ window: QuotaWindow?) -> String {
+        guard let window, window.kind != .weekly, window.kind != .fiveHour else { return "weekly limit" }
+        return window.title.prefix(1).lowercased() + window.title.dropFirst()
     }
 
     /// The answer first: where the tightest account is heading.
     private func headline(_ quotas: [AccountQuota]) -> String {
         for quota in quotas {
             if case .reachesLimit(let date)? = quota.forecast {
-                return "At this pace, \(quota.account.displayName) reaches its weekly limit \(AccountUsageSection.when(date))."
+                return "At this pace, \(quota.account.displayName) reaches its \(Self.limitName(quota.tightestWeekly)) \(AccountUsageSection.when(date))."
             }
         }
         if quotas.isEmpty { return "Your plan limits in every account, where this week is heading, and what used it." }
@@ -214,19 +231,72 @@ enum UsagePeriod: String, CaseIterable, Hashable {
         }
     }
 
-    func range(now: Date = Date()) -> (Date, Date) {
-        let calendar = Calendar.current
-        let week = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now.addingTimeInterval(-7 * 86_400)
+    /// A stretch of time and the accounts read over it.
+    struct Span: Equatable {
+        var accountIDs: Set<String>
+        let since: Date
+        let until: Date
+        /// The account's plan week, from its last reset, rather than the calendar's.
+        let planWeek: Bool
+    }
+
+    /// A week is each account's plan week, as its limits count it, where Claude has said when
+    /// that began, and the calendar week otherwise. Accounts on the same stretch share a span.
+    func spans(for quotas: [AccountQuota], now: Date = Date(), calendar: Calendar = .current) -> [Span] {
+        let calendarWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now.addingTimeInterval(-7 * 86_400)
+        var spans: [Span] = []
+        for quota in quotas {
+            let id: Set<String> = [quota.account.id]
+            let span: Span
+            switch self {
+            case .thisWeek:
+                span = Span(accountIDs: id, since: quota.weekStart ?? calendarWeek, until: .distantFuture,
+                            planWeek: quota.weekStart != nil)
+            case .lastWeek:
+                // A plan week resets at the same instant each week; a calendar week starts at
+                // midnight, which a clock change can put 23 or 25 hours from the last.
+                if let start = quota.weekStart {
+                    span = Span(accountIDs: id, since: start.addingTimeInterval(-7 * 86_400), until: start, planWeek: true)
+                } else {
+                    span = Span(accountIDs: id,
+                                since: calendar.date(byAdding: .weekOfYear, value: -1, to: calendarWeek) ?? calendarWeek,
+                                until: calendarWeek, planWeek: false)
+                }
+            case .month:
+                span = Span(accountIDs: id, since: calendar.dateInterval(of: .month, for: now)?.start ?? calendarWeek,
+                            until: .distantFuture, planWeek: false)
+            }
+            if let same = spans.firstIndex(where: { $0.since == span.since && $0.until == span.until }) {
+                spans[same].accountIDs.formUnion(id)
+            } else {
+                spans.append(span)
+            }
+        }
+        return spans
+    }
+
+    /// Says what the stretch is: a plan week starts whenever the account's limit last reset.
+    func describe(_ spans: [Span]) -> String? {
+        guard let first = spans.first, self != .month else { return nil }
+        if spans.count > 1 { return self == .thisWeek ? "Each account's own week" : "Each account's week before this one" }
+        let day = Date.FormatStyle().month(.abbreviated).day()
         switch self {
-        case .thisWeek: return (week, .distantFuture)
-        case .lastWeek: return (week.addingTimeInterval(-7 * 86_400), week)
-        case .month: return (calendar.dateInterval(of: .month, for: now)?.start ?? week, .distantFuture)
+        case .thisWeek:
+            return first.planWeek ? "Plan week, since \(first.since.formatted(.dateTime.weekday(.wide).hour()))"
+                                  : "Since \(first.since.formatted(.dateTime.weekday(.wide)))"
+        default:
+            // A calendar week ends at midnight, which reads as the day before.
+            let end = first.planWeek ? first.until : first.until.addingTimeInterval(-1)
+            let range = "\(first.since.formatted(day)) to \(end.formatted(day))"
+            return first.planWeek ? "Plan week, \(range)" : range
         }
     }
 }
 
-/// What Usage shows for a stretch of time, read from the index.
+/// What Usage shows for a stretch of time, read from the index: every section covers the
+/// same accounts over the same stretch.
 struct UsageData {
+    var period: String?
     var projects: [(name: String, cost: Double, conversations: Int)] = []
     var heaviest: [QuotaAttribution.Item] = []
     var breaks: CacheBreaks.Summary?
@@ -234,17 +304,32 @@ struct UsageData {
     var drifted: Set<String> = []
 
     static func load(index: HistoryIndex, period: UsagePeriod, quotas: [AccountQuota]) async -> UsageData {
-        let (since, until) = period.range()
+        let spans = period.spans(for: quotas)
         var data = UsageData()
-        let accounts = Set(quotas.map(\.account.id))
-        let items = (try? await QuotaAttribution.items(index: index, accountIDs: accounts, since: since, until: until)) ?? []
-        data.heaviest = items
-        data.projects = QuotaAttribution.byProject(items)
-        data.breaks = try? await CacheBreaks.summary(index: index, since: since, until: until)
-        data.models = (try? await QuotaAttribution.models(index: index, since: since, until: until)) ?? []
-        if let drift = try? await ModelDrift.unexplained(index: index, since: since) {
-            data.drifted = Set(drift.map(\.change.to))
+        data.period = period.describe(spans)
+        var items: [QuotaAttribution.Item] = []
+        var models: [String: Double] = [:]
+        var breaks: [CacheBreaks.Summary] = []
+        for span in spans {
+            items += (try? await QuotaAttribution.items(index: index, accountIDs: span.accountIDs,
+                                                        since: span.since, until: span.until)) ?? []
+            for model in (try? await QuotaAttribution.models(index: index, accountIDs: span.accountIDs,
+                                                             since: span.since, until: span.until)) ?? [] {
+                models[model.name, default: 0] += model.cost
+            }
+            if let summary = try? await CacheBreaks.summary(index: index, accountIDs: span.accountIDs,
+                                                            since: span.since, until: span.until) {
+                breaks.append(summary)
+            }
+            if let drift = try? await ModelDrift.unexplained(index: index, accountIDs: span.accountIDs,
+                                                             since: span.since, until: span.until) {
+                data.drifted.formUnion(drift.map(\.change.to))
+            }
         }
+        data.heaviest = items.sorted { $0.cost > $1.cost }
+        data.projects = QuotaAttribution.byProject(items)
+        data.breaks = breaks.isEmpty ? nil : CacheBreaks.Summary.combined(breaks)
+        data.models = models.map { ($0.key, $0.value) }.sorted { $0.1 > $1.1 }
         return data
     }
 }
@@ -258,8 +343,7 @@ struct AccountUsageSection: View {
         DetailSection(title: quota.account.displayName, subtitle: subtitle) {
             VStack(alignment: .leading, spacing: Theme.Space.xl) {
                 HStack(alignment: .top, spacing: Theme.Space.xxl) {
-                    if let window = quota.window(.fiveHour) { LimitMeter(window: window) }
-                    if let window = quota.window(.weekly) { LimitMeter(window: window) }
+                    ForEach(quota.windows, id: \.title) { window in LimitMeter(window: window) }
                 }
                 if let forecast = forecastText {
                     Text(forecast.text)
@@ -284,7 +368,7 @@ struct AccountUsageSection: View {
     private var forecastText: (text: String, urgent: Bool)? {
         switch quota.forecast {
         case .reachesLimit(let date)?:
-            return ("At this week's pace, you'll reach the weekly limit \(Self.when(date)).", true)
+            return ("At this week's pace, you'll reach the \(UsagePage.limitName(quota.tightestWeekly)) \(Self.when(date)).", true)
         case .leftAtReset(let left)?:
             return ("At this week's pace, about \(Int(left.rounded()))% will be left when it resets.", false)
         case nil:
@@ -379,7 +463,7 @@ struct LimitMeter: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(window.kind.title).font(Theme.Font.callout).foregroundStyle(.secondary)
+            Text(window.title).font(Theme.Font.callout).foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("\(Int(window.percent.rounded()))%")
                     .font(Theme.Font.hero)
@@ -404,6 +488,7 @@ struct LimitMeter: View {
     }
 
     private var resetText: String {
+        if window.isStale { return "No reading in the last five hours" }
         guard let reset = window.resetsAt else {
             return window.kind == .fiveHour ? "Resets within five hours of your first message" : "Reset time not known yet"
         }

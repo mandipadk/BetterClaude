@@ -61,8 +61,7 @@ public struct MemoryHealth: Sendable, Equatable {
         var receipt = ImportReceipt(direction: .memoryEdit, destination: index.path)
         receipt.title = "Linked \(notes.count) note\(notes.count == 1 ? "" : "s") from MEMORY.md"
         receipt.itemCount = notes.count
-        let saved = try FileProvenance.saveCurrent(index, paths: paths)
-        receipt.modified.append(.init(path: index.path, backupPath: saved.path, sha256Before: try FileDigest.hex(contentsOf: index)))
+        try receipt.backUp(index, paths: paths)
         try Undo.save(receipt)
         var lines = try String(contentsOf: index, encoding: .utf8).components(separatedBy: "\n")
         let entries = notes.map { note -> String in
@@ -74,6 +73,7 @@ public struct MemoryHealth: Sendable, Equatable {
         let at = (lines.lastIndex { $0.contains("](") && $0.contains(".md)") }).map { $0 + 1 } ?? 0
         lines.insert(contentsOf: entries, at: min(at, lines.count))
         try AtomicWrite.write(Data(lines.joined(separator: "\n").utf8), to: index)
+        try receipt.recordModified(at: index)
         receipt.completed = true
         try Undo.save(receipt)
         return receipt

@@ -40,12 +40,40 @@ final class LibraryModel {
     var query = ""
     var selectedID: String?
 
-    private var gatheredGeneration: Int?
+    /// What the last gather read, so a refresh that changed no conversation reads nothing.
+    private var gatheredFingerprint: Int?
+    private var lastGathered: Date?
+    /// The newest snapshot asked for while a gather ran or was held back.
+    private var pending: CatalogSnapshot?
+    private var deferred: Task<Void, Never>?
+
+    /// The least time between two gathers while Claude keeps writing.
+    private static let spacing: TimeInterval = 30
 
     /// Reads every conversation's messages and files. Several hundred megabytes on a busy
-    /// Mac, so it runs spread across cores, off the main actor.
-    func gather(from snapshot: CatalogSnapshot, generation: Int) {
-        guard !isGathering, gatheredGeneration != generation else { return }
+    /// Mac, so it runs spread across cores, off the main actor, and only when a conversation
+    /// changed: at most every half minute, with the newest snapshot once that has passed.
+    func gather(from snapshot: CatalogSnapshot) {
+        let fingerprint = Self.fingerprint(snapshot)
+        guard fingerprint != gatheredFingerprint else { pending = nil; return }
+        if isGathering {
+            pending = snapshot
+            return
+        }
+        if let last = lastGathered, Date().timeIntervalSince(last) < Self.spacing {
+            pending = snapshot
+            guard deferred == nil else { return }
+            let wait = Self.spacing - Date().timeIntervalSince(last)
+            deferred = Task {
+                try? await Task.sleep(for: .seconds(wait))
+                deferred = nil
+                if let next = pending {
+                    pending = nil
+                    gather(from: next)
+                }
+            }
+            return
+        }
         isGathering = true
         let sources = snapshot.conversations.map { conversation in
             HarvestSource(conversationTitle: conversation.title,
@@ -60,8 +88,26 @@ final class LibraryModel {
                 sources: sources, maximumConcurrency: ProcessInfo.processInfo.activeProcessorCount)
             self.summary = summary
             self.isGathering = false
-            self.gatheredGeneration = generation
+            self.gatheredFingerprint = fingerprint
+            self.lastGathered = Date()
+            if let next = pending {
+                pending = nil
+                gather(from: next)
+            }
         }
+    }
+
+    /// Changes whenever a conversation is added, removed, renamed or written to.
+    private static func fingerprint(_ snapshot: CatalogSnapshot) -> Int {
+        var hasher = Hasher()
+        for conversation in snapshot.conversations {
+            hasher.combine(conversation.id)
+            hasher.combine(conversation.title)
+            hasher.combine(conversation.bytes)
+            hasher.combine(conversation.lastActivity)
+            hasher.combine(conversation.projectName)
+        }
+        return hasher.finalize()
     }
 
     var visible: [Artifact] {

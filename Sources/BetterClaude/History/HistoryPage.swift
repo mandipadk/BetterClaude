@@ -10,6 +10,8 @@ final class HistoryModel {
     private(set) var loaded = false
     /// What the last undo of each receipt left behind, by receipt id.
     private(set) var leftBehind: [String: Int] = [:]
+    /// Receipts being undone right now, so a second click doesn't start another.
+    private(set) var undoing: Set<String> = []
     var errorMessage: String?
 
     func load() {
@@ -21,13 +23,15 @@ final class HistoryModel {
     }
 
     func undo(_ receipt: ImportReceipt, then done: @escaping () -> Void) {
+        guard undoing.insert(receipt.id).inserted else { return }
         Task {
             let result = await Task.detached(priority: .userInitiated) {
                 Result { try Undo.revertAndRecord(receipt) }
             }.value
+            undoing.remove(receipt.id)
             switch result {
             case .success(let outcome):
-                leftBehind[receipt.id] = outcome.skipped.filter { $0.reason != "already absent" }.count
+                leftBehind[receipt.id] = outcome.leftInPlace.count
             case .failure(let error):
                 errorMessage = "Couldn't undo it: \(ContinueModel.explain(error))"
             }
@@ -108,7 +112,8 @@ struct HistoryPage: View {
     private func rows(_ receipts: [ImportReceipt]) -> some View {
         VStack(spacing: 2) {
             ForEach(receipts, id: \.id) { receipt in
-                HistoryRow(receipt: receipt, leftBehind: model.leftBehind[receipt.id]) {
+                HistoryRow(receipt: receipt, leftBehind: model.leftBehind[receipt.id],
+                           isUndoing: model.undoing.contains(receipt.id)) {
                     confirming = receipt
                 }
             }
@@ -120,6 +125,7 @@ struct HistoryPage: View {
 struct HistoryRow: View {
     let receipt: ImportReceipt
     let leftBehind: Int?
+    var isUndoing = false
     let onUndo: () -> Void
     @State private var hovering = false
 
@@ -144,9 +150,15 @@ struct HistoryRow: View {
                     .font(Theme.Font.callout)
                     .foregroundStyle(.secondary)
             } else {
+                if let leftBehind, leftBehind > 0 {
+                    Text(leftBehind == 1 ? "1 changed file kept" : "\(leftBehind) changed files kept")
+                        .font(Theme.Font.callout)
+                        .foregroundStyle(.secondary)
+                }
                 Button("Undo…", action: onUndo)
                     .buttonStyle(.secondary)
                     .opacity(hovering ? 1 : 0.8)
+                    .disabled(isUndoing)
             }
         }
         .padding(.horizontal, 8)

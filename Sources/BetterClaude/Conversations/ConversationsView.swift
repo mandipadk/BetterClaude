@@ -80,24 +80,28 @@ struct ConversationsView: View {
     }
 }
 
-/// Which conversations the timeline shows: all, one install's, or one project's.
+/// Which conversations the timeline shows: all, one install's, one project's, or the archived.
 struct FilterMenu: View {
     @Environment(AppServices.self) private var services
 
     var body: some View {
-        Button("All conversations") { services.filter = .all }
+        Button("All conversations") { services.showConversations(.all) }
         Section("Sources") {
             ForEach(services.installs.filter { services.conversationCount(in: $0) > 0 }) { install in
-                Button(install.name) { services.filter = .install(install.id) }
+                Button(install.name) { services.showConversations(.install(install.id)) }
             }
         }
         let projects = services.projects
         if !projects.isEmpty {
             Section("Projects") {
                 ForEach(projects, id: \.path) { project in
-                    Button(project.name) { services.filter = .project(project.path) }
+                    Button(project.name) { services.showConversations(.project(project.path)) }
                 }
             }
+        }
+        if services.archivedCount > 0 {
+            Divider()
+            Button("Archived") { services.showConversations(.archived) }
         }
     }
 }
@@ -110,16 +114,21 @@ struct TimelineColumn: View {
 
     var body: some View {
         let conversations = services.visibleConversations
+        let groups = TimelineGroup.group(conversations)
         VStack(alignment: .leading, spacing: 0) {
-            if showsMessageHits {
+            if showsMessageHits || isNarrowed {
                 HStack {
-                    Text(countText(services.search.hits.count))
+                    Text(showsMessageHits ? countText(services.search.hits.count) : countText(conversations.count))
                         .font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary)
+                        .lineLimit(1)
                     Spacer()
-                    Button("Clear") { services.query = "" }.buttonStyle(.accentLink)
+                    Button("Clear", action: clear).buttonStyle(.accentLink)
                 }
                 .padding(.horizontal, 18)
                 .padding(.top, 12)
+                .padding(.bottom, showsMessageHits ? 0 : 2)
+            }
+            if showsMessageHits {
                 MessageHitsList()
             } else if conversations.isEmpty {
                 emptyTimeline
@@ -127,7 +136,7 @@ struct TimelineColumn: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(TimelineGroup.group(conversations)) { group in
+                            ForEach(groups) { group in
                                 Text(group.title)
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(Theme.Surface.secondary)
@@ -152,15 +161,17 @@ struct TimelineColumn: View {
                     .focusable()
                     .focused($focused)
                     .focusEffectDisabled()
-                    .onKeyPress(.downArrow) { move(1, in: conversations, proxy: proxy) }
-                    .onKeyPress(.upArrow) { move(-1, in: conversations, proxy: proxy) }
+                    .onKeyPress(.downArrow) { move(1, in: groups, proxy: proxy) }
+                    .onKeyPress(.upArrow) { move(-1, in: groups, proxy: proxy) }
+                    // Arrow keys work as soon as the list is on screen, without a click first.
+                    .onAppear { if !services.showsPalette { focused = true } }
                 }
             }
         }
     }
 
-    private func move(_ step: Int, in conversations: [ConversationRef], proxy: ScrollViewProxy) -> KeyPress.Result {
-        let ordered = TimelineGroup.group(conversations).flatMap(\.conversations)
+    private func move(_ step: Int, in groups: [TimelineGroup], proxy: ScrollViewProxy) -> KeyPress.Result {
+        let ordered = groups.flatMap(\.conversations)
         guard !ordered.isEmpty else { return .ignored }
         let index = ordered.firstIndex { $0.id == services.selectedConversationID } ?? (step > 0 ? -1 : ordered.count)
         let next = ordered[min(max(index + step, 0), ordered.count - 1)]
@@ -169,17 +180,36 @@ struct TimelineColumn: View {
         return .handled
     }
 
+    private var hasQuery: Bool { !services.query.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    /// A search or a filter is narrowing the timeline, so it says so and offers a way out.
+    private var isNarrowed: Bool { hasQuery || services.filter != .all }
+
+    /// Clears the search first, then the filter.
+    private func clear() {
+        if hasQuery { services.query = "" } else { services.showConversations(.all) }
+    }
+
     private func countText(_ count: Int) -> String {
         if !services.hasLoaded { return "Looking…" }
         if showsMessageHits { return count == 1 ? "1 conversation matches" : "\(count) conversations match" }
-        if !services.query.isEmpty { return count == 1 ? "1 title matches" : "\(count) titles match" }
-        return count == 1 ? "1 conversation" : "\(count) conversations"
+        if hasQuery {
+            let titles = count == 1 ? "1 title matches" : "\(count) titles match"
+            return services.filter == .all ? titles : "\(titles) in \(services.filterTitle)"
+        }
+        let conversations = count == 1 ? "1 conversation" : "\(count) conversations"
+        switch services.filter {
+        case .all: return conversations
+        case .archived: return count == 1 ? "1 archived conversation" : "\(count) archived conversations"
+        case .install: return "\(conversations) from \(services.filterTitle)"
+        case .project: return "\(conversations) in \(services.filterTitle)"
+        }
     }
 
     /// Once the index has caught up, a search looks inside every message; until then it
     /// narrows the timeline by title.
     private var showsMessageHits: Bool {
-        !services.query.trimmingCharacters(in: .whitespaces).isEmpty && services.index.isReady
+        hasQuery && services.index.isReady
     }
 
     @ViewBuilder
@@ -192,17 +222,30 @@ struct TimelineColumn: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if !services.query.isEmpty {
+        } else if hasQuery {
             EmptyState(systemImage: "magnifyingglass", title: "No titles match",
-                       message: "Search inside messages to look through what was said, not just titles.")
+                       message: "Until every conversation has been read, search looks at titles only. Then it looks inside messages too.")
         } else {
-            EmptyState(systemImage: "bubble.left.and.bubble.right", title: "No conversations yet",
-                       message: "Conversations from Claude, its copies, and Claude Code appear here as soon as they exist.")
+            switch services.filter {
+            case .all:
+                EmptyState(systemImage: "bubble.left.and.bubble.right", title: "No conversations yet",
+                           message: "Conversations from Claude, its copies, and Claude Code appear here as soon as they exist.")
+            case .install:
+                EmptyState(systemImage: "bubble.left.and.bubble.right", title: "Nothing from \(services.filterTitle)",
+                           message: "Its conversations appear here as soon as there are any.")
+            case .project:
+                EmptyState(systemImage: "folder", title: "Nothing in \(services.filterTitle)",
+                           message: "Conversations Claude has in this folder appear here.")
+            case .archived:
+                EmptyState(systemImage: "archivebox", title: "Nothing archived",
+                           message: "Conversations you archive in Claude are kept out of the timeline and show up here.")
+            }
         }
     }
 }
 
-/// Conversations bucketed the way people remember them.
+/// Conversations bucketed the way people remember them: calendar days, this week, this
+/// month, then each month by name.
 struct TimelineGroup: Identifiable {
     let title: String
     let conversations: [ConversationRef]
@@ -221,12 +264,11 @@ struct TimelineGroup: Identifiable {
     }
 
     static func bucket(_ date: Date, now: Date, calendar: Calendar) -> String {
-        if calendar.isDate(date, inSameDayAs: now) { return "Today" }
+        if date > now || calendar.isDate(date, inSameDayAs: now) { return "Today" }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
            calendar.isDate(date, inSameDayAs: yesterday) { return "Yesterday" }
-        let days = calendar.dateComponents([.day], from: date, to: now).day ?? 0
-        if days < 7 { return "This week" }
-        if days < 30 { return "This month" }
+        if calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear) { return "Earlier this week" }
+        if calendar.isDate(date, equalTo: now, toGranularity: .month) { return "Earlier this month" }
         if calendar.isDate(date, equalTo: now, toGranularity: .year) {
             return date.formatted(.dateTime.month(.wide))
         }

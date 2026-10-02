@@ -66,10 +66,9 @@ final class UsageModel {
         accountID.flatMap { id in quotas.first { $0.account.id == id } }
     }
 
-    /// How much of the tighter of an account's two limits is left, 0 to 100.
+    /// How much of an account's tightest limit is left, 0 to 100: five hours, the week, or a
+    /// weekly limit for one model.
     func headroom(for accountID: String?) -> Double? {
-        guard let quota = quota(for: accountID) else { return nil }
-        let used = [quota.window(.fiveHour)?.percent, quota.window(.weekly)?.percent].compactMap { $0 }.max()
-        return used.map { max(0, 100 - $0) }
+        quota(for: accountID)?.headroom
     }
 }

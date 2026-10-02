@@ -203,13 +203,17 @@ public enum Vault {
 
         // A transcript only grows, so a copy that is the start of the new one adds nothing:
         // replace it. One that is not — the conversation was rewritten — is kept beside it.
+        var superseded: String?
         if let previous = entry.latest, previous.sha256 != sha,
            previous.size < size, (try? prefixDigest(of: object, length: previous.size)) == previous.sha256 {
             entry.versions.removeLast()
-            prune(previous.sha256, keepingFor: entry.key)
+            superseded = previous.sha256
         }
         if entry.latest?.sha256 != sha { entry.versions.append(version) }
+        // Saved before the old copy goes, so a failed save leaves an entry naming a copy that
+        // is still there.
         try save(entry)
+        if let superseded { prune(superseded, keepingFor: entry.key) }
         return entry
     }
 

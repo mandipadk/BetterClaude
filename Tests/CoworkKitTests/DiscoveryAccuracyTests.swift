@@ -110,3 +110,17 @@ extension DiscoveryAccuracyTests {
         #expect(Vault.cleanupPeriod(configDir: dir, managed: managed) == 7 * 86_400)
     }
 }
+
+extension DiscoveryAccuracyTests {
+    @Test("A long session whose both ends are bookkeeping is still a conversation")
+    func bookkeepingAtBothEnds() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("bk-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let filler = String(repeating: #"{"type":"agent-name","agentName":"x","sessionId":"s"}"# + "\n", count: 4_000)
+        let message = #"{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"s","timestamp":"2026-09-01T10:00:00Z","message":{"role":"user","content":"hello"},"cwd":"/tmp/p"}"# + "\n"
+        let url = dir.appendingPathComponent("11111111-2222-4333-8444-555555555555.jsonl")
+        try Data((filler + message + filler).utf8).write(to: url)
+        #expect(Discovery.summarizeTranscript(at: url, timestamps: Discovery.TimestampParser()) != nil)
+    }
+}

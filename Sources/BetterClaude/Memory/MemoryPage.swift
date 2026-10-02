@@ -266,16 +266,27 @@ private struct MemoryHealthNotices: View {
                 }
             }
         }
-        .task(id: group.id) { health = folder.flatMap(MemoryHealth.check) }
+        .task(id: group.id) { await check() }
     }
 
     private var folder: URL? {
         group.files.first { $0.name == "MEMORY.md" }?.url.deletingLastPathComponent()
     }
 
+    /// Reads the memory folder off the main actor: it opens every note in it.
+    private func check() async {
+        let folder = folder
+        health = await Task.detached(priority: .userInitiated) { folder.flatMap(MemoryHealth.check) }.value
+    }
+
     private func link(_ health: MemoryHealth) {
-        guard (try? health.link(health.unlinked)) != nil else { return }
-        self.health = folder.flatMap(MemoryHealth.check)
+        do {
+            try health.link(health.unlinked)
+        } catch {
+            services.errorMessage = "Couldn't update MEMORY.md: \(ContinueModel.explain(error))"
+            return
+        }
+        Task { await check() }
         services.memory.load(services.snapshot)
     }
 }

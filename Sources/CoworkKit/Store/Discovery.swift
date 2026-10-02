@@ -578,19 +578,31 @@ extension Discovery {
     /// records at the head and the appended title records at the tail.
     static let transcriptWindow = 64 * 1024
 
-    static let untitledTranscript = "(session)"
+    static let untitledTranscript = TitleResolver.placeholder
 
-    /// The subset of a transcript this package needs in order to list it.
+    /// The subset of a transcript this package needs in order to list it, besides its title.
     struct TranscriptFields {
-        var customTitle: String?
-        var aiTitle: String?
-        var lastPrompt: String?
-        var firstUserText: String?
         var cwd: String?
         var firstTimestamp: Date?
+        /// The last thing someone said, which is when the conversation was last active.
+        var lastMessageTimestamp: Date?
+        /// Any record's, for a transcript in which nobody said anything.
         var lastTimestamp: Date?
+    }
 
-        var hasTitle: Bool { customTitle != nil || aiTitle != nil || lastPrompt != nil }
+    static let parentMarker = Data("\"parentUuid\"".utf8)
+
+    /// Whether `marker` appears anywhere in the file, read in chunks. Both ends of a long
+    /// session can be nothing but bookkeeping while the middle holds the conversation.
+    static func contains(_ marker: Data, in handle: FileHandle) -> Bool {
+        guard (try? handle.seek(toOffset: 0)) != nil else { return false }
+        var carry = Data()
+        while let chunk = try? handle.read(upToCount: 1 << 20), !chunk.isEmpty {
+            let window = carry + chunk
+            if window.range(of: marker) != nil { return true }
+            carry = window.suffix(marker.count - 1)
+        }
+        return false
     }
 
     static func summarizeTranscript(at url: URL, timestamps: TimestampParser,
@@ -610,6 +622,10 @@ extension Discovery {
                 tail = (try? handle.readToEnd()) ?? Data()
             }
         }
+        // Claude Code lists only transcripts with a conversation in them; a file of nothing
+        // but bookkeeping, such as a lone bridge-session record, isn't one.
+        guard head.range(of: parentMarker) != nil || tail.range(of: parentMarker) != nil
+              || (!wholeFileFits && contains(parentMarker, in: handle)) else { return nil }
 
         // A window cut mid-record leaves a fragment at the head's end and the tail's start.
         var headLines = splitLines(head)
@@ -618,24 +634,27 @@ extension Discovery {
         if !tailLines.isEmpty { tailLines.removeFirst() }
 
         let tailFields = scanTail(tailLines, timestamps: timestamps)
-        let headFields = scanHead(headLines, timestamps: timestamps,
-                                  exhaustive: wholeFileFits, titleAlreadyFound: tailFields.hasTitle)
-
-        // The tail is later in the file, so its titles are the more recent ones and win.
-        let customTitle = tailFields.customTitle ?? headFields.customTitle
-        let aiTitle = tailFields.aiTitle ?? headFields.aiTitle
-        let lastPrompt = tailFields.lastPrompt ?? headFields.lastPrompt
+        let headFields = scanHead(headLines, timestamps: timestamps)
+        let title = TitleResolver.resolve(headLines: headLines, tailLines: tailLines,
+                                          sidecarTitle: TitleResolver.sidecarTitle(forTranscript: url))?.title
 
         let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey])
             .contentModificationDate) ?? Date(timeIntervalSince1970: 0)
         let firstTimestamp = headFields.firstTimestamp ?? tailFields.firstTimestamp ?? modified
-        let lastTimestamp = tailFields.lastTimestamp ?? headFields.lastTimestamp ?? firstTimestamp
+        // A record written after the last message — a title, a hook's summary — doesn't make
+        // the conversation more recent, and nothing in it happened after the file last changed.
+        let lastActive = tailFields.lastMessageTimestamp ?? headFields.lastMessageTimestamp
+            ?? tailFields.lastTimestamp ?? headFields.lastTimestamp ?? firstTimestamp
+        let lastTimestamp = max(firstTimestamp, min(lastActive, modified))
+
+        var cwd = headFields.cwd ?? tailFields.cwd
+        if cwd == nil, !wholeFileFits {
+            cwd = firstCwd(in: handle, from: UInt64(transcriptWindow), to: UInt64(max(0, size - Int64(transcriptWindow))))
+        }
 
         return TranscriptSummary(
-            title: customTitle ?? aiTitle ?? lastPrompt
-                ?? headFields.firstUserText ?? tailFields.firstUserText
-                ?? normalized(firstContentString(inRawHead: head)) ?? untitledTranscript,
-            cwd: headFields.cwd ?? tailFields.cwd,
+            title: title ?? untitledTranscript,
+            cwd: cwd,
             recordCount: countingRecords
                 ? countRecords(at: url, size: size, wholeFile: wholeFileFits ? head : nil,
                                tail: wholeFileFits ? head : tail)
@@ -645,144 +664,70 @@ extension Discovery {
             byteSize: size)
     }
 
-    /// Walk the tail backwards, parsing as few records as possible.
-    ///
-    /// The CLI appends a fresh `custom-title` / `ai-title` / `last-prompt` record rather than
-    /// rewriting the old one, so the newest title is the last one in the file and a backwards
-    /// walk finds it first. Parsing all ~40 records in a 64 KiB tail costs more than the rest
-    /// of a listing put together, so lines are filtered by a raw byte search first.
+    /// Records that say nothing about when the conversation was last active: everything but
+    /// what the person and Claude said.
+    static func isMessage(_ record: JSONValue) -> Bool {
+        let type = record["type"]?.stringValue
+        return (type == "user" || type == "assistant") && record["isMeta"]?.boolValue != true
+    }
+
+    /// Walk the tail backwards for the last message's time and the folder last worked in.
     static func scanTail(_ lines: [Data], timestamps: TimestampParser) -> TranscriptFields {
         var fields = TranscriptFields()
-
         for line in lines.reversed() {
-            guard let record = try? JSONValue.parse(line),
-                  let stamp = timestamps.date(from: record["timestamp"]?.stringValue) else { continue }
-            fields.lastTimestamp = stamp
-            fields.firstTimestamp = stamp
-            fields.cwd = record["cwd"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
-            break
-        }
-
-        for line in lines.reversed() {
-            guard titleMarkers.contains(where: { line.range(of: $0) != nil }),
-                  let record = try? JSONValue.parse(line) else { continue }
-            if fields.customTitle == nil {
-                fields.customTitle = normalized(record["customTitle"]?.stringValue)
+            guard let record = try? JSONValue.parse(line) else { continue }
+            let stamp = timestamps.date(from: record["timestamp"]?.stringValue)
+            if let stamp {
+                if fields.lastTimestamp == nil { fields.lastTimestamp = stamp }
+                fields.firstTimestamp = stamp
+                if fields.lastMessageTimestamp == nil, isMessage(record) { fields.lastMessageTimestamp = stamp }
             }
-            if fields.aiTitle == nil {
-                fields.aiTitle = normalized(record["aiTitle"]?.stringValue)
-            }
-            if fields.lastPrompt == nil {
-                fields.lastPrompt = normalized(record["lastPrompt"]?.stringValue)
-            }
+            if fields.cwd == nil, let value = record["cwd"]?.stringValue, !value.isEmpty { fields.cwd = value }
+            if fields.lastMessageTimestamp != nil, fields.cwd != nil { break }
         }
         return fields
     }
 
-    static let titleMarkers: [Data] = ["\"customTitle\"", "\"aiTitle\"", "\"lastPrompt\""]
-        .map { Data($0.utf8) }
-
-    /// Walk the head forwards for the opening `cwd`, the earliest timestamp, and a fallback
-    /// title, stopping as soon as all three are settled.
-    ///
-    /// `exhaustive` disables that early exit for files small enough that the head *is* the
-    /// whole file — there the head also holds the title records, and stopping early would
-    /// return a title the session has since been renamed away from.
-    static func scanHead(_ lines: [Data], timestamps: TimestampParser,
-                         exhaustive: Bool, titleAlreadyFound: Bool) -> TranscriptFields {
+    /// Walk the head forwards for the opening `cwd` and the earliest timestamp, and the last
+    /// message's time for a file the head holds whole.
+    static func scanHead(_ lines: [Data], timestamps: TimestampParser) -> TranscriptFields {
         var fields = TranscriptFields()
         for line in lines {
             guard let record = try? JSONValue.parse(line), case .object = record else { continue }
-            if let value = normalized(record["customTitle"]?.stringValue) { fields.customTitle = value }
-            if let value = normalized(record["aiTitle"]?.stringValue) { fields.aiTitle = value }
-            if let value = normalized(record["lastPrompt"]?.stringValue) { fields.lastPrompt = value }
             if fields.cwd == nil, let value = record["cwd"]?.stringValue, !value.isEmpty {
                 fields.cwd = value
             }
             if let stamp = timestamps.date(from: record["timestamp"]?.stringValue) {
                 if fields.firstTimestamp == nil { fields.firstTimestamp = stamp }
                 fields.lastTimestamp = stamp
+                if isMessage(record) { fields.lastMessageTimestamp = stamp }
             }
-            if fields.firstUserText == nil, let text = userMessageText(record) {
-                fields.firstUserText = normalized(text)
-            }
-            guard !exhaustive else { continue }
-            let titled = titleAlreadyFound || fields.hasTitle || fields.firstUserText != nil
-            if titled, fields.cwd != nil, fields.firstTimestamp != nil { break }
         }
         return fields
+    }
+
+    /// The first `cwd` between the two windows, for a transcript whose ends name none.
+    /// Lines are filtered on their raw bytes, so only the ones that could hold it are parsed.
+    static func firstCwd(in handle: FileHandle, from start: UInt64, to end: UInt64) -> String? {
+        guard start < end, (try? handle.seek(toOffset: start)) != nil else { return nil }
+        let marker = Data("\"cwd\"".utf8)
+        var offset = start
+        var carry = Data()
+        while offset < end, let chunk = try? handle.read(upToCount: 1 << 20), !chunk.isEmpty {
+            offset += UInt64(chunk.count)
+            var lines = splitLines(carry + chunk)
+            carry = lines.popLast() ?? Data()
+            for line in lines where line.range(of: marker) != nil {
+                if let value = (try? JSONValue.parse(line))?["cwd"]?.stringValue, !value.isEmpty { return value }
+            }
+        }
+        return nil
     }
 
     static func splitLines(_ data: Data) -> [Data] {
         guard !data.isEmpty else { return [] }
         return data.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: false)
             .map { Data($0) }
-    }
-
-    static func normalized(_ text: String?) -> String? {
-        guard let text else { return nil }
-        let flattened = text.replacingOccurrences(of: "\r", with: " ")
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespaces)
-        return flattened.isEmpty ? nil : flattened
-    }
-
-    /// Text of a `type:"user"` record, skipping meta records and records whose content is
-    /// only a tool result — both are machine chatter and make useless titles.
-    static func userMessageText(_ record: JSONValue) -> String? {
-        guard record["type"]?.stringValue == "user" else { return nil }
-        guard record["isMeta"]?.boolValue != true else { return nil }
-        guard let content = record["message"]?["content"] else { return nil }
-        if let text = content.stringValue { return text }
-        guard let blocks = content.arrayValue else { return nil }
-        for block in blocks {
-            switch block["type"]?.stringValue {
-            case "text": if let text = block["text"]?.stringValue { return text }
-            case "tool_result": return nil
-            default: continue
-            }
-        }
-        return nil
-    }
-
-    /// Last resort: pull the first `"content":"…"` out of the raw head.
-    ///
-    /// This exists for transcripts whose opening records this package does not recognize at
-    /// all. It decodes only the common escapes — a `\u` sequence survives verbatim — which
-    /// is acceptable because by the time this runs the alternative is the literal
-    /// `(session)`.
-    static func firstContentString(inRawHead head: Data) -> String? {
-        let text: String
-        if let decoded = String(data: head, encoding: .utf8) {
-            text = decoded
-        } else if let decoded = String(data: head, encoding: .isoLatin1) {
-            text = decoded
-        } else {
-            return nil
-        }
-        guard let marker = text.range(of: "\"content\":\"") else { return nil }
-
-        var out = ""
-        var index = marker.upperBound
-        while index < text.endIndex {
-            let character = text[index]
-            if character == "\\" {
-                let next = text.index(after: index)
-                guard next < text.endIndex else { break }
-                switch text[next] {
-                case "n": out.append("\n")
-                case "t": out.append("\t")
-                case "r": out.append("\r")
-                default: out.append(text[next])
-                }
-                index = text.index(after: next)
-                continue
-            }
-            if character == "\"" { break }
-            out.append(character)
-            index = text.index(after: index)
-        }
-        return out.isEmpty ? nil : out
     }
 
     /// Exact record count by counting newlines.
