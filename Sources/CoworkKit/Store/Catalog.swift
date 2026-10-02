@@ -72,6 +72,16 @@ public struct ConversationRef: Sendable, Hashable, Identifiable {
         projectPath.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0).lastPathComponent }
     }
 
+    /// When the conversation began, when that's known.
+    public var startedAt: Date? {
+        switch origin {
+        case .cowork(let session): return session.createdAt
+        case .claudeCode(let session): return session.firstTimestamp
+        case .codeTab(let record, let session): return record.createdAt ?? session?.firstTimestamp
+        case .external(let conversation): return conversation.createdAt
+        }
+    }
+
     /// The transcript's Claude Code session id, the one `claude --resume` takes.
     public var cliSessionId: String {
         switch origin {

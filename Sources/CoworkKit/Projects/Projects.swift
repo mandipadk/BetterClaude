@@ -12,7 +12,8 @@ public struct ProjectSummary: Sendable, Identifiable, Equatable {
     public let accounts: Int
     public let firstActivity: Date?
     public let lastActivity: Date?
-    /// Every reply's tokens at list prices.
+    /// Its replies' tokens at list prices, each reply once: one copied into a resumed
+    /// conversation counts where it first appeared.
     public let cost: Double
     public let filesChanged: Int
     public let pullRequests: Int
@@ -63,15 +64,30 @@ public enum Projects {
         return path.hasSuffix("/") && path.count > 1 ? String(path.dropLast()) : path
     }
 
-    /// What each conversation cost. `distinct` counts a reply copied into a resumed
-    /// conversation only where it first appeared, for totals across conversations; without
-    /// it, each conversation has every reply in its file.
-    static func costs(index: HistoryIndex, distinct: Bool) async throws -> [String: Double] {
+    /// What to call each project folder: its own name, with the folder it sits in when two
+    /// share a name, like "app (Code)" and "app (Work)".
+    public static func names(for roots: some Sequence<String>) -> [String: String] {
+        let byName = Dictionary(grouping: Set(roots)) { URL(fileURLWithPath: $0).lastPathComponent }
+        var names: [String: String] = [:]
+        for (name, paths) in byName {
+            guard paths.count > 1 else { names[paths[0]] = name; continue }
+            let parents = paths.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
+            let short = Set(parents.map(\.lastPathComponent)).count == paths.count
+            for (path, parent) in zip(paths, parents) {
+                names[path] = "\(name) (\(short ? parent.lastPathComponent : parent.path))"
+            }
+        }
+        return names
+    }
+
+    /// What each conversation cost, counting a reply copied into a resumed conversation only
+    /// where it first appeared, so a project's conversations add up to the project.
+    static func costs(index: HistoryIndex) async throws -> [String: Double] {
         var costs: [String: Double] = [:]
         for row in try await index.rows("""
             SELECT u.conversation_id, u.model, SUM(u.input), SUM(u.output), SUM(u.cache_read),
                    SUM(u.cache_write_5m), SUM(u.cache_write_1h)
-            FROM \(distinct ? DistinctUsage.table : "usage") u GROUP BY u.conversation_id, u.model
+            FROM \(DistinctUsage.table) u GROUP BY u.conversation_id, u.model
             """) {
             guard let id = row.text(0), let model = row.text(1) else { continue }
             costs[id, default: 0] += Pricing.cost(model: model, input: row.int(2), output: row.int(3), cacheRead: row.int(4),
@@ -89,7 +105,7 @@ public enum Projects {
     /// Every project folder with conversations, most recently active first.
     public static func list(index: HistoryIndex, paths: HostPaths = .current) async throws -> [ProjectSummary] {
         let home = paths.home.path
-        let costs = try await costs(index: index, distinct: true)
+        let costs = try await Projects.costs(index: index)
         var files: [String: Set<String>] = [:]
         for row in try await index.rows("""
             SELECT c.project_path, t.file_path FROM tool_calls t JOIN conversations c ON c.id = t.conversation_id
@@ -134,7 +150,7 @@ public enum Projects {
 
     public static func detail(of summary: ProjectSummary, index: HistoryIndex, days: Int = 56,
                               paths: HostPaths = .current, now: Date = Date()) async throws -> ProjectDetail {
-        let costs = try await costs(index: index, distinct: false)
+        let costs = try await Projects.costs(index: index)
         // The same rule the list counts by: a conversation belongs to the folder it ran in (or
         // the repository its worktree came from). A prefix match would pull every project
         // under a home-folder session into that one.

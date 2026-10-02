@@ -54,6 +54,16 @@ final class KeptModel {
     /// Kept copies a backup brought from another Mac. They can be read, not put back.
     var fromOtherMacs: [Vault.Entry] { entries.filter { $0.isFromAnotherMac() } }
 
+    /// Claude Code conversations it deletes within a week.
+    func expiringSoon(in snapshot: CatalogSnapshot, now: Date = Date()) -> [ConversationRef] {
+        let week = now.addingTimeInterval(7 * 86_400)
+        return snapshot.conversations.filter { conversation in
+            guard let url = conversation.claudeCodeSession?.transcriptURL,
+                  let expiry = Vault.expiry(of: url, period: period) else { return false }
+            return expiry < week
+        }
+    }
+
     func expiry(of entry: Vault.Entry) -> Date? {
         entry.sourceExists ? Vault.expiry(of: URL(fileURLWithPath: entry.sourcePath), period: period) : nil
     }
@@ -241,15 +251,7 @@ struct KeptPage: View {
         if panel.runModal() == .OK, let url = panel.url { backup = .restore(url) }
     }
 
-    private var expiringSoon: [ConversationRef] {
-        let period = services.kept.period
-        let week = Date().addingTimeInterval(7 * 86_400)
-        return services.snapshot.conversations.filter { conversation in
-            guard let url = conversation.claudeCodeSession?.transcriptURL,
-                  let expiry = Vault.expiry(of: url, period: period) else { return false }
-            return expiry < week
-        }
-    }
+    private var expiringSoon: [ConversationRef] { services.kept.expiringSoon(in: services.snapshot) }
 
     private var goneForGood: [ConversationRef] {
         let keptIDs = Set(services.kept.entries.map(\.sessionId))

@@ -17,7 +17,10 @@ public struct MonthStats: Sendable, Equatable {
     /// Share of replies per model, largest first.
     public let models: [(name: String, replies: Int)]
     public let tools: [(name: String, uses: Int)]
+    /// The busiest projects, by folder; a worktree counts toward its repository.
     public let projects: [(name: String, conversations: Int)]
+    /// Every project with a conversation in the month, not only the busiest.
+    public let projectCount: Int
     public let places: [(name: String, conversations: Int)]
     public let filesChanged: Int
     public let pullRequests: Int
@@ -45,9 +48,10 @@ public struct MonthStats: Sendable, Equatable {
         var hours = Array(repeating: 0, count: 24)
         var prompts = 0
         var conversations = Set<String>()
+        // A prompt copied into a resumed conversation counts where it was first typed.
         for row in try await index.rows("""
-            SELECT conversation_id, timestamp FROM messages
-            WHERE role = 'user' AND kind = 'message' AND timestamp >= ? AND timestamp < ?
+            SELECT * FROM \(DistinctRows.messages("m.conversation_id, m.timestamp",
+                where: "m.role = 'user' AND m.kind = 'message' AND m.timestamp >= ? AND m.timestamp < ?"))
             """, range) {
             guard let id = row.text(0), let time = row.date(1) else { continue }
             prompts += 1
@@ -75,10 +79,17 @@ public struct MonthStats: Sendable, Equatable {
             models[Self.modelName(model), default: 0] += count
         }
 
-        let tools = try await index.rows("""
-            SELECT name, COUNT(*) FROM tool_calls WHERE timestamp >= ? AND timestamp < ?
-            GROUP BY name ORDER BY COUNT(*) DESC LIMIT 6
-            """, range).compactMap { row in row.text(0).map { (name: Self.toolName($0), uses: Int(row.int(1))) } }
+        // MCP tools from different servers can share a name, and read as one.
+        var toolUses: [String: Int] = [:]
+        for row in try await index.rows("""
+            SELECT name, COUNT(*) FROM \(DistinctRows.toolCalls("t.name", where: "t.timestamp >= ? AND t.timestamp < ?"))
+            GROUP BY name
+            """, range) {
+            guard let name = row.text(0) else { continue }
+            toolUses[Self.toolName(name), default: 0] += Int(row.int(1))
+        }
+        let tools = toolUses.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+            .prefix(6).map { (name: $0.key, uses: $0.value) }
 
         var projects: [String: Set<String>] = [:]
         var places: [String: Set<String>] = [:]
@@ -90,7 +101,7 @@ public struct MonthStats: Sendable, Equatable {
                 """, ids.map(SQLiteValue.text)) {
                 guard let id = row.text(0) else { continue }
                 if let path = row.text(1), path.hasPrefix("/") {
-                    projects[URL(fileURLWithPath: Projects.root(of: path)).lastPathComponent, default: []].insert(id)
+                    projects[Projects.root(of: path), default: []].insert(id)
                 }
                 places[HistorySearch.place(kind: row.text(2), install: row.text(3)), default: []].insert(id)
             }
@@ -102,15 +113,20 @@ public struct MonthStats: Sendable, Equatable {
         let pulls = try await index.rows("SELECT COUNT(DISTINCT url) FROM pull_requests WHERE timestamp >= ? AND timestamp < ?",
                                          range).first?.int(0) ?? 0
         let compactions = try await index.rows("""
-            SELECT COUNT(*) FROM messages WHERE kind = 'compaction' AND timestamp >= ? AND timestamp < ?
+            SELECT COUNT(*) FROM \(DistinctRows.messages("m.id", where: "m.kind = 'compaction' AND m.timestamp >= ? AND m.timestamp < ?"))
             """, range).first?.int(0) ?? 0
+        let projectNames = Projects.names(for: projects.keys)
+        let busiestProjects: [(name: String, conversations: Int)] = projects
+            .map { (name: projectNames[$0.key] ?? $0.key, conversations: $0.value.count) }
+            .sorted { $0.conversations == $1.conversations ? $0.name < $1.name : $0.conversations > $1.conversations }
 
         return MonthStats(
             month: start, conversations: conversations.count, prompts: prompts, replies: replies, days: days,
             longestStreak: longest, hours: hours, tokens: tokens, cost: cost,
             models: models.sorted { $0.value > $1.value }.map { ($0.key, $0.value) },
             tools: tools,
-            projects: projects.map { ($0.key, $0.value.count) }.sorted { $0.1 > $1.1 }.prefix(5).map { ($0.0, $0.1) },
+            projects: Array(busiestProjects.prefix(5)),
+            projectCount: projects.count,
             places: places.map { ($0.key, $0.value.count) }.sorted { $0.1 > $1.1 }.map { ($0.0, $0.1) },
             filesChanged: Int(files), pullRequests: Int(pulls), compactions: Int(compactions))
     }

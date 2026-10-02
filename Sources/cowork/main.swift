@@ -218,7 +218,7 @@ func cmdDistill() throws {
     print("\n\(suggestions.count) commands Claude runs that your settings don't allow yet:")
     for suggestion in suggestions.prefix(10) { print("  \(suggestion.rule)  \(suggestion.runs) runs in \(suggestion.conversations) conversations") }
     print("\n\(issues.count) things failing this week:")
-    for issue in issues.prefix(10) { print("  \(issue.kind.rawValue)  \(issue.name)  \(issue.times) times  \(issue.detail ?? "")") }
+    for issue in issues.prefix(10) { print("  \(issue.kind.rawValue)  \(issue.name)  in \(issue.sessions) session\(issue.sessions == 1 ? "" : "s")  \(issue.detail ?? "")") }
     print("\nThis week: \(digest.conversations) conversations, \(digest.prompts) prompts, \(digest.filesChanged) files changed, \(digest.commands) commands.")
 }
 
@@ -458,10 +458,14 @@ func cmdInstalls() {
     let snapshot = runBlocking { await Catalog().snapshot() }
     let counts = Dictionary(grouping: snapshot.conversations, by: \.installID)
     for install in snapshot.installs {
-        let conversations = counts[install.id] ?? []
+        // Counted the way the app's sidebar counts: archived ones apart.
+        let all = counts[install.id] ?? []
+        let conversations = all.filter { !$0.isArchived }
+        let archived = all.count - conversations.count
         let missing = conversations.filter(\.isTranscriptMissing).count
         var line = "\(install.name.padding(toLength: 18, withPad: " ", startingAt: 0))"
             + "\(String(conversations.count).leftPadded(to: 5)) conversations"
+        if archived > 0 { line += ", \(archived) archived" }
         if missing > 0 { line += ", \(missing) without messages" }
         print(line)
         print("  \(HostPaths.current.abbreviating(install.dataRoot.path))")
@@ -883,9 +887,9 @@ func cmdUndo(_ args: Args) throws {
 }
 
 func cmdLibrary(_ args: Args) throws {
-    let sources = ArtifactHarvest.machineSources()
-    let summary = runBlocking {
-        await ArtifactHarvest.harvest(sources: sources,
+    let summary = runBlocking { () -> HarvestSummary in
+        let sources = ArtifactHarvest.sources(in: await Catalog().snapshot())
+        return await ArtifactHarvest.harvest(sources: sources,
                                       maximumConcurrency: ProcessInfo.processInfo.activeProcessorCount)
     }
     var shown = summary.artifacts

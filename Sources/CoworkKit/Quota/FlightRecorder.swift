@@ -17,6 +17,8 @@ public struct FlightRecord: Sendable, Equatable {
         public var afterBreak: TimeInterval? = nil
         /// What rewriting the cache cost beyond reading it, when `afterBreak` is set.
         public var breakExtra: Double? = nil
+        /// Copied from the conversation this one was resumed from, where it's counted.
+        public var copied = false
     }
 
     public let replies: [Reply]
@@ -25,8 +27,15 @@ public struct FlightRecord: Sendable, Equatable {
     /// their own context, so they're not in `replies`.
     public var agentCost: Double = 0
     public var agents: Int = 0
+    /// What replies copied from the conversation this one was resumed from cost. They're in
+    /// `replies`, since the conversation reads with them, but not in `totalCost`: like every
+    /// other total, that counts each reply once, where it first appeared.
+    public var copiedCost: Double = 0
 
-    public var totalCost: Double { replies.reduce(0) { $0 + $1.cost } + agentCost }
+    /// What the conversation's own replies and its sub-agents' cost.
+    public var totalCost: Double { replies.reduce(0) { $0 + ($1.copied ? 0 : $1.cost) } + agentCost }
+    /// Replies that first appeared in this conversation.
+    public var ownReplies: Int { replies.filter { !$0.copied }.count }
     public var peakContext: Int { replies.map(\.context).max() ?? 0 }
     /// The context window of the model the conversation is on now; a million once it has
     /// gone past 200K, whatever the model.
@@ -45,7 +54,7 @@ public struct FlightRecord: Sendable, Equatable {
     /// resumed from: this is the conversation as it reads.
     public static func load(conversationID: String, index: HistoryIndex) async throws -> FlightRecord {
         let rows = try await index.rows("""
-            SELECT model, timestamp, input, output, cache_read, cache_write_5m, cache_write_1h FROM usage
+            SELECT model, timestamp, input, output, cache_read, cache_write_5m, cache_write_1h, is_copy FROM usage
             WHERE conversation_id = ? AND agent_id IS NULL AND timestamp IS NOT NULL ORDER BY timestamp
             """, [.text(conversationID)])
         let breaks = Dictionary(CacheBreaks.detect(conversationID: conversationID, rows: rows).map { ($0.at, $0) },
@@ -57,20 +66,22 @@ public struct FlightRecord: Sendable, Equatable {
                          output: Int(output),
                          cost: Pricing.cost(model: model, input: input, output: output, cacheRead: read,
                                             cacheWrite5m: write5, cacheWrite1h: write1),
-                         afterBreak: breaks[time]?.gap, breakExtra: breaks[time]?.extra)
+                         afterBreak: breaks[time]?.gap, breakExtra: breaks[time]?.extra, copied: row.int(7) != 0)
         }
         let compactions = try await index.rows("""
             SELECT timestamp FROM messages WHERE conversation_id = ? AND kind = 'compaction' AND timestamp IS NOT NULL
             ORDER BY timestamp
             """, [.text(conversationID)]).compactMap { $0.date(0) }
         var record = FlightRecord(replies: replies, compactions: compactions)
+        record.copiedCost = replies.reduce(0) { $0 + ($1.copied ? $1.cost : 0) }
         for row in try await index.rows("""
-            SELECT model, SUM(input), SUM(output), SUM(cache_read), SUM(cache_write_5m), SUM(cache_write_1h), COUNT(DISTINCT agent_id)
-            FROM usage WHERE conversation_id = ? AND agent_id IS NOT NULL GROUP BY model
+            SELECT model, SUM(input), SUM(output), SUM(cache_read), SUM(cache_write_5m), SUM(cache_write_1h), is_copy
+            FROM usage WHERE conversation_id = ? AND agent_id IS NOT NULL GROUP BY model, is_copy
             """, [.text(conversationID)]) {
             guard let model = row.text(0) else { continue }
-            record.agentCost += Pricing.cost(model: model, input: row.int(1), output: row.int(2), cacheRead: row.int(3),
-                                             cacheWrite5m: row.int(4), cacheWrite1h: row.int(5))
+            let cost = Pricing.cost(model: model, input: row.int(1), output: row.int(2), cacheRead: row.int(3),
+                                    cacheWrite5m: row.int(4), cacheWrite1h: row.int(5))
+            if row.int(6) != 0 { record.copiedCost += cost } else { record.agentCost += cost }
         }
         record.agents = Int(try await index.rows("SELECT COUNT(*) FROM subagents WHERE conversation_id = ?",
                                                  [.text(conversationID)]).first?.int(0) ?? 0)
@@ -131,8 +142,9 @@ public enum CacheBreaks {
         public let breaks: Int
         public let tokens: Int64
         public let extra: Double
-        /// Where it happened most, by project folder name, costliest first.
-        public let projects: [(name: String, extra: Double, breaks: Int)]
+        /// Where it happened most, by project folder, costliest first; `path` is `nil` for
+        /// conversations outside one.
+        public let projects: [(path: String?, name: String, extra: Double, breaks: Int)]
         /// Whether this Mac's sessions mostly keep the cache for an hour, rather than five minutes.
         public let hourLong: Bool
         /// The longest gap, and which conversation it was in.
@@ -140,17 +152,24 @@ public enum CacheBreaks {
 
         /// Summaries of separate accounts or stretches, as one.
         public static func combined(_ summaries: [Summary]) -> Summary {
-            var projects: [String: (Double, Int)] = [:]
+            var projects: [String?: (Double, Int)] = [:]
             for project in summaries.flatMap(\.projects) {
-                projects[project.name] = ((projects[project.name]?.0 ?? 0) + project.extra,
-                                          (projects[project.name]?.1 ?? 0) + project.breaks)
+                projects[project.path] = ((projects[project.path]?.0 ?? 0) + project.extra,
+                                          (projects[project.path]?.1 ?? 0) + project.breaks)
             }
             return Summary(breaks: summaries.reduce(0) { $0 + $1.breaks }, tokens: summaries.reduce(0) { $0 + $1.tokens },
                            extra: summaries.reduce(0) { $0 + $1.extra },
-                           projects: projects.map { ($0.key, $0.value.0, $0.value.1) }.sorted { $0.1 > $1.1 },
+                           projects: named(projects),
                            hourLong: summaries.filter(\.hourLong).count * 2 >= summaries.count,
                            longest: summaries.compactMap(\.longest).max { $0.gap < $1.gap })
         }
+    }
+
+    /// Totals by project folder, named, costliest first.
+    static func named(_ totals: [String?: (Double, Int)]) -> [(path: String?, name: String, extra: Double, breaks: Int)] {
+        let names = Projects.names(for: totals.keys.compactMap { $0 })
+        return totals.map { (path: $0.key, name: $0.key.flatMap { names[$0] } ?? "Other", extra: $0.value.0, breaks: $0.value.1) }
+            .sorted { $0.extra > $1.extra }
     }
 
     /// Breaks between `since` and `until`, in these accounts' conversations when given. A reply
@@ -160,12 +179,12 @@ public enum CacheBreaks {
         let accounts = DistinctUsage.accounts(accountIDs)
         let rows = accountIDs?.isEmpty == true ? [] : try await index.rows("""
             SELECT u.model, u.timestamp, u.input, u.output, u.cache_read, u.cache_write_5m, u.cache_write_1h,
-                   u.conversation_id, c.project_path, u.copy
-            FROM \(DistinctUsage.numbered) u JOIN conversations c ON c.id = u.conversation_id
+                   u.conversation_id, c.project_path, u.is_copy
+            FROM usage u JOIN conversations c ON c.id = u.conversation_id
             WHERE u.agent_id IS NULL AND u.timestamp >= ? AND u.timestamp < ?\(accounts.sql)
             ORDER BY u.conversation_id, u.timestamp
             """, [.date(since.addingTimeInterval(-3_600)), .date(until)] + accounts.values)
-        let original: (SQLiteRow) -> Bool = { $0.int(9) == 1 }
+        let original: (SQLiteRow) -> Bool = { $0.int(9) == 0 }
         var all: [Break] = []
         var projectOf: [String: String] = [:]
         var start = 0
@@ -176,18 +195,18 @@ public enum CacheBreaks {
             }
             let isLast = index == rows.count - 1 || rows[index + 1].text(7) != row.text(7)
             guard isLast, let id = row.text(7) else { continue }
-            if let project = row.text(8) { projectOf[id] = URL(fileURLWithPath: Projects.root(of: project)).lastPathComponent }
+            if let project = row.text(8), !project.isEmpty { projectOf[id] = Projects.root(of: project) }
             all += detect(conversationID: id, rows: Array(rows[start...index]), counts: original)
                 .filter { $0.at >= since && $0.at < until }
             start = index + 1
         }
-        var byProject: [String: (Double, Int)] = [:]
+        var byProject: [String?: (Double, Int)] = [:]
         for item in all {
-            let name = projectOf[item.conversationID] ?? "Other"
-            byProject[name] = ((byProject[name]?.0 ?? 0) + item.extra, (byProject[name]?.1 ?? 0) + 1)
+            let path = projectOf[item.conversationID]
+            byProject[path] = ((byProject[path]?.0 ?? 0) + item.extra, (byProject[path]?.1 ?? 0) + 1)
         }
         return Summary(breaks: all.count, tokens: all.reduce(0) { $0 + $1.tokens }, extra: all.reduce(0) { $0 + $1.extra },
-                       projects: byProject.map { ($0.key, $0.value.0, $0.value.1) }.sorted { $0.1 > $1.1 },
+                       projects: named(byProject),
                        hourLong: hourWrites >= fiveWrites, longest: all.max { $0.gap < $1.gap })
     }
 

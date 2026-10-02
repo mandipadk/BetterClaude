@@ -58,13 +58,18 @@ public enum Insights {
                        action: "Review", weight: 100)
     }
 
+    /// The suggestion the corrections insight names.
+    public static func correctionsSubject(_ suggestions: [CorrectionSuggestion]) -> CorrectionSuggestion? {
+        suggestions.max(by: { $0.conversations < $1.conversations })
+    }
+
     public static func corrections(_ suggestions: [CorrectionSuggestion]) -> Insight? {
-        guard let first = suggestions.max(by: { $0.conversations < $1.conversations }) else { return nil }
+        guard let first = correctionsSubject(suggestions) else { return nil }
         let count = suggestions.count
-        let place = first.project.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "several projects"
+        let place = first.project.map { "in " + URL(fileURLWithPath: $0).lastPathComponent } ?? "across your projects"
         return Insight(kind: .corrections, key: "corrections:\(suggestions.map(\.id).sorted().joined(separator: ","))",
                        title: count == 1 ? "Something you keep telling Claude" : "\(count) things you keep telling Claude",
-                       detail: "“\(first.rule)” came up in \(first.conversations) \(place) conversations.",
+                       detail: "“\(first.rule)” came up in \(first.conversations) conversations \(place).",
                        action: "Add to CLAUDE.md", weight: 70)
     }
 

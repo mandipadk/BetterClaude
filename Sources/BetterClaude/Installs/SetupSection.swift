@@ -9,8 +9,8 @@ struct SetupSection: View {
     let install: Install
 
     var body: some View {
-        let items = services.setup[install.id]
-        DetailSection(title: "Set up with", subtitle: subtitle(items)) {
+        let items = services.setup[install.id].map { $0.filter(Self.isUsable) }
+        DetailSection(title: "Set up with", subtitle: subtitle(items, off: offCount)) {
             if let items {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(kinds(in: items), id: \.self) { kind in
@@ -29,18 +29,31 @@ struct SetupSection: View {
         .task(id: "\(install.id)#\(services.generation)") { services.loadSetup(for: install) }
     }
 
+    /// A skill, agent or command of a plugin that's off isn't something Claude can use; the
+    /// plugin itself is still listed, marked off.
+    static func isUsable(_ item: ConfigItem) -> Bool {
+        item.kind == .plugin || item.isEnabled != false
+    }
+
+    private var offCount: Int {
+        (services.setup[install.id] ?? []).filter { !Self.isUsable($0) }.count
+    }
+
     private func kinds(in items: [ConfigItem]) -> [ConfigKind] {
         Set(items.map(\.kind)).sorted { $0.order < $1.order }
     }
 
-    private func subtitle(_ items: [ConfigItem]?) -> String? {
+    private func subtitle(_ items: [ConfigItem]?, off: Int) -> String? {
         guard let items else { return nil }
         if items.isEmpty {
             return install.kind == .science
                 ? "Claude Science manages its own tools."
                 : "No skills, servers or plugins yet."
         }
-        return "Everything Claude can use here. Open a group to see each item; click one to find it in Finder."
+        let base = "Everything Claude can use here. Open a group to see each item; click one to find it in Finder."
+        guard off > 0 else { return base }
+        return base + (off == 1 ? " One skill, agent or command is left out because its plugin is off."
+                       : " \(off) skills, agents and commands are left out because their plugins are off.")
     }
 }
 

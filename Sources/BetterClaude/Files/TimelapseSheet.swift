@@ -144,7 +144,10 @@ struct TimelapseSheet: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 if model.step == 0 {
-                    Text(frame.text == nil ? "Before: the file didn't exist yet." : "Before the conversation changed it.")
+                    Text(frame.text == nil && !frame.isMissing ? "Before: the file didn't exist yet." : "Before the conversation changed it.")
+                        .font(Theme.Font.headline)
+                } else if frame.changedSince {
+                    Text("Now, changed since this conversation")
                         .font(Theme.Font.headline)
                 } else {
                     Text(frame.prompt.map { "After “\(oneLine($0))”" } ?? "After the next turn")
@@ -161,7 +164,11 @@ struct TimelapseSheet: View {
             .transition(.opacity)
             .animation(reduceMotion ? nil : Theme.Motion.fade, value: model.step)
 
-            if model.step > 0, let diff = timelapse.change(into: model.step) {
+            if frame.isMissing || (model.step > 0 && timelapse.frames[min(model.step, last) - 1].isMissing) {
+                Text(frame.isMissing ? "This version wasn't kept." : "The version before this one wasn't kept, so there's nothing to compare.")
+                    .font(Theme.Font.body)
+                    .foregroundStyle(.secondary)
+            } else if model.step > 0, let diff = timelapse.change(into: model.step) {
                 if diff.isEmpty {
                     Text("No change to this file in that turn.").font(Theme.Font.body).foregroundStyle(.secondary)
                 } else {

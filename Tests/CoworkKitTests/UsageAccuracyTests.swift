@@ -53,16 +53,20 @@ struct UsageAccuracyTests {
         #expect(abs((try await QuotaAttribution.models(index: index, since: start).first?.cost ?? 0) - 75) < 1e-9)
         #expect(try await QuotaAttribution.models(index: index, accountIDs: ["b"], since: start).isEmpty)
 
-        let distinct = try await Projects.costs(index: index, distinct: true)
-        #expect(abs(distinct.values.reduce(0, +) - 75) < 1e-9)
-        #expect(abs((try await Projects.costs(index: index, distinct: false)["resumed"] ?? 0) - 75) < 1e-9)
+        // A project's conversations add up to the project.
+        let costs = try await Projects.costs(index: index)
+        #expect(abs(costs.values.reduce(0, +) - 75) < 1e-9)
+        #expect(abs((costs["resumed"] ?? 0) - 25) < 1e-9)
 
         let month = try await MonthStats.build(index: index, month: start)
         #expect(month.replies == 3 && month.tokens == 3_000_000 && abs(month.cost - 75) < 1e-9)
 
-        // The resumed conversation reads with every reply in its file.
+        // The resumed conversation reads with every reply in its file, and costs only its own.
         let record = try await FlightRecord.load(conversationID: "resumed", index: index)
-        #expect(record.replies.count == 3 && abs(record.totalCost - 75) < 1e-9)
+        #expect(record.replies.count == 3 && record.ownReplies == 1)
+        #expect(abs(record.totalCost - 25) < 1e-9 && abs(record.copiedCost - 50) < 1e-9)
+        let original = try await FlightRecord.load(conversationID: "original", index: index)
+        #expect(abs(original.totalCost - 50) < 1e-9 && original.copiedCost == 0)
     }
 
     @Test("A cache break and a model change copied into a resumed conversation are counted once")

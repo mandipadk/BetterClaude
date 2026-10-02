@@ -11,6 +11,7 @@ public enum AccuracyCheck {
         public let name: String
         public let listed: Int
         public let archived: Int
+        /// Of those listed: archived ones are counted under `archived` alone.
         public let withoutMessages: Int
         /// Found on disk but not listed as conversations, each a phrase with its count:
         /// "65 threads Codex started for a conversation".
@@ -63,7 +64,7 @@ public enum AccuracyCheck {
                 installID: install.id, name: install.name,
                 listed: conversations.filter { !$0.isArchived }.count,
                 archived: conversations.filter(\.isArchived).count,
-                withoutMessages: conversations.filter(\.isTranscriptMissing).count,
+                withoutMessages: conversations.filter { !$0.isArchived && $0.isTranscriptMissing }.count,
                 leftOut: leftOut))
         }
 
@@ -95,7 +96,7 @@ public enum AccuracyCheck {
                                 detail: "Copied by an earlier Better Claude without a field Claude now requires. Undo the copy in Activity and copy it again.",
                                 count: unshown))
         }
-        let missing = snapshot.conversations.filter(\.isTranscriptMissing).count
+        let missing = snapshot.conversations.filter { !$0.isArchived && $0.isTranscriptMissing }.count
         if missing > 0 {
             issues.append(Issue(kind: .missingMessages, title: "Conversations without their messages",
                                 detail: "The app still has a record of them, but their transcript is gone from this Mac.",

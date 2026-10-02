@@ -168,7 +168,7 @@ struct InstallPage: View {
     @ViewBuilder
     private var notices: some View {
         let hints = services.credentialHints[install.id] ?? []
-        let missing = services.snapshot.conversations(in: install.id).filter(\.isTranscriptMissing).count
+        let missing = services.snapshot.conversations(in: install.id).filter { !$0.isArchived && $0.isTranscriptMissing }.count
         if !hints.isEmpty || missing > 0 {
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 if !hints.isEmpty {

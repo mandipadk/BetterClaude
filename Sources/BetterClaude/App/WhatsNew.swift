@@ -12,6 +12,16 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "1.4.5": [
+            Item(symbol: "dollarsign.circle", title: "Every number counted one way",
+                 detail: "Copied replies, prompts and tool calls count once everywhere: usage, the month and the week agree, and a project's conversations group under its repository. Usage opens faster too."),
+            Item(symbol: "gauge.with.dots.needle.33percent", title: "What's left before a limit",
+                 detail: "Continue's tiles said how much of the week was left when they meant the room under the tighter of your five-hour and weekly limits. They say so now."),
+            Item(symbol: "square.on.square", title: "Compare and setup, closer to the truth",
+                 detail: "Compare tells two servers of one name apart by how they're started, and says which ones a Desktop install can take. A turned-off plugin's skills no longer count, and a Claude Code folder set by CLAUDE_CONFIG_DIR is read."),
+            Item(symbol: "clock.arrow.circlepath", title: "Changes, Timelapse and Replay",
+                 detail: "Changes shows the diff for the file you picked, Timelapse keeps every version, and Stop in Replay stops it, marking the turns it didn't run."),
+        ],
         "1.4.4": [
             Item(symbol: "text.bubble", title: "Nothing in a conversation goes missing",
                  detail: "Some compactions and recaps, and prompts that mentioned a tag like <image>, weren't shown. They are now, and Fork from here is back on every message."),

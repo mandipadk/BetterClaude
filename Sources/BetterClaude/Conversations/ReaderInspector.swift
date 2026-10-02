@@ -130,7 +130,7 @@ struct ConversationFacts: View {
     let conversation: ConversationRef
     let install: Install?
     let readable: ReadableConversation?
-    @State private var cost: Double?
+    @State private var cost: (own: Double, copied: Double)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -138,7 +138,11 @@ struct ConversationFacts: View {
             if let project = conversation.projectName { KV("Project", project) }
             if let model = readable?.model ?? conversation.model { KV("Model", humanModelName(model)) }
             if let readable { KV("Messages", "\(readable.messageCount)") }
-            if let cost, cost > 0 { KV("Cost", Pricing.dollars(cost)) }
+            if let cost, cost.own > 0 { KV("Cost", Pricing.dollars(cost.own)) }
+            if let cost, cost.copied > 0 {
+                KV("Copied when resumed", Pricing.dollars(cost.copied))
+                    .help("Replies copied from the conversation this one was resumed from. They count there, not here.")
+            }
             if let deletion = ReaderHeader.deletionText(conversation, services: services) { KV("Deleted", deletion) }
             if let readable {
                 ForEach(readable.pullRequests, id: \.self) { pull in
@@ -164,7 +168,7 @@ struct ConversationFacts: View {
         }
         .task(id: InspectorKey(conversation.id, services.index.generation)) {
             guard conversation.external == nil, let index = services.index.index else { return }
-            cost = (try? await FlightRecord.load(conversationID: conversation.id, index: index))?.totalCost
+            cost = (try? await FlightRecord.load(conversationID: conversation.id, index: index)).map { ($0.totalCost, $0.copiedCost) }
         }
     }
 }

@@ -89,6 +89,10 @@ final class IndexModel {
 final class SearchModel {
     private(set) var hits: [HistorySearch.Hit] = []
     private(set) var lastQuery = ""
+    /// At most this many conversations come back, the best matches first.
+    static let limit = 100
+    /// More conversations matched than came back.
+    var isCapped: Bool { hits.count >= Self.limit }
     private(set) var isSearching = false
 
     private var searchTask: Task<Void, Never>?
@@ -111,7 +115,7 @@ final class SearchModel {
             if !immediately { try? await Task.sleep(for: .milliseconds(140)) }
             guard !Task.isCancelled else { return }
             isSearching = true
-            let found = (try? await index.search(needle)) ?? []
+            let found = (try? await index.search(needle, options: .init(limit: Self.limit))) ?? []
             guard !Task.isCancelled else { return }
             hits = found
             lastQuery = needle

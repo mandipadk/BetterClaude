@@ -41,6 +41,16 @@ struct InsightsTests {
         #expect(Insights.month(now: late, calendar: calendar) == nil)
     }
 
+    @Test("Corrections say where they came up, in one plain sentence")
+    func correctionsSentence() throws {
+        let examples = ["a", "b", "c"].map { CorrectionSuggestion.Example(text: "Use tabs", conversationID: $0, conversationTitle: "T", date: nil) }
+        let everywhere = CorrectionSuggestion(project: nil, rule: "Use tabs", examples: examples, key: "tabs use")
+        #expect(Insights.corrections([everywhere])?.detail == "“Use tabs” came up in 3 conversations across your projects.")
+        let here = CorrectionSuggestion(project: "/repo/billing", rule: "Use tabs", examples: examples, key: "tabs use")
+        #expect(Insights.corrections([here])?.detail == "“Use tabs” came up in 3 conversations in billing.")
+        #expect(Insights.correctionsSubject([here, everywhere])?.project == "/repo/billing")
+    }
+
     @Test("Words match the number")
     func plurals() {
         #expect(Insights.secrets(open: 1)?.title == "A key in your conversations to rotate")

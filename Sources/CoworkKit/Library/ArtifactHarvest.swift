@@ -46,6 +46,9 @@ public struct Artifact: Sendable, Identifiable, Hashable {
     public let conversationID: String
     public let container: String       // variant name or project name
     public let createdAt: Date?
+    /// When the conversation it came from began. A resumed conversation repeats the one it
+    /// was resumed from, timestamps and all; this is how the original keeps the credit.
+    public var conversationStarted: Date?
 
     public init(id: String, kind: ArtifactKind, title: String, language: String?, bytes: Int,
                 lineCount: Int?, contentHash: String, inlineContent: String?, fileURL: URL?,
@@ -99,14 +102,16 @@ public struct HarvestSource: Sendable {
     public let container: String
     public let transcriptURL: URL?
     public let workspaceURL: URL?
+    public let started: Date?
 
     public init(conversationTitle: String, conversationID: String, container: String,
-                transcriptURL: URL?, workspaceURL: URL?) {
+                transcriptURL: URL?, workspaceURL: URL?, started: Date? = nil) {
         self.conversationTitle = conversationTitle
         self.conversationID = conversationID
         self.container = container
         self.transcriptURL = transcriptURL
         self.workspaceURL = workspaceURL
+        self.started = started
     }
 }
 
@@ -369,13 +374,21 @@ public enum ArtifactHarvest {
 
     /// An artifact with no date cannot be earlier than one that has a date: an undated file is
     /// unknown, not ancient, and treating it as ancient would let it evict the provenance of a
-    /// block that has a real timestamp. `id` breaks exact ties so the result is deterministic.
+    /// block that has a real timestamp. A tie goes to the conversation that began first, since
+    /// a resumed one repeats its original with the same times; `id` breaks what's left so the
+    /// result is deterministic.
     static func isEarlier(_ lhs: Artifact, than rhs: Artifact) -> Bool {
         switch (lhs.createdAt, rhs.createdAt) {
-        case let (l?, r?): return l == r ? lhs.id < rhs.id : l < r
+        case let (l?, r?) where l != r: return l < r
         case (nil, _?): return false
         case (_?, nil): return true
-        case (nil, nil): return lhs.id < rhs.id
+        default: break
+        }
+        switch (lhs.conversationStarted, rhs.conversationStarted) {
+        case let (l?, r?) where l != r: return l < r
+        case (nil, _?): return false
+        case (_?, nil): return true
+        default: return lhs.id < rhs.id
         }
     }
 
@@ -403,44 +416,21 @@ public enum ArtifactHarvest {
 
     // MARK: - Whole-machine harvest
 
-    /// Every conversation on the machine, from both places Claude keeps them.
-    ///
-    /// This exists because the enumeration was previously written twice — once in the app and
-    /// once in the CLI — and the two drifted: the CLI's copy walked only the Cowork stores, so
-    /// `cowork library` silently reported a fraction of the machine while claiming to harvest
-    /// everything. Anything that harvests should call this rather than walk `Discovery` itself.
+    /// Every conversation the catalog lists, as the app's Library and `cowork library` both
+    /// harvest them, so the two report the same machine.
     ///
     /// Claude Code sessions have no workspace directory; their artifacts come from the
     /// transcript alone. Cowork sessions have both.
-    public static func machineSources(
-        claudeCodeConfigDir: URL = Discovery.defaultClaudeCodeConfigDir()
-    ) -> [HarvestSource] {
-        var sources: [HarvestSource] = []
-
-        for store in (try? Discovery.stores()) ?? [] {
-            for account in (try? Discovery.accounts(in: store)) ?? [] {
-                for session in (try? Discovery.sessions(in: account)) ?? [] {
-                    sources.append(HarvestSource(conversationTitle: session.title,
-                                                 conversationID: session.sessionId,
-                                                 container: store.variantDirName,
-                                                 transcriptURL: session.transcriptURL,
-                                                 workspaceURL: session.workspaceURL))
-                }
-            }
+    public static func sources(in snapshot: CatalogSnapshot) -> [HarvestSource] {
+        snapshot.conversations.map { conversation in
+            HarvestSource(conversationTitle: conversation.title,
+                          conversationID: conversation.id,
+                          container: conversation.projectName
+                              ?? snapshot.install(conversation.installID)?.name ?? "",
+                          transcriptURL: conversation.transcriptURL,
+                          workspaceURL: conversation.coworkSession?.workspaceURL,
+                          started: conversation.startedAt)
         }
-
-        for projectDir in (try? Discovery.claudeCodeProjects(configDir: claudeCodeConfigDir)) ?? [] {
-            let label = projectDir.lastPathComponent
-            for session in (try? Discovery.claudeCodeSessions(projectDir: projectDir,
-                                                              configDir: claudeCodeConfigDir)) ?? [] {
-                sources.append(HarvestSource(conversationTitle: session.title,
-                                             conversationID: session.sessionId,
-                                             container: label,
-                                             transcriptURL: session.transcriptURL,
-                                             workspaceURL: nil))
-            }
-        }
-        return sources
     }
 
     /// Harvest every source, deduplicate, and report what was skipped.
@@ -508,6 +498,7 @@ public enum ArtifactHarvest {
             partial.artifacts += found.artifacts
             for (reason, count) in found.skips { partial.skips[reason, default: 0] += count }
         }
+        for index in partial.artifacts.indices { partial.artifacts[index].conversationStarted = source.started }
         return partial
     }
 

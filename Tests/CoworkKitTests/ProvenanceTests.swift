@@ -82,6 +82,22 @@ struct ProvenanceTests {
         }
     }
 
+    @Test("An edit counts from when its result came back, not when Claude asked for it")
+    func editResultTimes() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("rewind-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let transcript = folder.appendingPathComponent("t.jsonl")
+        let lines = [
+            #"{"type":"assistant","timestamp":"2026-09-01T10:00:00.000Z","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"Edit"}]}}"#,
+            #"{"type":"user","timestamp":"2026-09-01T10:07:30.000Z","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"ok"}]}}"#,
+            #"{"type":"user","timestamp":"2026-09-01T10:09:00.000Z","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_other","content":"ok"}]}}"#,
+        ]
+        try Data(lines.joined(separator: "\n").utf8).write(to: transcript)
+        let times = ConversationRewind.resultTimes(in: transcript, editIDs: ["toolu_1": "/repo/a.swift"])
+        #expect(times == ["/repo/a.swift": try #require(Transcript.parseTimestamp("2026-09-01T10:07:30.000Z"))])
+    }
+
     @Test("File versions Claude Code keys relative to where the session started are found by their full path")
     func relativeVersions() async throws {
         try await HistoryIndexTests.withSample { sample, snapshot, index in

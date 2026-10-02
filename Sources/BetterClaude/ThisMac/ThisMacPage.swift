@@ -105,6 +105,7 @@ struct ThisMacPage: View {
             .frame(maxWidth: .infinity)
         }
         .task(id: services.generation) {
+            services.kept.reload()
             if services.secrets.swept == nil, !services.secrets.sweeping { services.secrets.sweep(services.snapshot) }
             if services.storage.categories.isEmpty, !services.storage.isMeasuring {
                 services.storage.measure(services.snapshot, generation: services.generation)
@@ -156,6 +157,7 @@ struct ThisMacPage: View {
     private var keptValue: String {
         let kept = services.kept.entries.count
         let onlyHere = services.kept.onlyHere.count
+        guard services.kept.loaded else { return "Copies of what Claude Code deletes" }
         guard kept > 0 else { return "Nothing kept yet" }
         return onlyHere > 0 ? "\(kept) conversations, \(onlyHere) only here" : "\(kept) conversations"
     }

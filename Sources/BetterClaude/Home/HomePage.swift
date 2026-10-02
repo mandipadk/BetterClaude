@@ -14,17 +14,31 @@ final class HomeModel {
     /// Which group in Memory the memory insight is about, and which conversation drifted.
     private(set) var memoryGroupID: String?
     private(set) var driftConversationID: String?
+    /// The project the corrections insight is about; `nil` when it's about every project.
+    private(set) var correctionsProject: String?
     private var snoozed: [String: Date] = HomeModel.loadSnoozed()
     private var task: Task<Void, Never>?
 
     static let snoozedKey = "insightsSnoozed"
 
     func shown(_ services: AppServices) -> [Insight] {
-        let live = [Insights.secrets(open: services.secrets.open.count), Insights.month()].compactMap { $0 }
+        let live = [Insights.secrets(open: services.secrets.open.count), Insights.month(), expiring(services)].compactMap { $0 }
         return Insights.ranked(computed + live, snoozed: snoozed)
     }
 
+    /// Conversations Claude Code deletes this week with no copy kept; none while keeping is on,
+    /// since Better Claude keeps them itself.
+    private func expiring(_ services: AppServices) -> Insight? {
+        let kept = services.kept
+        guard kept.loaded else { return nil }
+        let keeping = UserDefaults.standard.object(forKey: "keepAutomatically") as? Bool ?? true
+        let keptIDs = Set(kept.entries.map(\.sessionId))
+        let count = kept.expiringSoon(in: services.snapshot).filter { !keptIDs.contains($0.cliSessionId) }.count
+        return Insights.expiring(count, keeping: keeping)
+    }
+
     func refresh(_ services: AppServices) {
+        if !services.kept.loaded { services.kept.reload() }
         guard let index = services.index.index else { return }
         if services.secrets.swept == nil, !services.secrets.sweeping { services.secrets.sweep(services.snapshot) }
         if !services.memory.loaded { services.memory.load(services.snapshot) }
@@ -35,7 +49,7 @@ final class HomeModel {
         computing = true
         task = Task {
             let week = Date().addingTimeInterval(-7 * 86_400)
-            let found = await Task.detached(priority: .utility) { () -> ([Insight], String?, String?) in
+            let found = await Task.detached(priority: .utility) { () -> ([Insight], String?, String?, String?) in
                 var insights: [Insight] = []
                 var unlinked = 0, pastCut = 0
                 var memoryGroup: String?
@@ -46,9 +60,11 @@ final class HomeModel {
                     if memoryGroup == nil { memoryGroup = id }
                 }
                 if let memory = Insights.memory(unlinked: unlinked, pastCut: pastCut) { insights.append(memory) }
+                var correctionsProject: String?
                 if let suggestions = try? await Corrections.suggestions(index: index),
                    let corrections = Insights.corrections(suggestions) {
                     insights.append(corrections)
+                    correctionsProject = Insights.correctionsSubject(suggestions)?.project
                 }
                 var drifted: String?
                 if let switches = try? await ModelDrift.unexplained(index: index, since: week) {
@@ -59,12 +75,13 @@ final class HomeModel {
                    let insight = Insights.cacheBreaks(extra: breaks.extra, breaks: breaks.breaks, hourLong: breaks.hourLong) {
                     insights.append(insight)
                 }
-                return (insights, memoryGroup, drifted)
+                return (insights, memoryGroup, drifted, correctionsProject)
             }.value
             guard !Task.isCancelled else { return }
             computed = found.0
             memoryGroupID = found.1
             driftConversationID = found.2
+            correctionsProject = found.3
             computing = false
             hasComputed = true
         }
@@ -85,7 +102,10 @@ final class HomeModel {
     func open(_ insight: Insight, _ services: AppServices) {
         switch insight.kind {
         case .secrets: services.destination = .secrets
-        case .corrections: services.destination = .projects
+        case .corrections:
+            // A project's own go on its page; ones from every project, on the list of projects.
+            services.destination = .projects
+            services.openProject(correctionsProject)
         case .memory:
             services.destination = .memory
             if let id = memoryGroupID { services.memory.selectedID = id }
@@ -139,10 +159,9 @@ struct HomePage: View {
         }
         .task(id: services.generation) {
             let dirs = services.pulse.configDirs
-            let day = Date().addingTimeInterval(-86_400)
             let found = await Task.detached { Unattended.jobs(configDirs: dirs) }.value
             guard !Task.isCancelled else { return }
-            jobs = found.filter { ($0.updated ?? .distantPast) > day }
+            jobs = Unattended.recent(found, within: 86_400)
         }
     }
 
@@ -160,8 +179,10 @@ struct HomePage: View {
             }
             let now = services.pulse.sessions.filter { $0.state != .needsYou }
             let shownJobs = Array(jobs.prefix(max(0, 5 - now.count)))
+            // The Running page counts sessions, the ones that need you too; jobs are listed below them.
+            let sessions = services.pulse.sessions.count
             SectionLabel(title: "Now",
-                         link: now.count + jobs.count > 5 ? "All \(now.count + jobs.count)" : nil,
+                         link: now.count > 5 ? "All \(sessions) sessions" : now.count + jobs.count > 5 ? "See all" : nil,
                          action: { services.destination = .running })
             Card(inset: 46) {
                 if now.isEmpty && shownJobs.isEmpty {

@@ -64,10 +64,13 @@ public enum Decisions {
             filters.append("c.account_id IN (\(accounts.map { _ in "?" }.joined(separator: ",")))")
             values += accounts.sorted().map(SQLiteValue.text)
         }
+        // Oldest first, so a decision is credited to where it was first said rather than to a
+        // resumed conversation repeating it with the same times.
         let rows = try await index.rows("""
             SELECT m.conversation_id, m.role, m.kind, m.text, m.timestamp, c.title, c.project_path, c.session_id
             FROM messages m JOIN conversations c ON c.id = m.conversation_id
             WHERE \(filters.joined(separator: " AND "))
+            ORDER BY m.timestamp IS NULL, m.timestamp, c.first_activity IS NULL, c.first_activity, m.id
             """, values)
         let dismissed = DismissedDecisions.load(paths: paths)
         let needle = topic.map { Set(PromptLibrary.normalize($0).split(separator: " ").map(String.init).filter { $0.count >= 3 }) }

@@ -274,8 +274,9 @@ private struct ChooseStep: View {
     }
 
     private func roomLine(_ room: Double?, open: Bool, fallback: String = "") -> String {
-        let left = room.map { "\(Int($0.rounded()))% of the week left" }
-        if open { return left.map { $0.replacingOccurrences(of: " of the week", with: "") + ", open now" } ?? "Open now" }
+        // Room is what's left of the tighter of the five-hour and weekly limits.
+        let left = room.map { "\(Int($0.rounded()))% left before a limit" }
+        if open { return left.map { $0 + ", open now" } ?? "Open now" }
         return left ?? fallback
     }
 

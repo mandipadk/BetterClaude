@@ -34,10 +34,14 @@ public enum Claims {
         let at: Date?
     }
 
-    static let testRun = try! NSRegularExpression(pattern: #"\b(test|tests|pytest|jest|vitest|rspec|phpunit|xctest)\b"#, options: .caseInsensitive)
-    static let buildRun = try! NSRegularExpression(pattern: #"\b(build|compile|tsc|xcodebuild|cargo check)\b"#, options: .caseInsensitive)
+    /// A test runner at the start of one command in a shell line.
+    static let testRun = try! NSRegularExpression(pattern: #"^(swift test|(npm|pnpm|yarn|bun)( run)? test|npm t|python3? -m pytest|pytest|cargo test|go test|xcodebuild\b.*\b(test|test-without-building)|make test|(npx )?(jest|vitest)|(bundle exec )?rspec|phpunit)\b"#, options: .caseInsensitive)
+    /// A build at the start of one command in a shell line.
+    static let buildRun = try! NSRegularExpression(pattern: #"^(swift build|(npm|pnpm|yarn|bun)( run)? build|cargo (build|check)|go build|xcodebuild\b.*\bbuild|make(?!\s+test\b)|(npx )?tsc)\b"#, options: .caseInsensitive)
     static let testClaim = try! NSRegularExpression(pattern: #"\b(all (the )?tests? (now )?pass|tests? (now )?pass(es|ed|ing)?|tests? (are|is) (all )?(passing|green)|\d+ tests? pass(ed)?|all pass(ed)?|suite (passes|is green))\b"#, options: .caseInsensitive)
-    static let editClaim = try! NSRegularExpression(pattern: #"\b(updated|edited|changed|modified|fixed|created|added|wrote|rewrote|refactored)\b[^.\n]*?([\w./-]+\.[a-z]{1,6})\b"#, options: .caseInsensitive)
+    static let editClaim = try! NSRegularExpression(pattern: #"\b(updated|edited|changed|modified|fixed|created|added|wrote|rewrote|refactored)\b"#, options: .caseInsensitive)
+    /// Something shaped like a file name or path: letters before a dot, and an extension.
+    static let fileToken = try! NSRegularExpression(pattern: #"(?<![\w./-])([\w./-]*[A-Za-z_][\w-]*\.[A-Za-z][A-Za-z0-9]{0,5})(?![\w/-])"#)
     static let commitClaim = try! NSRegularExpression(pattern: #"\b(committed|made a commit|created a commit)\b"#, options: .caseInsensitive)
     static let pushClaim = try! NSRegularExpression(pattern: #"\b(pushed)\b"#, options: .caseInsensitive)
     static let buildClaim = try! NSRegularExpression(pattern: #"\b(build (succeeds|succeeded|passes|passed|is green)|builds (cleanly|fine|successfully)|compiles (cleanly|fine|without errors))\b"#, options: .caseInsensitive)
@@ -59,15 +63,65 @@ public enum Claims {
             if matches(buildClaim, clean) != nil { found.append((clean, .builds, nil)) }
             if matches(commitClaim, clean) != nil { found.append((clean, .committed, nil)) }
             if matches(pushClaim, clean) != nil { found.append((clean, .pushed, nil)) }
-            if let edit = matches(editClaim, clean), let range = Range(edit.range(at: 2), in: clean) {
-                let file = String(clean[range])
-                // A version number or a domain isn't a file.
-                if !file.allSatisfy({ $0.isNumber || $0 == "." }), !file.hasPrefix("www."), file.contains(where: \.isLetter) {
-                    found.append((clean, .edited, URL(fileURLWithPath: file).lastPathComponent))
-                }
+            if let edit = matches(editClaim, clean), let verb = Range(edit.range, in: clean) {
+                let rest = String(clean[verb.upperBound...])
+                let named = fileToken.matches(in: rest, range: NSRange(rest.startIndex..., in: rest)).lazy
+                    .compactMap { Range($0.range(at: 1), in: rest).flatMap { fileName(String(rest[$0])) } }.first
+                if let file = named { found.append((clean, .edited, file)) }
             }
         }
         return found
+    }
+
+    /// Libraries named like a file: "Node.js" in a sentence is never a file Claude edited.
+    static let libraryNames: Set<String> = ["node.js", "vue.js", "next.js", "nuxt.js", "express.js", "three.js", "d3.js",
+                                            "chart.js", "ember.js", "backbone.js", "angular.js", "react.js", "nest.js",
+                                            "p5.js", "alpine.js", "solid.js", "socket.io", "moment.js", "day.js", "pixi.js",
+                                            "babylon.js", "tensorflow.js", "highlight.js", "video.js", "math.js", "anime.js",
+                                            "electron.js", "deno.js", "bun.js", "svelte.js"]
+
+    /// The file a sentence names, as written: a path, or a name with letters before its
+    /// extension. Version numbers, domains and library names aren't files.
+    static func fileName(_ token: String) -> String? {
+        var file = token
+        while let last = file.last, last == "." || last == "-" || last == "/" { file.removeLast() }
+        if file.hasPrefix("./") { file.removeFirst(2) }
+        let name = URL(fileURLWithPath: file).lastPathComponent
+        guard let dot = name.lastIndex(of: "."), dot != name.startIndex else { return nil }
+        let stem = name[..<dot], ext = name[name.index(after: dot)...]
+        // "e.g." and "i.e." read as a one-letter name with an extension.
+        guard stem.contains(where: \.isLetter), ext.first?.isLetter == true, stem.count > 1 || file.contains("/"),
+              !file.lowercased().hasPrefix("www."), !file.contains("://") else { return nil }
+        if !file.contains("/"), libraryNames.contains(name.lowercased()) { return nil }
+        return file
+    }
+
+    /// Whether a recorded file path is the one a sentence named: the same path, or one ending
+    /// in the relative path or name it gave.
+    static func isSameFile(_ recorded: String, _ named: String) -> Bool {
+        named.hasPrefix("/") ? recorded == named : (recorded == named || recorded.hasSuffix("/" + named))
+    }
+
+    /// Each command in a shell line, without leading variable assignments or `time`/`sudo`.
+    static func commands(in line: String) -> [String] {
+        line.components(separatedBy: CharacterSet(charactersIn: ";|&\n"))
+            .map { segment in
+                var words = segment.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+                while let first = words.first,
+                      first == "time" || first == "sudo" || first == "env" || (first.contains("=") && !first.hasPrefix("-")) {
+                    words.removeFirst()
+                }
+                return words.joined(separator: " ")
+            }
+            .filter { !$0.isEmpty }
+    }
+
+    /// A shell line that runs `expression`'s runner, rather than only looking at something
+    /// whose name happens to say "test" or "build".
+    static func runs(_ expression: NSRegularExpression, _ line: String) -> Bool {
+        commands(in: line).contains { command in
+            !lookingOnly.contains { command == $0 || command.hasPrefix($0 + " ") } && matches(expression, command) != nil
+        }
     }
 
     /// Commands that only look: they can't have run tests, edited a file or committed.
@@ -95,15 +149,16 @@ public enum Claims {
         switch kind {
         case .testsPass, .builds:
             let expression = kind == .testsPass ? testRun : buildRun
-            let runs = shell.filter { $0.detail.map { matches(expression, $0) != nil } ?? false }
+            let runs = shell.filter { $0.detail.map { Self.runs(expression, $0) } ?? false }
             guard let last = runs.last else { return .noEvidence }
             let command = String((last.detail ?? "").prefix(80))
             return last.failed ? .contradicted("the last run, \(command), failed") : .backed("ran \(command)")
         case .edited:
             guard let file else { return .noEvidence }
             let edits = calls.filter { ["Edit", "Write", "MultiEdit", "NotebookEdit"].contains($0.name)
-                && ($0.file.map { URL(fileURLWithPath: $0).lastPathComponent == file } ?? false) }
-            if edits.contains(where: { !$0.failed }) { return .backed("\(edits.filter { !$0.failed }.count) edit\(edits.count == 1 ? "" : "s") to \(file)") }
+                && ($0.file.map { isSameFile($0, file) } ?? false) }
+            let applied = edits.filter { !$0.failed }.count
+            if applied > 0 { return .backed("\(applied) edit\(applied == 1 ? "" : "s") to \(file)") }
             if !edits.isEmpty { return .contradicted("every edit to \(file) failed") }
             // A shell command that names the file may have changed it (sed, a script); don't call that unbacked.
             if shell.contains(where: { $0.detail?.contains(file) ?? false }) { return .backed("a command that touched \(file)") }

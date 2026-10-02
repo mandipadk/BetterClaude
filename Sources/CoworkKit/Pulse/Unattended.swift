@@ -33,6 +33,12 @@ public enum Unattended {
         return nil
     }
 
+    /// Jobs still running, or that ended within `window`: what Home and the Running page
+    /// both list, each over its own window.
+    public static func recent(_ jobs: [Job], within window: TimeInterval, now: Date = Date()) -> [Job] {
+        jobs.filter { $0.outcome == .running || ($0.updated ?? .distantPast) > now.addingTimeInterval(-window) }
+    }
+
     /// Background jobs in each Claude Code config folder, newest first. Their environment
     /// (`providerEnv`, which can hold keys) is never read out.
     public static func jobs(configDirs: [URL], now: Date = Date(), stalledAfter: TimeInterval = 30 * 60) -> [Job] {

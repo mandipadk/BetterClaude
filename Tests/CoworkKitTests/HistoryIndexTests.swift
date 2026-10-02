@@ -233,8 +233,20 @@ struct HistoryIndexTests {
         do {
             let raw = try SQLiteDatabase(url: old)
             try raw.execute("""
-                ALTER TABLE conversations DROP COLUMN first_cwd;
-                ALTER TABLE tool_calls DROP COLUMN tool_use_id;
+                DROP TRIGGER usage_copies_ai;
+                DROP TRIGGER usage_copies_ad;
+                DROP TRIGGER conversations_copies_ai;
+                DROP TRIGGER conversations_copies_ad;
+                DROP TRIGGER conversations_copies_au;
+                DROP INDEX usage_message;
+                ALTER TABLE usage DROP COLUMN is_copy;
+                UPDATE conversations SET first_activity = 100 WHERE id = 'gone';
+                UPDATE conversations SET first_activity = 200 WHERE id = 'here';
+                INSERT INTO usage (conversation_id, message_id, model, timestamp, input, output, cache_read,
+                                   cache_write_5m, cache_write_1h)
+                VALUES ('here', 'm1', 'claude-opus-5', 150, 0, 1, 0, 0, 0),
+                       ('gone', 'm1', 'claude-opus-5', 150, 0, 1, 0, 0, 0),
+                       ('here', 'm2', 'claude-opus-5', 250, 0, 1, 0, 0, 0);
                 PRAGMA user_version = \(previous);
                 """)
         }
@@ -245,6 +257,12 @@ struct HistoryIndexTests {
         let rows = try await index.rows("SELECT id, indexed_bytes, source_size, first_cwd FROM conversations ORDER BY id")
         #expect(rows.map { $0.int(1) } == [0, 0])
         #expect(rows.last?.int(2) == -1)
+        // A reply copied into a conversation resumed from one Claude has since deleted is
+        // marked as the copy, and the index keeps marking copies from here on.
+        let marks = try await index.rows("SELECT conversation_id, message_id, is_copy FROM usage ORDER BY message_id, conversation_id")
+        #expect(marks.map { "\($0.text(0) ?? "")/\($0.text(1) ?? ""):\($0.int(2))" } == ["gone/m1:0", "here/m1:1", "here/m2:0"])
+        _ = try await index.rows("DELETE FROM usage WHERE conversation_id = 'gone'")
+        #expect(try await index.rows("SELECT SUM(is_copy) FROM usage").first?.int(0) == 0)
         #expect(!FileManager.default.fileExists(atPath: old.path))
         let left = try FileManager.default.contentsOfDirectory(atPath: folder.path)
         #expect(left.allSatisfy { $0.hasPrefix("history-v\(HistoryIndex.schemaVersion)") }, "\(left)")

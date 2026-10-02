@@ -75,14 +75,7 @@ final class LibraryModel {
             return
         }
         isGathering = true
-        let sources = snapshot.conversations.map { conversation in
-            HarvestSource(conversationTitle: conversation.title,
-                          conversationID: conversation.id,
-                          container: conversation.projectName
-                              ?? snapshot.install(conversation.installID)?.name ?? "",
-                          transcriptURL: conversation.transcriptURL,
-                          workspaceURL: conversation.coworkSession?.workspaceURL)
-        }
+        let sources = ArtifactHarvest.sources(in: snapshot)
         Task {
             let summary = await ArtifactHarvest.harvest(
                 sources: sources, maximumConcurrency: ProcessInfo.processInfo.activeProcessorCount)

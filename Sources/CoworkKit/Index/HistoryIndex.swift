@@ -11,7 +11,7 @@ public actor HistoryIndex {
 
     /// Bumped whenever the schema or what gets extracted changes; the new file starts from a
     /// copy of the last one when there's an upgrade for it, and from nothing otherwise.
-    public static let schemaVersion = 13
+    public static let schemaVersion = 14
 
     /// How an index of one version becomes the next, for ``carryForward(to:)``.
     static let upgrades: [Int: String] = [
@@ -19,7 +19,48 @@ public actor HistoryIndex {
             ALTER TABLE conversations ADD COLUMN first_cwd TEXT;
             ALTER TABLE tool_calls ADD COLUMN tool_use_id TEXT;
             """,
+        13: """
+            ALTER TABLE usage ADD COLUMN is_copy INTEGER NOT NULL DEFAULT 0;
+            \(copyMarking)
+            \(markCopies(""))
+            """,
     ]
+
+    /// Claude Code copies a session's earlier replies into the file of a session resumed or
+    /// forked from it, under the same message id. `is_copy` marks every appearance of a reply
+    /// but its first: the earliest, then the one in the conversation that started first, then
+    /// the one indexed first. Triggers keep it right whenever a reply or a conversation's start
+    /// changes, so totals read `WHERE is_copy = 0` instead of ranking every row each time.
+    static let copyMarking = """
+        CREATE INDEX IF NOT EXISTS usage_message ON usage(message_id);
+        CREATE TRIGGER IF NOT EXISTS usage_copies_ai AFTER INSERT ON usage BEGIN
+            \(markCopies("WHERE u.message_id = new.message_id"));
+        END;
+        CREATE TRIGGER IF NOT EXISTS usage_copies_ad AFTER DELETE ON usage BEGIN
+            \(markCopies("WHERE u.message_id = old.message_id"));
+        END;
+        CREATE TRIGGER IF NOT EXISTS conversations_copies_ai AFTER INSERT ON conversations BEGIN
+            \(markCopies("WHERE u.message_id IN (SELECT message_id FROM usage WHERE conversation_id = new.id)"));
+        END;
+        CREATE TRIGGER IF NOT EXISTS conversations_copies_ad AFTER DELETE ON conversations BEGIN
+            \(markCopies("WHERE u.message_id IN (SELECT message_id FROM usage WHERE conversation_id = old.id)"));
+        END;
+        CREATE TRIGGER IF NOT EXISTS conversations_copies_au AFTER UPDATE OF first_activity ON conversations
+        WHEN old.first_activity IS NOT new.first_activity BEGIN
+            \(markCopies("WHERE u.message_id IN (SELECT message_id FROM usage WHERE conversation_id = new.id)"));
+        END;
+        """
+
+    /// Sets `is_copy` for every appearance of the replies `filter` picks out of `usage u`.
+    static func markCopies(_ filter: String) -> String {
+        """
+        UPDATE usage SET is_copy = ranked.copy > 1 FROM (
+            SELECT u.rowid AS rid, ROW_NUMBER() OVER (PARTITION BY u.message_id ORDER BY
+                u.timestamp IS NULL, u.timestamp, c.first_activity IS NULL, c.first_activity, u.rowid) AS copy
+            FROM usage u LEFT JOIN conversations c ON c.id = u.conversation_id \(filter)) AS ranked
+        WHERE usage.rowid = ranked.rid AND usage.is_copy != (ranked.copy > 1)
+        """
+    }
 
     /// One file per schema, so an older copy of the app still running during an update
     /// keeps its own index instead of rebuilding this one back and forth.
@@ -210,9 +251,11 @@ public actor HistoryIndex {
             cache_write_5m INTEGER NOT NULL,
             cache_write_1h INTEGER NOT NULL,
             agent_id TEXT,
+            is_copy INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (conversation_id, message_id)
         );
         CREATE INDEX IF NOT EXISTS usage_time ON usage(timestamp);
+        \(copyMarking)
         CREATE TABLE IF NOT EXISTS tool_calls (
             conversation_id TEXT NOT NULL,
             message_uuid TEXT,

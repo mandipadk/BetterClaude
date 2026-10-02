@@ -13,6 +13,7 @@ public enum Fleet {
         case targetUnsupported
         case exists(String)
         case ownServer
+        case remote(String)
 
         public var description: String {
             switch self {
@@ -20,6 +21,7 @@ public enum Fleet {
             case .targetUnsupported: return "Servers can be copied into a Claude Desktop install."
             case .exists(let name): return "It already has a server called \(name)."
             case .ownServer: return "Better Claude's history server is added from each install's page, so it reads the right account's history."
+            case .remote(let name): return "Claude Desktop runs only local servers, and \(name) is reached over the network."
             }
         }
     }
@@ -40,6 +42,12 @@ public enum Fleet {
 
     public static func canReceiveServers(_ install: Install) -> Bool { install.isDesktop }
 
+    /// Whether an entry starts a local command, the only kind of server Claude Desktop runs.
+    public static func isLocal(_ entry: JSONValue) -> Bool {
+        let type = entry["type"]?.stringValue ?? "stdio"
+        return type == "stdio" && entry["command"]?.stringValue != nil
+    }
+
     /// Copies an MCP server into a Desktop install, with a receipt.
     @discardableResult
     public static func copyServer(named name: String, from source: Install, to target: Install,
@@ -50,8 +58,8 @@ public enum Fleet {
         guard var entry = serverEntry(named: name, in: source, paths: paths) else { throw Failure.notFound(name) }
         guard serverEntry(named: name, in: target, paths: paths) == nil else { throw Failure.exists(name) }
         // Claude Code marks how it reaches a server; Desktop only runs local commands.
+        guard isLocal(entry) else { throw Failure.remote(name) }
         if entry["type"]?.stringValue == "stdio" { entry["type"] = nil }
-        guard entry["command"]?.stringValue != nil else { throw Failure.notFound(name) }
 
         let config = target.dataRoot.appendingPathComponent("claude_desktop_config.json")
         var receipt = ImportReceipt(direction: .fleet, destination: target.name)

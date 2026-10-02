@@ -312,7 +312,6 @@ final class AppServices {
     /// Refreshes on its own when Claude writes a conversation, so the timeline is live.
     private func watch(_ snapshot: CatalogSnapshot) {
         let roots = DirectoryWatcher.conversationRoots(for: snapshot.installs, paths: snapshot.paths)
-            + [CodexSessions.home(paths: snapshot.paths).appendingPathComponent("sessions", isDirectory: true)]
         guard roots != watchedRoots else { return }
         watcher?.stop()
         watchedRoots = roots
@@ -488,6 +487,14 @@ final class AppServices {
     }
 
     /// The timeline as filtered and searched.
+    /// Message search results narrowed the way the timeline is: to the filter, and without
+    /// archived conversations unless the filter shows them.
+    var visibleMessageHits: [HistorySearch.Hit] {
+        let filter = filter
+        let byID = Dictionary(snapshot.conversations.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return search.hits.filter { hit in byID[hit.conversationID].map(filter.includes) ?? false }
+    }
+
     var visibleConversations: [ConversationRef] {
         let filter = filter
         let list = snapshot.conversations.filter { filter.includes($0) }

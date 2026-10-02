@@ -13,6 +13,13 @@ final class SecretsModel {
     private(set) var swept: Int?
     /// Whether the last sweep ran before there was anything to read.
     private var sweptNothing = false
+    /// Conversations being read; a conversation can be several files (its sub-agents').
+    private(set) var conversationCount = 0
+
+    /// Files read so far, as conversations.
+    var conversationsRead: Int {
+        progress.total == 0 ? 0 : min(conversationCount, progress.done * conversationCount / progress.total)
+    }
 
     var open: [SecretSweep.Finding] { findings.filter { !handled.contains($0.fingerprint) } }
     var rotated: [SecretSweep.Finding] { findings.filter { handled.contains($0.fingerprint) } }
@@ -24,6 +31,7 @@ final class SecretsModel {
         handled = HandledSecrets.load()
         let conversations = SecretSweep.files(in: snapshot)
         sweptNothing = conversations.isEmpty
+        conversationCount = Set(conversations.map(\.conversationID)).count
         progress = (0, conversations.count)
         Task {
             let (found, count) = await Task.detached(priority: .userInitiated) { () -> ([SecretSweep.Finding], Int) in
@@ -72,7 +80,7 @@ struct SecretsPage: View {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 2) {
                         if model.sweeping {
-                            Text("Reading \(model.progress.done) of \(model.progress.total) conversations…")
+                            Text("Reading \(model.conversationsRead) of \(model.conversationCount) conversations…")
                                 .font(Theme.Font.title)
                                 .monospacedDigit()
                         } else if model.swept != nil {

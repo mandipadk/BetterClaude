@@ -84,12 +84,19 @@ final class RewindModel: Identifiable {
     var steps: Int { max(0, (timelapse?.frames.count ?? 1) - 1) }
 
     var shownDiff: LineDiff? {
-        if let step, step > 0, let change = timelapse?.change(into: step) { return change }
+        if let step, step > 0, let timelapse { return timelapse.change(into: step) }
         return diff
+    }
+
+    /// The step shown, or the one before it, is a version Claude Code saved but didn't keep.
+    var stepMissing: Bool {
+        guard let step, step > 0, let frames = timelapse?.frames else { return false }
+        return frames[safe: step]?.isMissing == true || frames[safe: step - 1]?.isMissing == true
     }
 
     var stepCaption: String? {
         guard let step, step > 0, let frame = timelapse?.frames[safe: step] else { return nil }
+        if frame.changedSince { return "Now, changed since this conversation" }
         guard let prompt = frame.prompt else { return "After the next turn" }
         let flat = prompt.replacingOccurrences(of: "\n", with: " ")
         return "After “\(flat.count > 90 ? String(flat.prefix(90)) + "…" : flat)”"
@@ -266,7 +273,7 @@ struct RewindSheet: View {
                     DiffWell(diff: diff)
                 }
             } else if model.selected != nil {
-                Text("There's no text to compare for this file.")
+                Text(model.stepMissing ? "This version wasn't kept, so there's nothing to compare." : "There's no text to compare for this file.")
                     .font(.system(size: 13)).foregroundStyle(Theme.Surface.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }

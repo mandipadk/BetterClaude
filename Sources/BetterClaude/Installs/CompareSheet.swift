@@ -14,6 +14,8 @@ struct CompareSheet: View {
     let pair: InstallComparison
 
     @State private var comparison: ConfigComparison?
+    /// Servers only one side has, by whether they start a local command: Desktop runs only those.
+    @State private var localServers: [String: Bool] = [:]
     @State private var onlyDifferences = true
     @State private var copying: (name: String, from: Install, to: Install)?
     @State private var message: String?
@@ -111,7 +113,9 @@ struct CompareSheet: View {
                                     .accessibilityAddTraits(.isHeader)
                                 ForEach(rows.filter { $0.kind == kind }) { row in
                                     CompareRow(row: row, leftName: pair.left.name, rightName: pair.right.name,
-                                               copyTarget: copyTarget(for: row)) {
+                                               copyTarget: copyTarget(for: row),
+                                               note: receiver(for: row) != nil && localServers[row.name] == false
+                                                   ? "Claude Desktop runs only local servers" : nil) {
                                         if let target = copyTarget(for: row) {
                                             copying = (row.name, target.id == pair.left.id ? pair.right : pair.left, target)
                                         }
@@ -128,8 +132,13 @@ struct CompareSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// Where a server only one side has could be copied: the other side, if it's a Desktop install.
+    /// Where a server only one side has could be copied: the other side, if it's a Desktop install
+    /// and the server starts a local command.
     private func copyTarget(for row: ConfigComparison.Row) -> Install? {
+        localServers[row.name] == true ? receiver(for: row) : nil
+    }
+
+    private func receiver(for row: ConfigComparison.Row) -> Install? {
         guard row.kind == .mcpServer, row.name != RecallConnection.serverName else { return nil }
         switch row.status {
         case .onlyLeft: return Fleet.canReceiveServers(pair.right) ? pair.right : nil
@@ -157,14 +166,29 @@ struct CompareSheet: View {
     }
 
     private func load() async {
-        let left = pair.left, right = pair.right
-        comparison = await Task.detached(priority: .userInitiated) {
+        let left = pair.left, right = pair.right, paths = services.snapshot.paths
+        let (loaded, local) = await Task.detached(priority: .userInitiated) { () -> (ConfigComparison, [String: Bool]) in
             let leftItems = ConfigInventory.items(for: left)
             let rightItems = ConfigInventory.items(for: right)
             let leftScope = leftItems.first?.scope ?? .desktopVariant(left.name, left.dataRoot)
             let rightScope = rightItems.first?.scope ?? .desktopVariant(right.name, right.dataRoot)
-            return ConfigDiff.compare(leftScope, leftItems, rightScope, rightItems)
+            let comparison = ConfigDiff.compare(leftScope, leftItems, rightScope, rightItems)
+            var local: [String: Bool] = [:]
+            for row in comparison.rows where row.kind == .mcpServer {
+                let source: Install
+                switch row.status {
+                case .onlyLeft: source = left
+                case .onlyRight: source = right
+                default: continue
+                }
+                if let entry = Fleet.serverEntry(named: row.name, in: source, paths: paths) {
+                    local[row.name] = Fleet.isLocal(entry)
+                }
+            }
+            return (comparison, local)
         }.value
+        localServers = local
+        comparison = loaded
     }
 }
 
@@ -173,6 +197,7 @@ private struct CompareRow: View {
     let leftName: String
     let rightName: String
     var copyTarget: Install?
+    var note: String?
     var onCopy: () -> Void = {}
 
     var body: some View {
@@ -184,6 +209,12 @@ private struct CompareRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)
+            if let note {
+                Text(note)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             if let copyTarget {
                 Button("Copy to \(copyTarget.name)", action: onCopy)
                     .buttonStyle(.plain)

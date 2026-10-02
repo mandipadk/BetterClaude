@@ -24,6 +24,9 @@ public enum ModelDrift {
         public let replies: Int
     }
 
+    /// How long after the first reply on a new model a marker can still explain the change.
+    static let markerGrace: TimeInterval = 5
+
     /// A conversation's switches, in order.
     public static func switches(conversationID: String, index: HistoryIndex) async throws -> [Switch] {
         let replies = try await index.rows("""
@@ -42,7 +45,11 @@ public enum ModelDrift {
         var found: [(from: String, to: String, at: Date, cause: Switch.Cause, index: Int)] = []
         for i in replies.indices.dropFirst() where replies[i].0 != replies[i - 1].0 {
             // What happened between the last reply on the old model and the first on the new.
-            let between = markers.filter { $0.1 > replies[i - 1].1 && $0.1 <= replies[i].1 }.map(\.0)
+            // Claude Code writes the fallback notice and the /model record just after that
+            // first reply, up to a second or two later, so a marker a few seconds after it
+            // still counts. Any later would take a /model typed afterwards for the cause.
+            let until = replies[i].1.addingTimeInterval(markerGrace)
+            let between = markers.filter { $0.1 > replies[i - 1].1 && $0.1 <= until }.map(\.0)
             let cause: Switch.Cause = between.contains("requested") ? .requested
                 : between.contains("fallback") ? .fallback : .unexplained
             found.append((replies[i - 1].0, replies[i].0, replies[i].1, cause, i))

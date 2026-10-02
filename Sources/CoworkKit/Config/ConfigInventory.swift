@@ -235,6 +235,20 @@ public struct MCPServerSummary: Sendable, Hashable {
     public let commandName: String?
     public let envKeyNames: [String]
     public let headerKeyNames: [String]
+    /// A one-way digest of what tells two servers of one name apart without being shown: the
+    /// arguments, the URL's path and query, and the environment's values.
+    public let valuesDigest: String
+
+    public init(name: String, transport: String, host: String?, commandName: String?,
+                envKeyNames: [String], headerKeyNames: [String], valuesDigest: String = "") {
+        self.name = name
+        self.transport = transport
+        self.host = host
+        self.commandName = commandName
+        self.envKeyNames = envKeyNames
+        self.headerKeyNames = headerKeyNames
+        self.valuesDigest = valuesDigest
+    }
 
     public var detail: String {
         var parts: [String] = [transport]
@@ -247,11 +261,11 @@ public struct MCPServerSummary: Sendable, Hashable {
         return parts.joined(separator: " · ")
     }
 
-    /// Fingerprint material. Built from the same redacted fields the UI shows, so the hash
-    /// cannot become a side channel for a value the summary refuses to print.
+    /// Fingerprint material. Built from the redacted fields the UI shows plus the digest of
+    /// the rest, so no value the summary refuses to print appears in it.
     public var fingerprintSource: String {
         "\(name)|\(transport)|\(host ?? "")|\(commandName ?? "")|"
-            + "\(envKeyNames.joined(separator: ","))|\(headerKeyNames.joined(separator: ","))"
+            + "\(envKeyNames.joined(separator: ","))|\(headerKeyNames.joined(separator: ","))|\(valuesDigest)"
     }
 }
 
@@ -275,7 +289,7 @@ public enum ConfigInventory {
 
     /// Project roots that have a `.claude/` directory.
     ///
-    /// The list of projects comes from `~/.claude.json`, which is where Claude Code records
+    /// The list of projects comes from `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`), which is where Claude Code records
     /// every directory it has been run in. Scanning the disk for `.claude/` directories would
     /// mean walking the whole home folder to find the same answer.
     static func projectScopes(excluding globalDir: URL) -> [ConfigScope] {
@@ -369,7 +383,7 @@ public enum ConfigInventory {
         result.append(contentsOf: claudeCodePluginItems(configDir: dir, settings: settings,
                                                         scope: scope))
 
-        let homeURL = homeJSONURL()
+        let homeURL = RecallConnection.claudeCodeState(configDir: dir, paths: .current)
         let home = json(at: homeURL)
         if let servers = home["mcpServers"]?.objectValue {
             result.append(contentsOf: mcpItems(servers, url: homeURL, origin: "user", scope: scope))
@@ -549,7 +563,8 @@ public enum ConfigInventory {
         return visibleDirectories(root).flatMap { skillDirectories(under: $0, depth: depth + 1) }
     }
 
-    static func skillItems(root: URL, scope: ConfigScope, source: String?) -> [ConfigItem] {
+    static func skillItems(root: URL, scope: ConfigScope, source: String?,
+                           isEnabled: Bool? = nil) -> [ConfigItem] {
         skillDirectories(under: root).map { directory in
             let skillFile = directory.appendingPathComponent("SKILL.md")
             let matter = FrontMatter.parse(text(at: skillFile) ?? "")
@@ -565,7 +580,7 @@ public enum ConfigInventory {
                 detail: summary(detail), bytes: footprint(of: directory),
                 modified: modificationDate(skillFile) ?? modificationDate(directory),
                 contentHash: directoryDigest(directory, primary: skillFile),
-                isEnabled: nil)
+                isEnabled: isEnabled)
         }
     }
 
@@ -577,7 +592,7 @@ public enum ConfigInventory {
     /// `/git:sync` — so the name is built from the path rather than the filename alone,
     /// which also keeps two same-named commands in different namespaces distinguishable.
     static func definitionItems(root: URL, kind: ConfigKind, scope: ConfigScope,
-                                source: String?) -> [ConfigItem] {
+                                source: String?, isEnabled: Bool? = nil) -> [ConfigItem] {
         guard isDirectoryFollowingLinks(root) else { return [] }
         var result: [ConfigItem] = []
         for (url, relative) in markdownFiles(under: root) {
@@ -598,7 +613,7 @@ public enum ConfigInventory {
                 kind: kind, name: name, scope: scope, url: url,
                 detail: summary(pieces.joined(separator: " · ")),
                 bytes: Discovery.fileSize(url), modified: modificationDate(url),
-                contentHash: digest(fileAt: url), isEnabled: nil))
+                contentHash: digest(fileAt: url), isEnabled: isEnabled))
         }
         return result
     }
@@ -642,14 +657,23 @@ public enum ConfigInventory {
             transport = "unknown"
         }
 
-        let host = urlText.flatMap { URL(string: $0)?.host }
+        let parsed = urlText.flatMap { URLComponents(string: $0) }
+        let host = parsed?.host
         let commandName = command.map { URL(fileURLWithPath: $0).lastPathComponent }
             .flatMap { $0.isEmpty ? nil : $0 }
 
+        let env = config["env"]?.objectValue
+        var hidden: [String] = [command ?? ""]
+        hidden.append(contentsOf: (config["args"]?.arrayValue ?? []).map { $0.stringValue ?? "" })
+        hidden.append(parsed?.percentEncodedPath ?? "")
+        hidden.append(parsed?.percentEncodedQuery ?? "")
+        for key in (env?.keys ?? []).sorted() { hidden.append("\(key)=\(env?[key]?.stringValue ?? "")") }
+
         return MCPServerSummary(
             name: name, transport: transport, host: host, commandName: commandName,
-            envKeyNames: (config["env"]?.objectValue?.keys ?? []).sorted(),
-            headerKeyNames: (config["headers"]?.objectValue?.keys ?? []).sorted())
+            envKeyNames: (env?.keys ?? []).sorted(),
+            headerKeyNames: (config["headers"]?.objectValue?.keys ?? []).sorted(),
+            valuesDigest: hash(of: hidden.joined(separator: "\u{0}")))
     }
 
     static func mcpItems(_ servers: JSONObject, url: URL, origin: String,
@@ -798,14 +822,21 @@ public enum ConfigInventory {
 
         var result: [ConfigItem] = []
         for key in names.sorted() {
-            let entry = installed?[key]?.arrayValue?.first
+            // One plugin can be installed for you and, separately, for single projects; only
+            // the install for you belongs to this scope.
+            let entries = installed?[key]?.arrayValue ?? []
+            let entry = entries.first { $0["scope"]?.stringValue == "user" }
+                ?? entries.first { $0["scope"] == nil }
             let version = entry?["version"]?.stringValue
             let installPath = entry?["installPath"]?.stringValue
             let installURL = installPath.map { URL(fileURLWithPath: $0, isDirectory: true) }
+            let isEnabled = enabled?[key]?.boolValue
+            // Off, its skills, agents and commands aren't something Claude can use.
+            let piecesEnabled: Bool? = isEnabled == false ? false : nil
 
             var pieces: [String] = []
             if let version, version != "unknown" { pieces.append(version) }
-            if installURL == nil { pieces.append("not installed") }
+            if installURL == nil { pieces.append(entries.isEmpty ? "not installed" : "installed for a project") }
 
             result.append(ConfigItem(
                 id: itemID(scope: scope, kind: .plugin, key: key),
@@ -814,7 +845,7 @@ public enum ConfigInventory {
                 bytes: installURL.map { footprint(of: $0) } ?? 0,
                 modified: installURL.flatMap { modificationDate($0) } ?? modificationDate(installedURL),
                 contentHash: hash(of: "\(key)|\(version ?? "")"),
-                isEnabled: enabled?[key]?.boolValue))
+                isEnabled: isEnabled))
 
             // A plugin's own skills, agents and commands are configuration the user has, even
             // though they did not write them — an install that has a skill another install
@@ -822,13 +853,13 @@ public enum ConfigInventory {
             if let installURL {
                 result.append(contentsOf: skillItems(
                     root: installURL.appendingPathComponent("skills", isDirectory: true),
-                    scope: scope, source: key))
+                    scope: scope, source: key, isEnabled: piecesEnabled))
                 result.append(contentsOf: definitionItems(
                     root: installURL.appendingPathComponent("agents", isDirectory: true),
-                    kind: .subagent, scope: scope, source: key))
+                    kind: .subagent, scope: scope, source: key, isEnabled: piecesEnabled))
                 result.append(contentsOf: definitionItems(
                     root: installURL.appendingPathComponent("commands", isDirectory: true),
-                    kind: .command, scope: scope, source: key))
+                    kind: .command, scope: scope, source: key, isEnabled: piecesEnabled))
             }
         }
         return result
@@ -873,8 +904,9 @@ public enum ConfigInventory {
 
 extension ConfigInventory {
 
+    /// `~/.claude.json`, or the one inside `$CLAUDE_CONFIG_DIR` when that is set.
     static func homeJSONURL() -> URL {
-        Discovery.homeDirectory().appendingPathComponent(".claude.json")
+        RecallConnection.claudeCodeState(configDir: Discovery.defaultClaudeCodeConfigDir(), paths: .current)
     }
 
     /// Parse a JSON file, answering `.null` for anything missing or malformed.

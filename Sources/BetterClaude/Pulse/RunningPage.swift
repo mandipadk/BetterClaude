@@ -211,8 +211,8 @@ private struct UnattendedSection: View {
         }
         .task(id: "\(services.index.generation)#\(services.pulse.sessions.count)") {
             let paths = services.snapshot.paths
-            jobs = await Task.detached { Unattended.jobs(configDirs: LiveSessions.configDirs(paths: paths)) }.value
-                .filter { ($0.updated ?? .distantPast) > Date().addingTimeInterval(-7 * 86_400) || $0.outcome == .running }
+            jobs = Unattended.recent(await Task.detached { Unattended.jobs(configDirs: LiveSessions.configDirs(paths: paths)) }.value,
+                                     within: 7 * 86_400)
             if let index = services.index.index {
                 loops = (try? await Unattended.loops(index: index, since: Date().addingTimeInterval(-7 * 86_400))) ?? []
             }

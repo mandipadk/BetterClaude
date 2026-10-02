@@ -81,7 +81,7 @@ struct HealthSection: View {
         if issue.kind == .hookFailed, let detail = issue.detail { parts.append(detail.prefix(1).uppercased() + detail.dropFirst() + ".") }
         if issue.kind == .mcpNeedsAuth { parts.append("Its tools aren't available until you do, from /mcp in Claude Code.") }
         let when = issue.lastSeen.map { "Last seen \($0.listStamp.lowercasedIfWordLocal)" } ?? ""
-        parts.append(issue.times == 1 ? "\(when)." : "\(when), \(issue.times) times this week.")
+        parts.append(issue.sessions == 1 ? "\(when)." : "\(when), in \(issue.sessions) sessions this week.")
         return parts.joined(separator: " ")
     }
 
@@ -170,9 +170,11 @@ struct CommandRulesSection: View {
     }
 }
 
-/// On the Usage page: the week's work, and a summary of it written on this Mac.
+/// On the Usage page: the work in the period it shows, and a summary of it written on this Mac.
 struct WeekSection: View {
     @Environment(AppServices.self) private var services
+    let period: UsagePeriod
+    let quotas: [AccountQuota]
     @State private var digest: WeekDigest?
     @State private var summary = ""
     @State private var summarizing = false
@@ -181,7 +183,7 @@ struct WeekSection: View {
         // A real container: a task on an empty Group never runs.
         VStack(alignment: .leading, spacing: 0) {
             if let digest, digest.conversations > 0 {
-                DetailSection(title: "This week",
+                DetailSection(title: title,
                               subtitle: [Self.count(digest.conversations, "conversation"), Self.count(digest.prompts, "prompt"),
                                          Self.count(digest.filesChanged, "file") + " changed",
                                          Self.count(digest.commands, "command") + " run"].joined(separator: ", ") + ".") {
@@ -202,7 +204,8 @@ struct WeekSection: View {
                         if services.ask.availability == .available {
                             HStack {
                                 if summarizing { ProgressView().controlSize(.small) }
-                                Button(summary.isEmpty ? "Summarize My Week" : "Summarize Again") { summarize(digest) }
+                                Button(summary.isEmpty ? (period == .month ? "Summarize My Month" : "Summarize My Week")
+                                                       : "Summarize Again") { summarize(digest) }
                                     .buttonStyle(.secondary)
                                     .disabled(summarizing)
                             }
@@ -211,9 +214,28 @@ struct WeekSection: View {
                 }
             }
         }
-        .task(id: services.index.generation) {
+        .task(id: "\(period.rawValue)#\(services.index.generation)#\(quotas.map(\.account.id))") {
             guard let index = services.index.index else { return }
-            digest = try? await WeekDigest.build(index: index, since: Date().addingTimeInterval(-7 * 86_400))
+            // The same accounts over the same stretch as the rest of the page; with no limits
+            // read yet, every account by the calendar.
+            var spans = period.spans(for: quotas).map {
+                WeekDigest.Span(accountIDs: $0.accountIDs, since: $0.since, until: $0.until)
+            }
+            if spans.isEmpty {
+                let stretch = period.calendarSpan()
+                spans = [WeekDigest.Span(accountIDs: nil, since: stretch.since, until: stretch.until)]
+            }
+            let built = try? await WeekDigest.build(index: index, spans: spans)
+            if built != digest { summary = "" }
+            digest = built
+        }
+    }
+
+    private var title: String {
+        switch period {
+        case .thisWeek: return "This week"
+        case .lastWeek: return "Last week"
+        case .month: return "This month"
         }
     }
 

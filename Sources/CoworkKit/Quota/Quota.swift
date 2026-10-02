@@ -304,24 +304,45 @@ public enum QuotaReader {
 /// Claude Code copies a session's earlier replies into the file of a session resumed or
 /// forked from it, under the same message id, so one reply can be in several conversations.
 /// Totals across conversations read this in place of `usage`: each reply once, in the
-/// conversation it first appeared in.
+/// conversation it first appeared in. The index marks the copies as it goes; see
+/// ``HistoryIndex/copyMarking``.
 enum DistinctUsage {
-    /// Every row, with `copy` 1 for a reply's first appearance and higher for its copies.
-    static let numbered = """
-        (SELECT usage.*, ROW_NUMBER() OVER (PARTITION BY message_id ORDER BY
-            timestamp IS NULL, timestamp,
-            (SELECT first_activity FROM conversations WHERE id = usage.conversation_id) IS NULL,
-            (SELECT first_activity FROM conversations WHERE id = usage.conversation_id),
-            usage.rowid) AS copy FROM usage)
-        """
-
     /// Each reply once.
-    static let table = "(SELECT * FROM \(numbered) WHERE copy = 1)"
+    static let table = "(SELECT * FROM usage WHERE is_copy = 0)"
 
     /// `AND c.account_id IN (…)` for a query joined to conversations as `c`, and its values.
     static func accounts(_ ids: Set<String>?) -> (sql: String, values: [SQLiteValue]) {
         guard let ids else { return ("", []) }
         return (" AND c.account_id IN (\(ids.map { _ in "?" }.joined(separator: ",")))", ids.sorted().map(SQLiteValue.text))
+    }
+}
+
+/// Claude Code copies a session's earlier messages and tool calls into the file of a session
+/// resumed from it too, under the same uuid or tool use id and with the same times. These
+/// count each once, where it first appeared, the way ``DistinctUsage`` counts replies.
+enum DistinctRows {
+    /// `columns` of `messages m`, for the rows `filter` picks, each message once. The filter
+    /// can use the conversation, joined as `c`.
+    static func messages(_ columns: String, where filter: String) -> String {
+        """
+        (SELECT \(columns) FROM messages m JOIN (
+            SELECT m.id AS rid, ROW_NUMBER() OVER (PARTITION BY COALESCE(m.uuid, 'row:' || m.id) ORDER BY
+                m.timestamp IS NULL, m.timestamp, c.first_activity IS NULL, c.first_activity, m.id) AS appearance
+            FROM messages m LEFT JOIN conversations c ON c.id = m.conversation_id WHERE \(filter)
+        ) ranked ON ranked.rid = m.id WHERE ranked.appearance = 1)
+        """
+    }
+
+    /// `columns` of `tool_calls t`, for the rows `filter` picks, each call once. The filter
+    /// can use the conversation, joined as `c`.
+    static func toolCalls(_ columns: String, where filter: String) -> String {
+        """
+        (SELECT \(columns) FROM tool_calls t JOIN (
+            SELECT t.rowid AS rid, ROW_NUMBER() OVER (PARTITION BY COALESCE(t.tool_use_id, 'row:' || t.rowid) ORDER BY
+                t.timestamp IS NULL, t.timestamp, c.first_activity IS NULL, c.first_activity, t.rowid) AS appearance
+            FROM tool_calls t LEFT JOIN conversations c ON c.id = t.conversation_id WHERE \(filter)
+        ) ranked ON ranked.rid = t.rowid WHERE ranked.appearance = 1)
+        """
     }
 }
 
@@ -391,14 +412,24 @@ public enum QuotaAttribution {
         return byName.map { ($0.key, $0.value) }.sorted { $0.1 > $1.1 }
     }
 
-    /// The same, added up by project folder; conversations outside one are grouped by place.
+    /// The same, added up by project folder (a worktree counts toward its repository);
+    /// conversations outside one are grouped by place.
     public static func byProject(_ items: [Item]) -> [(name: String, cost: Double, conversations: Int)] {
         var totals: [String: (Double, Int)] = [:]
+        var places: Set<String> = []
         for item in items {
-            let name = item.projectPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? item.place.prefix(1).uppercased() + item.place.dropFirst()
-            let current = totals[name] ?? (0, 0)
-            totals[name] = (current.0 + item.cost, current.1 + 1)
+            let key: String
+            if let path = item.projectPath, !path.isEmpty {
+                key = Projects.root(of: path)
+            } else {
+                key = item.place.prefix(1).uppercased() + item.place.dropFirst()
+                places.insert(key)
+            }
+            let current = totals[key] ?? (0, 0)
+            totals[key] = (current.0 + item.cost, current.1 + 1)
         }
-        return totals.map { (name: $0.key, cost: $0.value.0, conversations: $0.value.1) }.sorted { $0.cost > $1.cost }
+        let names = Projects.names(for: totals.keys.filter { !places.contains($0) })
+        return totals.map { (name: names[$0.key] ?? $0.key, cost: $0.value.0, conversations: $0.value.1) }
+            .sorted { $0.cost > $1.cost }
     }
 }

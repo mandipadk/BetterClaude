@@ -122,7 +122,7 @@ struct UsagePage: View {
                     }
                 }
             }
-            WeekSection()
+            WeekSection(period: period, quotas: usage.quotas)
             Text("Percentages are Claude's own. What used them is estimated from each reply's tokens at API list prices, since plan limits aren't published as a formula.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(Theme.Surface.tertiary)
@@ -248,17 +248,27 @@ enum UsagePeriod: String, CaseIterable, Hashable {
         let planWeek: Bool
     }
 
+    /// The stretch by the calendar: this week, last week, or this month.
+    func calendarSpan(now: Date = Date(), calendar: Calendar = .current) -> (since: Date, until: Date) {
+        let calendarWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now.addingTimeInterval(-7 * 86_400)
+        switch self {
+        case .thisWeek: return (calendarWeek, .distantFuture)
+        case .lastWeek: return (calendar.date(byAdding: .weekOfYear, value: -1, to: calendarWeek) ?? calendarWeek, calendarWeek)
+        case .month: return (calendar.dateInterval(of: .month, for: now)?.start ?? calendarWeek, .distantFuture)
+        }
+    }
+
     /// A week is each account's plan week, as its limits count it, where Claude has said when
     /// that began, and the calendar week otherwise. Accounts on the same stretch share a span.
     func spans(for quotas: [AccountQuota], now: Date = Date(), calendar: Calendar = .current) -> [Span] {
-        let calendarWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now.addingTimeInterval(-7 * 86_400)
+        let byCalendar = calendarSpan(now: now, calendar: calendar)
         var spans: [Span] = []
         for quota in quotas {
             let id: Set<String> = [quota.account.id]
             let span: Span
             switch self {
             case .thisWeek:
-                span = Span(accountIDs: id, since: quota.weekStart ?? calendarWeek, until: .distantFuture,
+                span = Span(accountIDs: id, since: quota.weekStart ?? byCalendar.since, until: .distantFuture,
                             planWeek: quota.weekStart != nil)
             case .lastWeek:
                 // A plan week resets at the same instant each week; a calendar week starts at
@@ -266,13 +276,10 @@ enum UsagePeriod: String, CaseIterable, Hashable {
                 if let start = quota.weekStart {
                     span = Span(accountIDs: id, since: start.addingTimeInterval(-7 * 86_400), until: start, planWeek: true)
                 } else {
-                    span = Span(accountIDs: id,
-                                since: calendar.date(byAdding: .weekOfYear, value: -1, to: calendarWeek) ?? calendarWeek,
-                                until: calendarWeek, planWeek: false)
+                    span = Span(accountIDs: id, since: byCalendar.since, until: byCalendar.until, planWeek: false)
                 }
             case .month:
-                span = Span(accountIDs: id, since: calendar.dateInterval(of: .month, for: now)?.start ?? calendarWeek,
-                            until: .distantFuture, planWeek: false)
+                span = Span(accountIDs: id, since: byCalendar.since, until: byCalendar.until, planWeek: false)
             }
             if let same = spans.firstIndex(where: { $0.since == span.since && $0.until == span.until }) {
                 spans[same].accountIDs.formUnion(id)

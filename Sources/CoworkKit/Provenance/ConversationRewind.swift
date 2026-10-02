@@ -63,13 +63,18 @@ public enum ConversationRewind {
         }
         // Files it wrote that Claude Code didn't save a copy of still belong in the list.
         var touched: [String: Date] = [:]
+        var editIDs: [String: String] = [:]
         for row in try await index.rows("""
-            SELECT file_path, MAX(timestamp) FROM tool_calls
+            SELECT file_path, timestamp, tool_use_id FROM tool_calls
             WHERE conversation_id = ? AND file_path IS NOT NULL AND name IN ('Edit', 'Write', 'MultiEdit', 'NotebookEdit')
-            GROUP BY file_path
             """, [.text(conversationID)]) {
-            if let path = row.text(0) { touched[path] = row.date(1) }
+            guard let path = row.text(0) else { continue }
+            if let time = row.date(1), time > touched[path] ?? .distantPast { touched[path] = time }
+            if let id = row.text(2) { editIDs[id] = path }
         }
+        // An edit lands when its result comes back, which can be minutes after Claude asked
+        // (waiting for permission): that's the time to compare the file against.
+        let applied = transcript.map { resultTimes(in: URL(fileURLWithPath: $0), editIDs: editIDs) } ?? [:]
 
         let fm = FileManager.default
         var files: [ConversationChanges.File] = []
@@ -84,12 +89,35 @@ public enum ConversationRewind {
             }
             let lastChanged = [touched[path], saved?.latest].compactMap { $0 }.max()
             let modified = (try? fm.attributesOfItem(atPath: path)[.modificationDate]) as? Date
-            // A minute's slack: the last edit lands a moment after its record.
-            let changedSince = modified.map { modified in lastChanged.map { modified > $0.addingTimeInterval(60) } ?? false } ?? false
+            let settled: Date?
+            if let result = applied[path], result >= lastChanged ?? .distantPast {
+                settled = result.addingTimeInterval(2)
+            } else {
+                // Without its result, a minute's slack: the edit lands a moment after its record.
+                settled = lastChanged?.addingTimeInterval(60)
+            }
+            let changedSince = modified.map { modified in settled.map { modified > $0 } ?? false } ?? false
             files.append(.init(path: path, before: before, versions: saved?.count ?? 0,
                                existsNow: fm.fileExists(atPath: path), changedSince: changedSince, lastChanged: lastChanged))
         }
         return ConversationChanges(conversationID: conversationID, title: title, files: files)
+    }
+
+    /// The latest time an edit's result came back, by file, from the transcript. Only lines
+    /// holding a tool result are parsed.
+    static func resultTimes(in transcript: URL, editIDs: [String: String]) -> [String: Date] {
+        guard !editIDs.isEmpty, let data = try? Data(contentsOf: transcript, options: .mappedIfSafe) else { return [:] }
+        let marker = Data("\"tool_result\"".utf8)
+        var times: [String: Date] = [:]
+        for line in data.split(separator: 0x0A) where line.range(of: marker) != nil {
+            guard let record = try? JSONValue.parse(Data(line)),
+                  let time = record["timestamp"]?.stringValue.flatMap(Transcript.parseTimestamp) else { continue }
+            for block in record["message"]?["content"]?.arrayValue ?? [] where block["type"]?.stringValue == "tool_result" {
+                guard let id = block["tool_use_id"]?.stringValue, let path = editIDs[id] else { continue }
+                if time > times[path] ?? .distantPast { times[path] = time }
+            }
+        }
+        return times
     }
 
     /// How the file changed from before the conversation to now, for text files up to 2 MB;

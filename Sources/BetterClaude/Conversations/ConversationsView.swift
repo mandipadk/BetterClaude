@@ -118,7 +118,7 @@ struct TimelineColumn: View {
         VStack(alignment: .leading, spacing: 0) {
             if showsMessageHits || isNarrowed {
                 HStack {
-                    Text(showsMessageHits ? countText(services.search.hits.count) : countText(conversations.count))
+                    Text(showsMessageHits ? countText(services.visibleMessageHits.count) : countText(conversations.count))
                         .font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary)
                         .lineLimit(1)
                     Spacer()
@@ -192,7 +192,12 @@ struct TimelineColumn: View {
 
     private func countText(_ count: Int) -> String {
         if !services.hasLoaded { return "Looking…" }
-        if showsMessageHits { return count == 1 ? "1 conversation matches" : "\(count) conversations match" }
+        if showsMessageHits {
+            // The search stops at its best matches; past that there may be more.
+            let shown = services.search.isCapped ? "\(count)+" : "\(count)"
+            let matches = count == 1 && !services.search.isCapped ? "1 conversation matches" : "\(shown) conversations match"
+            return services.filter == .all ? matches : "\(matches) in \(services.filterTitle)"
+        }
         if hasQuery {
             let titles = count == 1 ? "1 title matches" : "\(count) titles match"
             return services.filter == .all ? titles : "\(titles) in \(services.filterTitle)"
@@ -341,16 +346,19 @@ struct MessageHitsList: View {
 
     var body: some View {
         let search = services.search
+        let hits = services.visibleMessageHits
         if search.hits.isEmpty && (search.isSearching || search.lastQuery != services.query.trimmingCharacters(in: .whitespaces)) {
             ProgressView()
                 .controlSize(.small)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if search.hits.isEmpty {
+        } else if hits.isEmpty {
             EmptyState(systemImage: "text.magnifyingglass", title: "Nothing found",
-                       message: "No message in any conversation contains “\(search.lastQuery)”.")
+                       message: services.filter == .all ? "No message in any conversation contains “\(search.lastQuery)”."
+                           : services.filter == .archived ? "No message in an archived conversation contains “\(search.lastQuery)”."
+                           : "No message in \(services.filterTitle) contains “\(search.lastQuery)”.")
         } else {
             List {
-                ForEach(search.hits) { hit in
+                ForEach(hits) { hit in
                     Button {
                         if let conversation = services.snapshot.conversations.first(where: { $0.id == hit.conversationID }) {
                             services.query = ""

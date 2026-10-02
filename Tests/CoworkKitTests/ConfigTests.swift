@@ -154,7 +154,7 @@ struct MCPInspectionTests {
             {
               "command": "/opt/homebrew/bin/npx",
               "args": ["-y", "some-server", "--api-key=\(tokenValue)"],
-              "env": { "GITHUB_TOKEN": "\(tokenValue)", "HOME_OVERRIDE": "/Users/someone" }
+              "env": { "GITHUB_TOKEN": "\(tokenValue)", "HOME_OVERRIDE": "/srv/someone" }
             }
             """)
     }
@@ -171,7 +171,7 @@ struct MCPInspectionTests {
         #expect(local.envKeyNames == ["GITHUB_TOKEN", "HOME_OVERRIDE"])
         #expect(local.detail.contains("GITHUB_TOKEN"))
         #expect(!local.detail.contains(tokenValue))
-        #expect(!local.detail.contains("/Users/someone"))
+        #expect(!local.detail.contains("/srv/someone"))
     }
 
     @Test("Only the host of a URL survives; the query string is dropped")
@@ -192,6 +192,29 @@ struct MCPInspectionTests {
         #expect(!local.detail.contains("--api-key"))
         #expect(!local.detail.contains("some-server"))
         #expect(!local.fingerprintSource.contains(tokenValue))
+    }
+
+    @Test("Servers that differ only in arguments, URL path or environment values aren't the same")
+    func fingerprintSeesHiddenValues() throws {
+        func print(_ json: String) throws -> String {
+            ConfigInventory.inspectMCPServer(name: "s", config: try JSONValue.parse(json)).fingerprintSource
+        }
+        let base = try print(#"{"command":"npx","args":["-y","server-a"],"env":{"TOKEN":"one"}}"#)
+        #expect(base == (try print(#"{"command":"npx","args":["-y","server-a"],"env":{"TOKEN":"one"}}"#)))
+        #expect(base != (try print(#"{"command":"npx","args":["-y","server-b"],"env":{"TOKEN":"one"}}"#)))
+        #expect(base != (try print(#"{"command":"npx","args":["-y","server-a"],"env":{"TOKEN":"two"}}"#)))
+        let remote = try print(#"{"type":"http","url":"https://mcp.example.com/a?x=1"}"#)
+        #expect(remote != (try print(#"{"type":"http","url":"https://mcp.example.com/b?x=1"}"#)))
+        #expect(remote != (try print(#"{"type":"http","url":"https://mcp.example.com/a?x=2"}"#)))
+        #expect(!base.contains("server-a") && !base.contains("one"))
+    }
+
+    @Test("Only local servers can be copied into Claude Desktop")
+    func localServers() throws {
+        #expect(Fleet.isLocal(try JSONValue.parse(#"{"command":"npx"}"#)))
+        #expect(Fleet.isLocal(try JSONValue.parse(#"{"type":"stdio","command":"npx"}"#)))
+        #expect(!Fleet.isLocal(try JSONValue.parse(#"{"type":"http","url":"https://mcp.example.com"}"#)))
+        #expect(!Fleet.isLocal(try JSONValue.parse(#"{"type":"sse","url":"https://mcp.example.com","command":"x"}"#)))
     }
 
     @Test("Nothing surfaced by a full scope walk contains a configured secret")
@@ -284,6 +307,34 @@ struct ConfigInventoryTests {
             #expect(items.filter { $0.kind == .skill }.map(\.name) == ["ok"])
             #expect(items.filter { $0.kind == .mcpServer }.isEmpty)
             #expect(items.filter { $0.kind == .setting }.isEmpty)
+        }
+    }
+
+    @Test("A plugin that's off brings nothing Claude can use, and the install for you is the one read")
+    func disabledPlugins() throws {
+        try ConfigFixture.withScratch { root in
+            let mine = root.appendingPathComponent("cache/tools/2.0")
+            let project = root.appendingPathComponent("cache/tools/1.0")
+            try ConfigFixture.makeSkill(in: mine.appendingPathComponent("skills/lint"), name: "lint", description: "Lints.", body: "x")
+            try ConfigFixture.makeSkill(in: project.appendingPathComponent("skills/old"), name: "old", description: "Old.", body: "x")
+            let installed = root.appendingPathComponent("plugins/installed_plugins.json")
+            try ConfigFixture.write("""
+                { "version": 2, "plugins": { "tools@market": [
+                    { "scope": "project", "projectPath": "/repo", "installPath": "\(project.path)", "version": "1.0" },
+                    { "scope": "user", "installPath": "\(mine.path)", "version": "2.0" } ] } }
+                """, to: installed)
+            let scope = ConfigScope.claudeCodeGlobal(root)
+
+            let on = ConfigInventory.pluginItems(installedURL: installed,
+                                                 settings: try JSONValue.parse(#"{"enabledPlugins":{"tools@market":true}}"#), scope: scope)
+            #expect(on.filter { $0.kind == .skill }.map(\.name) == ["lint"])
+            #expect(on.first { $0.kind == .plugin }?.detail == "2.0")
+            #expect(on.allSatisfy { $0.isEnabled != false })
+
+            let off = ConfigInventory.pluginItems(installedURL: installed,
+                                                  settings: try JSONValue.parse(#"{"enabledPlugins":{"tools@market":false}}"#), scope: scope)
+            #expect(off.filter { $0.kind == .skill }.allSatisfy { $0.isEnabled == false })
+            #expect(off.first { $0.kind == .plugin }?.isEnabled == false)
         }
     }
 

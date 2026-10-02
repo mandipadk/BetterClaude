@@ -183,8 +183,12 @@ struct MonthCard: View {
                             ForEach(stats.projects, id: \.name) { project in
                                 Text(project.name).font(Theme.Font.callout).lineLimit(1)
                             }
+                            if stats.projectCount > stats.projects.count {
+                                Text("and \(stats.projectCount - stats.projects.count) more")
+                                    .font(Theme.Font.callout).foregroundStyle(.secondary)
+                            }
                         } else {
-                            Text("\(stats.projects.count) projects").font(Theme.Font.callout)
+                            Text(stats.projectCount == 1 ? "1 project" : "\(stats.projectCount) projects").font(Theme.Font.callout)
                         }
                     }
                 }

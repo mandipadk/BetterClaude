@@ -193,22 +193,28 @@ public enum Doctor {
         public let name: String
         public let detail: String?
         public let lastSeen: Date?
-        public let times: Int
+        /// Sessions it happened in, however many times in each.
+        public let sessions: Int
     }
 
     public static func issues(index: HistoryIndex, installIDs: Set<String>, since: Date) async throws -> [Issue] {
         guard !installIDs.isEmpty else { return [] }
+        let installs = installIDs.map { _ in "?" }.joined(separator: ",")
+        let scope: [SQLiteValue] = [.date(since)] + installIDs.sorted().map(SQLiteValue.text)
         let rows = try await index.rows("""
-            SELECT h.kind, h.name, MAX(h.timestamp), COUNT(*),
-                   (SELECT detail FROM health WHERE kind = h.kind AND name = h.name ORDER BY timestamp DESC LIMIT 1)
+            SELECT h.kind, h.name, MAX(h.timestamp), COUNT(DISTINCT h.conversation_id),
+                   (SELECT latest.detail FROM health latest JOIN conversations lc ON lc.id = latest.conversation_id
+                    WHERE latest.kind = h.kind AND latest.name = h.name AND latest.timestamp >= ?
+                      AND lc.install_id IN (\(installs))
+                    ORDER BY latest.timestamp DESC LIMIT 1)
             FROM health h JOIN conversations c ON c.id = h.conversation_id
-            WHERE h.timestamp >= ? AND c.install_id IN (\(installIDs.map { _ in "?" }.joined(separator: ",")))
+            WHERE h.timestamp >= ? AND c.install_id IN (\(installs))
             GROUP BY h.kind, h.name ORDER BY MAX(h.timestamp) DESC
-            """, [.date(since)] + installIDs.sorted().map(SQLiteValue.text))
+            """, scope + scope)
         return rows.compactMap { row in
             guard let kind = row.text(0).flatMap(TranscriptScan.HealthEvent.Kind.init(rawValue:)),
                   let name = row.text(1) else { return nil }
-            return Issue(kind: kind, name: name, detail: row.text(4), lastSeen: row.date(2), times: Int(row.int(3)))
+            return Issue(kind: kind, name: name, detail: row.text(4), lastSeen: row.date(2), sessions: Int(row.int(3)))
         }
     }
 }
@@ -234,36 +240,95 @@ public struct WeekDigest: Sendable, Equatable {
             && a.projects.map(\.name) == b.projects.map(\.name)
     }
 
-    public static func build(index: HistoryIndex, since: Date, accountIDs: Set<String>? = nil) async throws -> WeekDigest {
-        var filter = "last_activity >= ?"
-        var values: [SQLiteValue] = [.date(since)]
-        if let accountIDs {
-            filter += " AND account_id IN (\(accountIDs.map { _ in "?" }.joined(separator: ",")))"
-            values += accountIDs.sorted().map(SQLiteValue.text)
+    /// A stretch of time and the accounts read over it; `nil` reads every account.
+    public struct Span: Sendable, Equatable {
+        public let accountIDs: Set<String>?
+        public let since: Date
+        public let until: Date
+
+        public init(accountIDs: Set<String>?, since: Date, until: Date = .distantFuture) {
+            self.accountIDs = accountIDs
+            self.since = since
+            self.until = until
         }
-        let conversations = try await index.rows("SELECT id, kind, install_name, project_path, title FROM conversations WHERE \(filter) ORDER BY last_activity DESC", values)
-        let ids = conversations.compactMap { $0.text(0) }
-        guard !ids.isEmpty else {
+    }
+
+    public static func build(index: HistoryIndex, since: Date, until: Date = .distantFuture,
+                             accountIDs: Set<String>? = nil) async throws -> WeekDigest {
+        try await build(index: index, spans: [Span(accountIDs: accountIDs, since: since, until: until)])
+    }
+
+    /// The work in these stretches: the conversations with a prompt typed in one, and what
+    /// happened in them then. A prompt, command or recap copied into a resumed conversation
+    /// counts once, where it first appeared.
+    public static func build(index: HistoryIndex, spans: [Span]) async throws -> WeekDigest {
+        var lastPrompt: [String: Date] = [:]
+        var prompts = 0, commands = 0
+        var files = Set<String>()
+        var recaps: [(at: Date, text: String)] = []
+        for span in spans where span.accountIDs?.isEmpty != true {
+            let accounts = DistinctUsage.accounts(span.accountIDs)
+            let range: [SQLiteValue] = [.date(span.since), .date(span.until)]
+            var ids = Set<String>()
+            for row in try await index.rows("""
+                SELECT * FROM \(DistinctRows.messages("m.conversation_id, m.timestamp",
+                    where: "m.role = 'user' AND m.kind = 'message' AND m.timestamp >= ? AND m.timestamp < ?\(accounts.sql)"))
+                """, range + accounts.values) {
+                guard let id = row.text(0) else { continue }
+                prompts += 1
+                ids.insert(id)
+                let at = row.date(1) ?? .distantPast
+                lastPrompt[id] = max(lastPrompt[id] ?? at, at)
+            }
+            guard !ids.isEmpty else { continue }
+            let list = ids.map { _ in "?" }.joined(separator: ",")
+            let inSpan = range + ids.sorted().map(SQLiteValue.text)
+            for row in try await index.rows("""
+                SELECT DISTINCT file_path FROM tool_calls WHERE file_path IS NOT NULL
+                  AND name IN ('Edit', 'Write', 'MultiEdit', 'NotebookEdit') AND timestamp >= ? AND timestamp < ?
+                  AND conversation_id IN (\(list))
+                """, inSpan) {
+                if let path = row.text(0) { files.insert(path) }
+            }
+            commands += Int(try await index.rows("""
+                SELECT COUNT(*) FROM \(DistinctRows.toolCalls("t.rowid",
+                    where: "t.name = 'Bash' AND t.timestamp >= ? AND t.timestamp < ? AND t.conversation_id IN (\(list))"))
+                """, inSpan).first?.int(0) ?? 0)
+            for row in try await index.rows("""
+                SELECT timestamp, text FROM \(DistinctRows.messages("m.timestamp, m.text",
+                    where: "m.kind = 'recap' AND m.timestamp >= ? AND m.timestamp < ? AND m.conversation_id IN (\(list))"))
+                ORDER BY timestamp DESC LIMIT 16
+                """, inSpan) {
+                if let text = row.text(1) { recaps.append((row.date(0) ?? .distantPast, text)) }
+            }
+        }
+        let since = spans.map(\.since).min() ?? Date()
+        guard !lastPrompt.isEmpty else {
             return WeekDigest(since: since, conversations: 0, prompts: 0, places: [], projects: [], filesChanged: 0,
                               commands: 0, recaps: [], titles: [])
         }
+        let ids = lastPrompt.keys.sorted()
+        let conversations = try await index.rows("""
+            SELECT id, kind, install_name, project_path, title FROM conversations
+            WHERE id IN (\(ids.map { _ in "?" }.joined(separator: ",")))
+            """, ids.map(SQLiteValue.text))
+            .sorted { (lastPrompt[$0.text(0) ?? ""] ?? .distantPast) > (lastPrompt[$1.text(0) ?? ""] ?? .distantPast) }
         var places: [String: Int] = [:]
         var projects: [String: Int] = [:]
         for row in conversations {
             places[HistorySearch.place(kind: row.text(1), install: row.text(2)), default: 0] += 1
-            if let project = row.text(3) { projects[URL(fileURLWithPath: project).lastPathComponent, default: 0] += 1 }
+            if let project = row.text(3), !project.isEmpty { projects[Projects.root(of: project), default: 0] += 1 }
         }
-        let list = ids.map { _ in "?" }.joined(separator: ",")
-        let idValues = ids.map(SQLiteValue.text)
-        let prompts = try await index.rows("SELECT COUNT(*) FROM messages WHERE role = 'user' AND kind = 'message' AND timestamp >= ? AND conversation_id IN (\(list))", [.date(since)] + idValues).first?.int(0) ?? 0
-        let files = try await index.rows("SELECT COUNT(DISTINCT file_path) FROM tool_calls WHERE file_path IS NOT NULL AND name IN ('Edit','Write','MultiEdit','NotebookEdit') AND timestamp >= ? AND conversation_id IN (\(list))", [.date(since)] + idValues).first?.int(0) ?? 0
-        let commands = try await index.rows("SELECT COUNT(*) FROM tool_calls WHERE name = 'Bash' AND timestamp >= ? AND conversation_id IN (\(list))", [.date(since)] + idValues).first?.int(0) ?? 0
-        let recaps = try await index.rows("SELECT text FROM messages WHERE kind = 'recap' AND timestamp >= ? AND conversation_id IN (\(list)) ORDER BY timestamp DESC LIMIT 16", [.date(since)] + idValues).compactMap { $0.text(0) }
+        let names = Projects.names(for: projects.keys)
+        let busiest: [(name: String, conversations: Int)] = projects
+            .map { (name: names[$0.key] ?? $0.key, conversations: $0.value) }
+            .sorted { $0.conversations == $1.conversations ? $0.name < $1.name : $0.conversations > $1.conversations }
+        let latestRecaps: [String] = recaps.sorted { $0.at > $1.at }.prefix(16).reversed().map(\.text)
         return WeekDigest(
-            since: since, conversations: ids.count, prompts: Int(prompts),
+            since: since, conversations: lastPrompt.count, prompts: prompts,
             places: places.sorted { $0.value > $1.value }.map { ($0.key.prefix(1).uppercased() + $0.key.dropFirst(), $0.value) },
-            projects: projects.sorted { $0.value > $1.value }.prefix(6).map { ($0.key, $0.value) },
-            filesChanged: Int(files), commands: Int(commands), recaps: recaps.reversed(),
+            projects: Array(busiest.prefix(6)),
+            filesChanged: files.count, commands: commands, recaps: latestRecaps,
             titles: conversations.prefix(20).compactMap { $0.text(4) })
     }
 

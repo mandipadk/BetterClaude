@@ -10,7 +10,10 @@ final class ReplayModel: Identifiable {
         let turn: Replay.Turn
         var reply: String?
         var failure: String?
+        /// "Stopped" for the turn Stop interrupted, "Not run" for the ones after it.
+        var halted: String?
         var id: Int { turn.number }
+        var isPending: Bool { reply == nil && failure == nil && halted == nil }
     }
 
     let conversation: ConversationRef
@@ -59,21 +62,38 @@ final class ReplayModel: Identifiable {
                 guard !Task.isCancelled else { break }
                 do {
                     let reply = try await client.send(model: model, messages: Replay.messages(for: results[index].turn))
-                    results[index].reply = reply.text
                     spent.input += reply.inputTokens
                     spent.output += reply.outputTokens
+                    guard results[index].isPending else { continue }
+                    results[index].reply = reply.text
                 } catch {
+                    guard results[index].isPending else { continue }
+                    if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
+                        results[index].halted = "Stopped"
+                        break
+                    }
                     results[index].failure = String(describing: error)
                     if case AnthropicClient.Failure.http(let code, _) = error, code == 401 { break }
                 }
             }
+            halt(interrupting: false)
             running = false
         }
     }
 
     func cancel() {
         task?.cancel()
+        halt(interrupting: true)
         running = false
+    }
+
+    /// The turn under way when replaying stopped reads "Stopped"; the ones after it, "Not run".
+    private func halt(interrupting: Bool) {
+        var first = interrupting
+        for index in results.indices where results[index].isPending {
+            results[index].halted = first ? "Stopped" : "Not run"
+            first = false
+        }
     }
 }
 
@@ -146,6 +166,10 @@ struct ReplaySheet: View {
                 .font(Theme.Font.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Text("Replays what was said, without tool calls: the other model sees the messages, not the commands Claude ran or the files it read.")
+                .font(Theme.Font.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -167,6 +191,12 @@ struct ReplaySheet: View {
                                 column("Now, \(model.model.name)", reply)
                             } else if let failure = result.failure {
                                 column("Now, \(model.model.name)", failure)
+                            } else if let halted = result.halted {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Now, \(model.model.name)").font(Theme.Font.callout.weight(.semibold)).foregroundStyle(.secondary)
+                                    Text(halted).font(Theme.Font.body).foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             } else {
                                 VStack(alignment: .leading) {
                                     Text("Now, \(model.model.name)").font(Theme.Font.callout.weight(.semibold)).foregroundStyle(.secondary)

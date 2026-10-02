@@ -2,6 +2,49 @@ import AppKit
 import CoworkKit
 import SwiftUI
 
+/// Things you keep telling Claude, offered as lines for one CLAUDE.md.
+@MainActor
+@Observable
+final class CorrectionPicker {
+    private(set) var suggestions: [CorrectionSuggestion] = []
+    /// The wording to add, as edited, by suggestion.
+    var wording: [String: String] = [:]
+    var chosen: Set<String> = []
+    private(set) var added: Int?
+
+    func set(_ suggestions: [CorrectionSuggestion]) {
+        self.suggestions = suggestions
+        chosen = Set(suggestions.map(\.id))
+        added = nil
+    }
+
+    func clear() {
+        suggestions = []
+        chosen = []
+        added = nil
+    }
+
+    func rule(_ suggestion: CorrectionSuggestion) -> String { wording[suggestion.id] ?? suggestion.rule }
+
+    /// Adds the chosen ones to `project`'s CLAUDE.md, or the one every session reads.
+    @discardableResult
+    func addChosen(to project: String?) -> Bool {
+        let rules = suggestions.filter { chosen.contains($0.id) }.map(rule)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard !rules.isEmpty else { return false }
+        do {
+            try Corrections.add(rules, to: Corrections.target(for: project))
+            added = rules.count
+            suggestions.removeAll { chosen.contains($0.id) }
+            chosen = []
+            return true
+        } catch {
+            added = nil
+            return false
+        }
+    }
+}
+
 /// Every project folder, and everything about one: conversations from every Claude and
 /// account, pull requests, the files Claude changed, what it cost, and its memory.
 @MainActor
@@ -11,11 +54,9 @@ final class ProjectsModel {
     private(set) var loaded = false
     private(set) var detail: ProjectDetail?
     /// Corrections made in more than one of the selected project's conversations.
-    private(set) var corrections: [CorrectionSuggestion] = []
-    /// The wording to add, as edited, by suggestion.
-    var wording: [String: String] = [:]
-    var chosen: Set<String> = []
-    private(set) var added: Int?
+    let corrections = CorrectionPicker()
+    /// Corrections made across several projects, for the CLAUDE.md every session reads.
+    let everywhere = CorrectionPicker()
     private(set) var decisions: [Decision] = []
     /// Reading the selected project failed, so its page says so instead of waiting forever.
     private(set) var detailFailed = false
@@ -25,9 +66,7 @@ final class ProjectsModel {
             // Nothing of the last project stays on screen while the next one is read.
             detail = nil
             decisions = []
-            corrections = []
-            chosen = []
-            added = nil
+            corrections.clear()
             detailFailed = false
             loadDetail()
         }
@@ -40,6 +79,8 @@ final class ProjectsModel {
         Task {
             projects = (try? await Projects.list(index: index)) ?? []
             loaded = true
+            let all = (try? await Corrections.suggestions(index: index)) ?? []
+            everywhere.set(all.filter { $0.project == nil })
             if let selectedID, !projects.contains(where: { $0.id == selectedID }) {
                 self.selectedID = nil
             } else {
@@ -53,22 +94,9 @@ final class ProjectsModel {
         decisions.removeAll { $0.id == decision.id }
     }
 
-    func rule(_ suggestion: CorrectionSuggestion) -> String { wording[suggestion.id] ?? suggestion.rule }
-
     func addChosen() {
         guard let project = detail?.summary.path else { return }
-        let rules = corrections.filter { chosen.contains($0.id) }.map(rule)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-        guard !rules.isEmpty else { return }
-        do {
-            try Corrections.add(rules, to: Corrections.target(for: project))
-            added = rules.count
-            corrections.removeAll { chosen.contains($0.id) }
-            chosen = []
-            loadDetail()
-        } catch {
-            added = nil
-        }
+        if corrections.addChosen(to: project) { loadDetail() }
     }
 
     /// Reads the selected project again, after a failure.
@@ -94,9 +122,7 @@ final class ProjectsModel {
             let decided = (try? await Decisions.list(index: index, project: summary.path)) ?? []
             guard summary.id == selectedID else { return }
             decisions = decided
-            corrections = all.filter { $0.project == summary.path }
-            chosen = Set(corrections.map(\.id))
-            added = nil
+            corrections.set(all.filter { $0.project == summary.path })
         }
     }
 }
@@ -146,6 +172,9 @@ struct ProjectsPage: View {
                     } trailing: { Chevron() }
                 }
                 .buttonStyle(.plain)
+            }
+            CorrectionsSection(picker: model.everywhere, project: nil) {
+                model.everywhere.addChosen(to: nil)
             }
             SectionLabel(title: "Folders")
             Card(inset: 44) {
@@ -283,7 +312,7 @@ private struct ProjectDetailView: View {
             }
             .sharedBackgroundVisibility(.hidden)
         }
-        .task(id: "\(summary.id)#\(services.generation)#\(services.projectPages.added ?? 0)") {
+        .task(id: "\(summary.id)#\(services.generation)#\(services.projectPages.corrections.added ?? 0)") {
             let folder = detail.memory.first { $0.lastPathComponent == "memory" }
             let claudeMD = detail.memory.first { $0.lastPathComponent == "CLAUDE.md" }
             health = await Task.detached(priority: .userInitiated) { folder.flatMap(MemoryHealth.check) }.value
@@ -303,7 +332,9 @@ private struct ProjectDetailView: View {
     private func overview(_ summary: ProjectSummary) -> some View {
         HStack(alignment: .top, spacing: 24) {
             VStack(alignment: .leading, spacing: 0) {
-                CorrectionsSection(project: summary.path)
+                CorrectionsSection(picker: services.projectPages.corrections, project: summary.path) {
+                    services.projectPages.addChosen()
+                }
                 SectionLabel(title: "Memory")
                 Card(inset: 44) {
                     let claudeMD = detail.memory.first { $0.lastPathComponent == "CLAUDE.md" }
@@ -448,22 +479,26 @@ private struct ProjectDetailView: View {
     private func dollars(_ value: Double) -> String { Pricing.dollars(value) }
 }
 
-/// Things you keep telling Claude in this project, offered as lines for its CLAUDE.md.
+/// Things you keep telling Claude in this project, or in every project, offered as lines for
+/// the CLAUDE.md that covers them.
 private struct CorrectionsSection: View {
     @Environment(AppServices.self) private var services
-    let project: String
+    let picker: CorrectionPicker
+    /// `nil` for corrections made across projects, which go in the CLAUDE.md every session reads.
+    let project: String?
+    let add: () -> Void
     @State private var confirming = false
     @State private var editing: String?
 
     var body: some View {
-        let model = services.projectPages
-        if !model.corrections.isEmpty || model.added != nil {
-            SectionLabel(title: "You keep telling Claude")
+        @Bindable var model = picker
+        if !model.suggestions.isEmpty || model.added != nil {
+            SectionLabel(title: project == nil ? "You keep telling Claude in every project" : "You keep telling Claude")
             Card {
                 if let added = model.added {
                     Row(title: "Added \(added) line\(added == 1 ? "" : "s") to CLAUDE.md", detail: "Undo it from History.")
                 }
-                ForEach(model.corrections) { suggestion in
+                ForEach(model.suggestions) { suggestion in
                     HStack(spacing: 10) {
                         Toggle("", isOn: Binding(
                             get: { model.chosen.contains(suggestion.id) },
@@ -492,7 +527,7 @@ private struct CorrectionsSection: View {
                     .padding(.vertical, 9)
                     .contextMenu { Button("Edit Wording") { editing = suggestion.id } }
                 }
-                if !model.corrections.isEmpty {
+                if !model.suggestions.isEmpty {
                     HStack {
                         Spacer()
                         Button("Add \(model.chosen.count) to CLAUDE.md…") { confirming = true }
@@ -503,9 +538,9 @@ private struct CorrectionsSection: View {
                     .padding(.vertical, 10)
                 }
             }
-            .confirmationDialog("Add \(model.chosen.count) line\(model.chosen.count == 1 ? "" : "s") to this project's CLAUDE.md?",
+            .confirmationDialog("Add \(model.chosen.count) line\(model.chosen.count == 1 ? "" : "s") to \(project == nil ? "the CLAUDE.md every session reads" : "this project's CLAUDE.md")?",
                                 isPresented: $confirming) {
-                Button("Add") { model.addChosen() }
+                Button("Add") { add() }
             } message: {
                 Text("They go under their own heading in \(services.snapshot.paths.abbreviating(Corrections.target(for: project).path)). What's there now is kept, and Undo in History takes them out.")
             }

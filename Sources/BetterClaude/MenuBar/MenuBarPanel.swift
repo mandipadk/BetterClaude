@@ -57,7 +57,7 @@ struct MenuBarPanel: View {
             guard !Task.isCancelled,
                   let hits = try? await index.search(needle, options: .init(limit: 8, excerptsPerHit: 0)) else { return }
             let byID = Dictionary(services.snapshot.conversations.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-            found = hits.compactMap { byID[$0.conversationID] }
+            found = hits.compactMap { byID[$0.conversationID] }.filter { !$0.isArchived }
         }
     }
 
@@ -139,15 +139,16 @@ struct MenuBarPanel: View {
         .buttonStyle(PanelRowStyle())
     }
 
+    /// Titles and project names first, as you type; then conversations whose messages match.
     private var matches: [ConversationRef] {
-        if let found { return found }
         let needle = query.trimmingCharacters(in: .whitespaces)
         guard !needle.isEmpty else { return services.recentConversations(5) }
-        let all = services.snapshot.conversations.filter { !$0.isArchived }
-        return Array(all.filter {
-            $0.title.localizedCaseInsensitiveContains(needle)
-                || ($0.projectName?.localizedCaseInsensitiveContains(needle) ?? false)
-        }.prefix(8))
+        let named = services.snapshot.conversations.filter {
+            !$0.isArchived && ($0.title.localizedCaseInsensitiveContains(needle)
+                || ($0.projectName?.localizedCaseInsensitiveContains(needle) ?? false))
+        }
+        var seen = Set<String>()
+        return Array((named + (found ?? [])).filter { seen.insert($0.id).inserted }.prefix(8))
     }
 
     @ViewBuilder

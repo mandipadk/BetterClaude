@@ -146,7 +146,7 @@ private struct WelcomePage: View {
     private var found: String {
         guard services.hasLoaded else { return "Looking for Claude on this Mac…" }
         let installs = services.installs.count
-        let conversations = services.snapshot.conversations.count
+        let conversations = services.snapshot.conversations.count - services.archivedCount
         return "Found \(installs) \(installs == 1 ? "install" : "installs") and \(conversations) \(conversations == 1 ? "conversation" : "conversations") on this Mac."
     }
 }
