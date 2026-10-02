@@ -38,6 +38,31 @@ public enum Vault {
         public var id: String { key }
         public var latest: Version? { versions.last }
         public var sourceExists: Bool { FileManager.default.fileExists(atPath: sourcePath) }
+
+        /// Kept on another Mac and brought here by a backup: where it lived is outside this
+        /// Mac's home folder and its Claude Code folders.
+        public func isFromAnotherMac(paths: HostPaths = .current) -> Bool {
+            let path = URL(fileURLWithPath: sourcePath).standardizedFileURL.path
+            let home = paths.home.standardizedFileURL.path
+            return !path.hasPrefix(home + "/") && !Vault.isInClaudeCodeFolder(sourcePath, paths: paths)
+        }
+    }
+
+    public enum RestoreError: Error, CustomStringConvertible {
+        case fromAnotherMac
+
+        public var description: String {
+            switch self {
+            case .fromAnotherMac:
+                return "This conversation was kept on another Mac. It can be read here, but Better Claude only puts conversations back into this Mac's Claude Code folders."
+            }
+        }
+    }
+
+    /// Whether `path` is inside one of this Mac's Claude Code config folders.
+    static func isInClaudeCodeFolder(_ path: String, paths: HostPaths) -> Bool {
+        let path = URL(fileURLWithPath: path).standardizedFileURL.path
+        return LiveSessions.configDirs(paths: paths).contains { path.hasPrefix($0.standardizedFileURL.path + "/") }
     }
 
     public struct KeepReport: Sendable {
@@ -220,11 +245,13 @@ public enum Vault {
     // MARK: Restoring
 
     /// Puts a kept conversation back where Claude Code will find it, with a receipt so it can
-    /// be undone. Refuses when something already exists there.
+    /// be undone. Refuses when something already exists there, and anywhere outside this
+    /// Mac's Claude Code folders: an entry from another Mac's backup names a place on that Mac.
     public static func restore(_ entry: Entry) throws -> ImportReceipt {
         guard let copy = latestCopy(of: entry) else {
             throw TransferError.sourceTranscriptMissing(sessionId: entry.sessionId)
         }
+        guard isInClaudeCodeFolder(entry.sourcePath, paths: .current) else { throw RestoreError.fromAnotherMac }
         let destination = URL(fileURLWithPath: entry.sourcePath)
         guard !FileManager.default.fileExists(atPath: destination.path) else {
             throw TransferError.destinationExists(destination)
@@ -295,10 +322,46 @@ public enum Vault {
     }
 
     static func save(_ entry: Entry) throws {
+        try AtomicWrite.write(try encodeEntry(entry),
+                              to: entriesDirectory.appendingPathComponent(entry.key + ".json"))
+    }
+
+    static func encodeEntry(_ entry: Entry) throws -> Data {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try AtomicWrite.write(try encoder.encode(entry),
-                              to: entriesDirectory.appendingPathComponent(entry.key + ".json"))
+        return try encoder.encode(entry)
+    }
+
+    static func decodeEntry(_ data: Data) -> Entry? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(Entry.self, from: data)
+    }
+
+    /// One conversation kept in two places, such as this Mac and a backup: every copy either
+    /// kept, oldest first, named as whichever was kept more recently names it. Which install it
+    /// belongs to stays this Mac's.
+    static func merged(_ ours: Entry, _ theirs: Entry) -> Entry {
+        func order(_ a: Version, _ b: Version) -> Bool {
+            a.sourceModified == b.sourceModified ? a.keptAt < b.keptAt : a.sourceModified < b.sourceModified
+        }
+        var byHash: [String: Version] = [:]
+        for version in ours.versions + theirs.versions where byHash[version.sha256] == nil {
+            byHash[version.sha256] = version
+        }
+        let theirsNewer = switch (ours.latest, theirs.latest) {
+        case (let a?, let b?): order(a, b)
+        case (nil, _?): true
+        default: false
+        }
+        var merged = ours
+        merged.versions = byHash.values.sorted(by: order)
+        if theirsNewer {
+            merged.title = theirs.title
+            merged.projectPath = theirs.projectPath ?? ours.projectPath
+        }
+        merged.installID = ours.installID ?? theirs.installID
+        return merged
     }
 }

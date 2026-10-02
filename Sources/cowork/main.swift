@@ -877,7 +877,9 @@ func cmdUndo(_ args: Args) throws {
     for path in result.restored { print("restored \(path)") }
     for skip in result.skipped { print("kept     \(skip.path) — \(skip.reason)") }
     let left = result.leftInPlace.count
-    print(left == 0 ? "Reverted cleanly." : "Reverted, with \(left) path(s) left in place. Run undo again once they're dealt with.")
+    print(left == 0 ? "Reverted cleanly."
+          : result.canRetry ? "Reverted, with \(left) path(s) left in place. Run undo again to retry."
+          : "Reverted, with \(left) changed path(s) kept.")
 }
 
 func cmdLibrary(_ args: Args) throws {

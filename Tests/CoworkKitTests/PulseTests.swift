@@ -76,12 +76,13 @@ struct PulseTests {
             #expect(PulseHooks.isInstalled(in: config))
             let installed = try JSONValue.parse(Data(contentsOf: settings))
             #expect(installed["model"]?.stringValue == "opus")
-            #expect(installed["hooks"]?["Stop"]?.arrayValue?.count == 2)
+            #expect(installed["hooks"]?["Stop"]?.arrayValue?.count == 1)
             #expect(installed["hooks"]?["Notification"]?.arrayValue?.count == 1)
+            #expect(installed["hooks"]?["StopFailure"]?.arrayValue?.count == 1)
 
             // Installing twice doesn't double up.
             try PulseHooks.install(in: config, paths: paths)
-            #expect(try JSONValue.parse(Data(contentsOf: settings))["hooks"]?["Stop"]?.arrayValue?.count == 2)
+            #expect(try JSONValue.parse(Data(contentsOf: settings))["hooks"]?["Notification"]?.arrayValue?.count == 1)
 
             try PulseHooks.uninstall(in: config, paths: paths)
             #expect(!PulseHooks.isInstalled(in: config))
@@ -90,6 +91,31 @@ struct PulseTests {
             let backups = try FileManager.default.contentsOfDirectory(
                 atPath: paths.betterClaudeSupport.appendingPathComponent("Backups").path)
             #expect(!backups.isEmpty)
+        }
+    }
+
+    @Test("A Stop hook an earlier version installed is taken out, leaving the person's own")
+    func upgradesStopHook() throws {
+        try withHome { paths in
+            let config = paths.claudeCodeConfigDir
+            let settings = config.appendingPathComponent("settings.json")
+            let ours = JSONValue.object(JSONObject([("hooks", .array([.object(JSONObject([
+                ("type", .string("command")), ("command", .string(PulseHooks.command(paths: paths))),
+            ]))]))]))
+            let theirs = JSONValue.object(JSONObject([("hooks", .array([.object(JSONObject([
+                ("type", .string("command")), ("command", .string("say done")),
+            ]))]))]))
+            let old = JSONValue.object(JSONObject([("hooks", .object(JSONObject([
+                ("Notification", .array([ours])), ("Stop", .array([theirs, ours])), ("StopFailure", .array([ours])),
+            ])))]))
+            try old.serializedPretty().write(to: settings)
+            #expect(PulseHooks.needsUpgrade(in: config))
+
+            try PulseHooks.install(in: config, paths: paths)
+            #expect(!PulseHooks.needsUpgrade(in: config))
+            let upgraded = try JSONValue.parse(Data(contentsOf: settings))
+            #expect(upgraded["hooks"]?["Stop"]?.arrayValue == [theirs])
+            #expect(upgraded["hooks"]?["Notification"]?.arrayValue?.count == 1)
         }
     }
 

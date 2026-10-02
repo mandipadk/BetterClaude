@@ -41,8 +41,9 @@ final class SpotlightIndexer {
                 current[conversation.id] = fingerprint
                 guard previous[conversation.id] != fingerprint else { continue }
                 let attributes = CSSearchableItemAttributeSet(contentType: .text)
-                attributes.title = conversation.title
-                attributes.displayName = conversation.title
+                let title = SecretSweep.redact(conversation.title)
+                attributes.title = title
+                attributes.displayName = title
                 let place = conversation.projectName.map { "\(install), in \($0)" } ?? install
                 attributes.contentDescription = first.map { "\(place): \($0)" } ?? place
                 attributes.keywords = ["Claude", install] + [conversation.projectName].compactMap { $0 }
@@ -66,7 +67,8 @@ final class SpotlightIndexer {
         task = Task { try? await CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [Self.domain]) }
     }
 
-    /// The first thing asked in each conversation, trimmed for a one-line description.
+    /// The first thing asked in each conversation, keys masked and trimmed for a one-line
+    /// description.
     private static func firstPrompts(_ index: HistoryIndex?) async -> [String: String] {
         guard let index, let rows = try? await index.rows("""
             SELECT conversation_id, text FROM messages m
@@ -77,7 +79,9 @@ final class SpotlightIndexer {
         var out: [String: String] = [:]
         for row in rows {
             guard let id = row.text(0), let text = row.text(1) else { continue }
-            let line = text.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
+            // Masked before it's clipped, so a key cut in half can't slip past the patterns.
+            let line = SecretSweep.redact(String(text.prefix(4_000)))
+                .replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
             out[id] = line.count > 240 ? String(line.prefix(240)) + "…" : line
         }
         return out

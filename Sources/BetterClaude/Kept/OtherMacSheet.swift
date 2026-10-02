@@ -3,6 +3,9 @@ import SwiftUI
 
 struct OtherMacRequest: Identifiable {
     let backup: URL
+    /// The Mac a newer backup is for, when it's one already opened.
+    var name: String?
+    var folder: URL?
     var id: String { backup.path }
 }
 
@@ -33,7 +36,7 @@ struct OtherMacSheet: View {
                     .textFieldStyle(.roundedBorder)
                 SecureField("The backup's password", text: $password)
                     .textFieldStyle(.roundedBorder)
-                    .onSubmit(open)
+                    .onSubmit { open() }
                 if let failure {
                     Text(failure).font(Theme.Font.callout).foregroundStyle(Theme.attention)
                 }
@@ -47,23 +50,29 @@ struct OtherMacSheet: View {
                 Button("Open") { open() }
                     .buttonStyle(.primary)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(working || password.isEmpty || name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(!canOpen)
             }
         }
         .padding(Theme.Space.xl)
         .frame(width: 480)
-        .onAppear { name = "My other Mac" }
+        .onAppear { name = request.name ?? "My other Mac" }
+    }
+
+    private var canOpen: Bool {
+        !working && !password.isEmpty && !name.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private func open() {
-        guard !working else { return }
+        // Return in the password field gets here without the button, so it checks the same.
+        guard canOpen else { return }
         working = true
         failure = nil
         let backup = request.backup, password = password, name = name.trimmingCharacters(in: .whitespaces)
+        let folder = request.folder
         let paths = services.snapshot.paths
         Task {
             let result = await Task.detached(priority: .userInitiated) { () -> Result<Int, Error> in
-                Result { try OtherMacs.open(backup, password: password, name: name, paths: paths) }
+                Result { try OtherMacs.open(backup, password: password, name: name, replacing: folder, paths: paths) }
             }.value
             working = false
             switch result {

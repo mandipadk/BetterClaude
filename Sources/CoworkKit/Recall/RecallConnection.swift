@@ -71,8 +71,19 @@ public enum RecallConnection {
 
     // MARK: Changing
 
+    /// What the server is started with: whose history it reads.
+    public static func arguments(account: String) -> [String] { ["--account", account] }
+
+    /// Whether a registration has to be written again: it reads another account than the
+    /// install is signed into now, or the server it names is gone, as when Better Claude moved.
+    public static func needsRepair(_ registered: (command: String, arguments: [String]),
+                                   server: URL, account: String) -> Bool {
+        if registered.arguments != RecallConnection.arguments(account: account) { return true }
+        return registered.command != server.path && !FileManager.default.isExecutableFile(atPath: registered.command)
+    }
+
     public static func connect(_ target: Target, server: URL, account: String, paths: HostPaths = .current) throws {
-        let arguments = ["--account", account]
+        let arguments = RecallConnection.arguments(account: account)
         switch target {
         case .claudeCode(let configDir):
             if isConnected(target, paths: paths) { try runClaude(["mcp", "remove", "--scope", "user", serverName], configDir: configDir, paths: paths) }

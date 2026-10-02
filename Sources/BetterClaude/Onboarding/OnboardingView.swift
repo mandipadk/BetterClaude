@@ -10,6 +10,7 @@ struct OnboardingView: View {
     @AppStorage("onboardingCompleted") private var onboardingCompleted = false
     @AppStorage("keepAutomatically") private var keepAutomatically = true
     @AppStorage("showInMenuBar") private var showInMenuBar = true
+    @AppStorage(SpotlightIndexer.enabledKey) private var showInSpotlight = true
     @State private var openAtLogin = false
 
     @State private var page = 0
@@ -25,7 +26,7 @@ struct OnboardingView: View {
                 case 0: WelcomePage().transition(pageTransition)
                 default:
                     SetupPage(keepAutomatically: $keepAutomatically, showInMenuBar: $showInMenuBar,
-                              openAtLogin: $openAtLogin)
+                              showInSpotlight: $showInSpotlight, openAtLogin: $openAtLogin)
                         .transition(pageTransition)
                 }
             }
@@ -88,6 +89,7 @@ struct OnboardingView: View {
     private func finish() {
         if openAtLogin { try? SMAppService.mainApp.register() }
         onboardingCompleted = true
+        services.finishedSetup()
         // Your real data is the tour: Home, with what needs you and what's worth a look.
         services.destination = .home
         onFinish()
@@ -174,6 +176,7 @@ private struct IconFan: View {
 private struct SetupPage: View {
     @Binding var keepAutomatically: Bool
     @Binding var showInMenuBar: Bool
+    @Binding var showInSpotlight: Bool
     @Binding var openAtLogin: Bool
 
     var body: some View {
@@ -189,6 +192,11 @@ private struct SetupPage: View {
                 ExplainedToggle(title: "Show in the menu bar",
                                 detail: "Find any conversation from anywhere, without opening the window.",
                                 isOn: $showInMenuBar)
+                    .padding(.vertical, 14)
+                Rectangle().fill(Theme.hairline).frame(height: 1)
+                ExplainedToggle(title: "Show conversations in Spotlight",
+                                detail: "Each conversation's title and first question, so Spotlight can find it. Never whole conversations.",
+                                isOn: $showInSpotlight)
                     .padding(.vertical, 14)
                 Rectangle().fill(Theme.hairline).frame(height: 1)
                 ExplainedToggle(title: "Open at login",

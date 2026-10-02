@@ -123,7 +123,7 @@ struct InstallPage: View {
                     Divider()
                 }
                 if install.kind == .external(.otherMac) {
-                    Button("Open a Newer Backup…") { services.openOtherMac() }
+                    Button("Open a Newer Backup…") { services.openOtherMac(replacing: install) }
                     Button("Remove This Mac's History…") { confirmingRemoval = true }
                     Divider()
                 }

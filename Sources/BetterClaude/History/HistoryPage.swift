@@ -146,7 +146,8 @@ struct HistoryRow: View {
             }
             Spacer(minLength: Theme.Space.m)
             if receipt.revertedAt != nil {
-                Text(leftBehind.map { $0 > 0 ? "Undone, \($0) changed files kept" : "Undone" } ?? "Undone")
+                let kept = leftBehind ?? receipt.keptPaths?.count ?? 0
+                Text(kept == 0 ? "Undone" : kept == 1 ? "Undone, 1 changed file kept" : "Undone, \(kept) changed files kept")
                     .font(Theme.Font.callout)
                     .foregroundStyle(.secondary)
             } else {

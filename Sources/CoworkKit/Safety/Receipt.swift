@@ -85,6 +85,9 @@ public struct ImportReceipt: Codable, Sendable {
     public var itemCount: Int?
     /// When this was undone, if it was.
     public var revertedAt: Date?
+    /// What that undo left in place because it had changed since. Optional so older
+    /// receipts still decode.
+    public var keptPaths: [String]?
     /// Each conversation's files, so Undo can leave a conversation whole when it has been used
     /// since. Optional so older receipts still decode.
     public var conversations: [ConversationFiles]?
@@ -140,8 +143,8 @@ public struct ImportReceipt: Codable, Sendable {
         public let sha256Before: String
         /// What Better Claude left there: its fingerprint, or `removed` when the change took
         /// the file away. `nil` until the write lands, and on receipts written before this was
-        /// recorded; Undo then can't tell a later edit from ours, so it restores only a file
-        /// that is unchanged or missing.
+        /// recorded; Undo then can't tell a later edit from ours, so it copies what's there
+        /// aside before putting the earlier copy back.
         public var sha256After: String?
 
         public static let removed = "removed"

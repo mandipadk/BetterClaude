@@ -31,7 +31,7 @@ struct WriteSafetyTests {
         }
     }
 
-    @Test("Undo leaves a file someone edited since, and offers the undo again")
+    @Test("Undo leaves a file someone edited since, and remembers it as undone with that file kept")
     func undoKeepsLaterEdit() throws {
         try FixtureHomeTests.withSample { sample in
             let file = sample.root.appendingPathComponent("Documents/notes/CLAUDE.md")
@@ -43,13 +43,17 @@ struct WriteSafetyTests {
 
             let result = try Undo.revertAndRecord(receipt)
             #expect(result.leftInPlace.map(\.path) == [file.standardizedFileURL.path])
+            #expect(!result.canRetry)
             #expect(try String(contentsOf: file, encoding: .utf8) == edited)
-            #expect(try Undo.receipts().first { $0.id == receipt.id }?.revertedAt == nil)
+            let recorded = try #require(try Undo.receipts().first { $0.id == receipt.id })
+            #expect(recorded.revertedAt != nil)
+            #expect(recorded.keptPaths == [file.standardizedFileURL.path])
+            #expect(throws: UndoError.self) { try Undo.revertAndRecord(receipt) }
         }
     }
 
-    @Test("A receipt from before fingerprints were kept restores only an unchanged or missing file")
-    func oldReceiptIsConservative() throws {
+    @Test("A receipt from before fingerprints were kept puts the earlier copy back, keeping what was there aside")
+    func oldReceiptRestoresNonDestructively() throws {
         try FixtureHomeTests.withSample { sample in
             let fm = FileManager.default
             let folder = sample.root.appendingPathComponent("Documents/old", isDirectory: true)
@@ -68,10 +72,39 @@ struct WriteSafetyTests {
             ]
             try Undo.save(receipt)
 
+            let replaced = try FileDigest.hex(contentsOf: changed)
             let result = try Undo.revertAndRecord(receipt)
-            #expect(result.leftInPlace.map(\.path) == [changed.path])
-            #expect(try String(contentsOf: changed, encoding: .utf8) == "someone's later work\n")
+            #expect(result.leftInPlace.isEmpty)
+            #expect(Set(result.restored) == [changed.path, missing.path])
+            #expect(try String(contentsOf: changed, encoding: .utf8) == "before\n")
             #expect(try String(contentsOf: missing, encoding: .utf8) == "before\n")
+            // What was there is kept, so this can't lose anyone's later work.
+            #expect(restoresHolding(replaced, paths: sample.paths))
+            let recorded = try #require(try Undo.receipts().first { $0.id == receipt.id })
+            #expect(recorded.revertedAt != nil)
+            #expect(recorded.keptPaths == nil)
+        }
+    }
+
+    @Test("An old receipt for a file Better Claude changed is undone, not offered forever")
+    func oldReceiptForOwnWriteIsUndone() throws {
+        try FixtureHomeTests.withSample { sample in
+            let file = sample.root.appendingPathComponent("Documents/old/CLAUDE.md")
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("# Notes\n".utf8).write(to: file)
+            var receipt = try Corrections.add(["Use tabs."], to: file, paths: sample.paths)
+            // As a 1.3 receipt: no record of what Better Claude left there.
+            receipt.modified = receipt.modified.map {
+                ImportReceipt.ModifiedFile(path: $0.path, backupPath: $0.backupPath, sha256Before: $0.sha256Before)
+            }
+            try Undo.save(receipt)
+            let written = try FileDigest.hex(contentsOf: file)
+
+            let result = try Undo.revertAndRecord(receipt)
+            #expect(result.leftInPlace.isEmpty)
+            #expect(try String(contentsOf: file, encoding: .utf8) == "# Notes\n")
+            #expect(restoresHolding(written, paths: sample.paths))
+            #expect(try Undo.receipts().first { $0.id == receipt.id }?.revertedAt != nil)
         }
     }
 
@@ -85,8 +118,8 @@ struct WriteSafetyTests {
         }
     }
 
-    @Test("Undo is offered again until what it kept has been dealt with")
-    func revertedOnlyWhenClean() throws {
+    @Test("An undo that keeps a changed copy is recorded as done, with what it kept")
+    func partialUndoIsRecorded() throws {
         try FixtureHomeTests.withSample { _ in
             let config = Discovery.defaultClaudeCodeConfigDir()
             let session = try #require(try Discovery.claudeCodeProjects(configDir: config)
@@ -99,14 +132,37 @@ struct WriteSafetyTests {
             let original = try Data(contentsOf: plan.destinationURL)
             try (original + Data("{\"type\":\"user\"}\n".utf8)).write(to: plan.destinationURL)
 
-            _ = try Undo.revertAndRecord(receipt)
+            let result = try Undo.revertAndRecord(receipt)
+            #expect(!result.canRetry)
+            #expect(FileManager.default.fileExists(atPath: plan.destinationURL.path))
+            let recorded = try #require(try Undo.receipts().first { $0.id == receipt.id })
+            #expect(recorded.revertedAt != nil)
+            #expect(recorded.keptPaths?.count == result.leftInPlace.count)
+            #expect(recorded.keptPaths?.contains(plan.destinationURL.standardizedFileURL.path) == true)
+        }
+    }
+
+    @Test("An undo that couldn't read a file is left to try again")
+    func transientSkipIsRetried() throws {
+        try FixtureHomeTests.withSample { sample in
+            let folder = sample.root.appendingPathComponent("Documents/locked", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let file = folder.appendingPathComponent("notes.md")
+            try Data("ours\n".utf8).write(to: file)
+            var receipt = ImportReceipt(direction: .memoryEdit, destination: folder.path, completed: true)
+            try receipt.recordCreatedFile(at: file)
+            try Undo.save(receipt)
+            try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)
+            defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path) }
+
+            let result = try Undo.revertAndRecord(receipt)
+            #expect(result.canRetry)
             #expect(try Undo.receipts().first { $0.id == receipt.id }?.revertedAt == nil)
 
-            try original.write(to: plan.destinationURL)
+            try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
             let second = try Undo.revertAndRecord(receipt)
             #expect(second.leftInPlace.isEmpty)
-            #expect(!FileManager.default.fileExists(atPath: plan.destinationURL.path))
-            #expect(try Undo.receipts().first { $0.id == receipt.id }?.revertedAt != nil)
+            #expect(!FileManager.default.fileExists(atPath: file.path))
         }
     }
 
@@ -222,6 +278,61 @@ struct WriteSafetyTests {
             try AtomicWrite.write(Data("new".utf8), to: link)
             #expect(try fm.destinationOfSymbolicLink(atPath: link.path) == "real.md")
             #expect(try String(contentsOf: real, encoding: .utf8) == "new")
+        }
+    }
+
+    @Test("A relative link is read from the real folder it sits in, not from the path written")
+    func relativeLinkThroughLinkedFolder() throws {
+        try FixtureHomeTests.withSample { sample in
+            let fm = FileManager.default
+            let documents = sample.root.appendingPathComponent("Documents", isDirectory: true)
+            let realFolder = documents.appendingPathComponent("real/inner", isDirectory: true)
+            let sibling = documents.appendingPathComponent("real/shared", isDirectory: true)
+            try fm.createDirectory(at: realFolder, withIntermediateDirectories: true)
+            try fm.createDirectory(at: sibling, withIntermediateDirectories: true)
+            let target = sibling.appendingPathComponent("CLAUDE.md")
+            try Data("old".utf8).write(to: target)
+            try fm.createSymbolicLink(atPath: realFolder.appendingPathComponent("CLAUDE.md").path,
+                                      withDestinationPath: "../shared/CLAUDE.md")
+            // Seen through this, the link's `..` is `real`, not `Documents`.
+            let alias = documents.appendingPathComponent("alias", isDirectory: true)
+            try fm.createSymbolicLink(atPath: alias.path, withDestinationPath: "real/inner")
+
+            try AtomicWrite.write(Data("new".utf8), to: alias.appendingPathComponent("CLAUDE.md"))
+            #expect(try String(contentsOf: target, encoding: .utf8) == "new")
+            #expect(!fm.fileExists(atPath: documents.appendingPathComponent("shared").path))
+            #expect(try fm.destinationOfSymbolicLink(atPath: realFolder.appendingPathComponent("CLAUDE.md").path)
+                    == "../shared/CLAUDE.md")
+        }
+    }
+
+    @Test("A link into a folder that doesn't exist is refused, and no folder is made for it")
+    func danglingLinkIsRefused() throws {
+        try FixtureHomeTests.withSample { sample in
+            let fm = FileManager.default
+            let folder = sample.root.appendingPathComponent("Documents/dangling", isDirectory: true)
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            let link = folder.appendingPathComponent("CLAUDE.md")
+            try fm.createSymbolicLink(atPath: link.path, withDestinationPath: "../nowhere/deeper/CLAUDE.md")
+
+            #expect(throws: AtomicWriteError.self) { try AtomicWrite.write(Data("new".utf8), to: link) }
+            #expect(!fm.fileExists(atPath: sample.root.appendingPathComponent("Documents/nowhere").path))
+            #expect(try fm.destinationOfSymbolicLink(atPath: link.path) == "../nowhere/deeper/CLAUDE.md")
+        }
+    }
+
+    @Test("A link to a missing file in a folder that exists creates that file")
+    func linkToMissingFileInExistingFolder() throws {
+        try FixtureHomeTests.withSample { sample in
+            let fm = FileManager.default
+            let folder = sample.root.appendingPathComponent("Documents/fresh", isDirectory: true)
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            let link = folder.appendingPathComponent("CLAUDE.md")
+            try fm.createSymbolicLink(atPath: link.path, withDestinationPath: "real.md")
+
+            try AtomicWrite.write(Data("new".utf8), to: link)
+            #expect(try String(contentsOf: folder.appendingPathComponent("real.md"), encoding: .utf8) == "new")
+            #expect(try fm.destinationOfSymbolicLink(atPath: link.path) == "real.md")
         }
     }
 

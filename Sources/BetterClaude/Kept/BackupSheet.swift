@@ -45,7 +45,7 @@ struct BackupSheet: View {
                     Text(isBackUp ? "Back up" : "Restore from a backup").font(Theme.Font.title)
                     Text(isBackUp
                          ? "Kept conversations, saved file versions and plans, imported claude.ai conversations, and who may read what, in one encrypted file."
-                         : "Adds what the backup holds and this Mac doesn't. Nothing here is replaced.")
+                         : "Adds what the backup holds and this Mac doesn't. Nothing here is replaced or removed.")
                         .font(Theme.Font.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -158,8 +158,9 @@ struct BackupSheet: View {
                 } else {
                     result = report.files == 0
                         ? "Everything in that backup is already on this Mac."
-                        : "Restored \(report.files) files, \(size), that this Mac didn't have."
+                        : "Restored \(report.files) \(report.files == 1 ? "file" : "files"), \(size), that this Mac didn't have."
                     services.kept.reload()
+                    services.recall.reloadAccess()
                     services.refresh()
                 }
             case .failure(let error):

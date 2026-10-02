@@ -119,6 +119,14 @@ public struct CatalogSnapshot: Sendable {
 
     /// Every account on the Mac that has conversations, with the best name for each.
     public var knownAccounts: [ClaudeAccount] {
+        let used = Set(conversations.compactMap(\.accountID))
+        var byID = namedAccounts
+        if used.contains(ClaudeAccount.codex.id) { byID[ClaudeAccount.codex.id] = .codex }
+        return byID.values.filter { used.contains($0.id) }.sorted { ($0.email ?? $0.id) < ($1.email ?? $1.id) }
+    }
+
+    /// Every Claude account the installs know, used or not, by id.
+    public var namedAccounts: [String: ClaudeAccount] {
         var byID: [String: ClaudeAccount] = [:]
         for refs in accounts.values {
             for ref in refs where byID[ref.accountId]?.email == nil {
@@ -126,9 +134,7 @@ public struct CatalogSnapshot: Sendable {
             }
         }
         if let cli = claudeCodeAccount, byID[cli.id]?.email == nil { byID[cli.id] = cli }
-        let used = Set(conversations.compactMap(\.accountID))
-        if used.contains(ClaudeAccount.codex.id) { byID[ClaudeAccount.codex.id] = .codex }
-        return byID.values.filter { used.contains($0.id) }.sorted { ($0.email ?? $0.id) < ($1.email ?? $1.id) }
+        return byID
     }
 
     /// The account an install is signed into: the Code tab's or Cowork's for a Desktop
@@ -209,6 +215,24 @@ public actor Catalog {
         let paths = self.paths
         return await HostPaths.$current.withValue(paths) {
             await build()
+        }
+    }
+
+    /// The installs and the accounts signed into them, without reading a single conversation,
+    /// for what only needs to know who's who.
+    public func accountsSnapshot() -> CatalogSnapshot {
+        let paths = self.paths
+        return HostPaths.$current.withValue(paths) {
+            let installs = InstallDiscovery.all()
+            let orgDirectory = OrgDirectory.build(stores: installs.compactMap(\.store))
+            var accounts: [String: [AccountRef]] = [:]
+            for install in installs {
+                guard let store = install.store else { continue }
+                accounts[install.id] = (try? Discovery.accounts(in: store, orgDirectory: orgDirectory)) ?? []
+            }
+            var snapshot = CatalogSnapshot(installs: installs, accounts: accounts, paths: paths)
+            snapshot.claudeCodeAccount = ClaudeAccount.claudeCode(paths: paths)
+            return snapshot
         }
     }
 

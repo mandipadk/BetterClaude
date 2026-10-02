@@ -185,28 +185,35 @@ final class AppServices {
         index.onUpdate = { [weak self] in
             guard let self else { return }
             search.refresh()
-            spotlight.update(snapshot: snapshot, index: index.index)
+            if hasFinishedSetup { spotlight.update(snapshot: snapshot, index: index.index) }
             usage.refresh(snapshot: snapshot, index: index.index)
             coachLiveSessions()
         }
         usage.notifier = pulse.notifier
         watchCaches()
         pulse.notifier.onOpenConversation = { [weak self] id in
-            guard let self, let conversation = snapshot.conversations.first(where: { $0.id == id }) else { return }
-            NSApp.activate()
-            show(conversation)
+            self?.whenLoaded { [weak self] in
+                guard let self, let conversation = snapshot.conversations.first(where: { $0.id == id }) else { return }
+                show(conversation)
+                bringMainWindowForward()
+            }
         }
         pulse.notifier.onOpenUsage = { [weak self] in
-            NSApp.activate()
-            self?.destination = .usage
+            self?.whenLoaded { [weak self] in
+                guard let self else { return }
+                destination = .usage
+                bringMainWindowForward()
+            }
         }
         pulse.notifier.onOpen = { [weak self] sessionID in
-            guard let self else { return }
-            if let session = pulse.sessions.first(where: { $0.sessionID == sessionID }), pulse.host(of: session) != nil {
-                pulse.show(session)
-            } else if let conversation = conversation(forSession: sessionID) {
-                NSApp.activate()
-                show(conversation)
+            self?.whenLoaded { [weak self] in
+                guard let self else { return }
+                if let session = pulse.sessions.first(where: { $0.sessionID == sessionID }), pulse.host(of: session) != nil {
+                    pulse.show(session)
+                } else if let conversation = conversation(forSession: sessionID) {
+                    show(conversation)
+                    bringMainWindowForward()
+                }
             }
         }
         let center = NSWorkspace.shared.notificationCenter
@@ -215,6 +222,27 @@ final class AppServices {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.updateRunning() }
             })
+        }
+    }
+
+    /// Opens the main window. Set by the scenes that can, since a notification can be
+    /// clicked while Better Claude is only in the menu bar with no window to show it in.
+    @ObservationIgnored var openMainWindow: (() -> Void)?
+
+    /// Shows the main window the way the menu bar panel does, opening it if it was closed.
+    func bringMainWindowForward() {
+        NSApp.setActivationPolicy(.regular)
+        openMainWindow?()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Runs `body` once the first read of the Mac has landed, starting that read if needed.
+    func whenLoaded(_ body: @escaping @MainActor () -> Void) {
+        guard !hasLoaded else { body(); return }
+        if loadTask == nil { refresh() }
+        Task {
+            while !hasLoaded { try? await Task.sleep(for: .milliseconds(50)) }
+            body()
         }
     }
 
@@ -248,20 +276,37 @@ final class AppServices {
             self.usage.start(self)
             self.watch(fresh)
             self.reopenIfChanged(fresh)
-            if UserDefaults.standard.object(forKey: "keepAutomatically") as? Bool ?? true {
-                self.kept.keep(fresh.conversations)
-                // The same cleanup deletes the versions Claude Code saved of files, and plans.
-                let paths = fresh.paths
-                Task.detached(priority: .utility) {
-                    KeptFileHistory.keep(configDirs: LiveSessions.configDirs(paths: paths), paths: paths)
-                }
-            }
+            self.keepIfWanted(fresh)
+            self.secrets.snapshotChanged(fresh)
             if let id = self.selectedConversationID, fresh.conversations.contains(where: { $0.id == id }) {
                 // Still there; keep reading it.
             } else if self.selectedConversationID != nil {
                 self.selectedConversationID = nil
             }
         }
+    }
+
+    /// Whether the first-run choices have been made. Until then nothing is copied or put in
+    /// Spotlight, so turning either off there means it never happened. A sample Mac has no
+    /// first run.
+    var hasFinishedSetup: Bool {
+        snapshot.paths.isFixture || UserDefaults.standard.bool(forKey: "onboardingCompleted")
+    }
+
+    private func keepIfWanted(_ snapshot: CatalogSnapshot) {
+        guard hasFinishedSetup, UserDefaults.standard.object(forKey: "keepAutomatically") as? Bool ?? true else { return }
+        kept.keep(snapshot.conversations)
+        // The same cleanup deletes the versions Claude Code saved of files, and plans.
+        let paths = snapshot.paths
+        Task.detached(priority: .utility) {
+            KeptFileHistory.keep(configDirs: LiveSessions.configDirs(paths: paths), paths: paths)
+        }
+    }
+
+    /// The first-run choices were just made: start what they turned on.
+    func finishedSetup() {
+        keepIfWanted(snapshot)
+        if SpotlightIndexer.isEnabled { spotlight.update(snapshot: snapshot, index: index.index) }
     }
 
     /// Refreshes on its own when Claude writes a conversation, so the timeline is live.
@@ -286,6 +331,34 @@ final class AppServices {
 
     private static let coachedKey = "contextNudgesSent"
     private var cacheWatch: Timer?
+    /// Heads-ups already sent, oldest first. One list on the main actor, saved as each is
+    /// added, so checks that overlap can't each send the same one or save over the other.
+    @ObservationIgnored private var nudgesSent: [String]?
+
+    private func sentNudges() -> [String] {
+        if let nudgesSent { return nudgesSent }
+        let saved = UserDefaults.standard.stringArray(forKey: Self.coachedKey) ?? []
+        nudgesSent = saved
+        return saved
+    }
+
+    /// Records a heads-up as sent, or returns `false` when it already was. Merged with what's
+    /// saved before saving, in case another copy of Better Claude sent one meanwhile.
+    private func claimNudge(_ key: String) -> Bool {
+        let saved = UserDefaults.standard.stringArray(forKey: Self.coachedKey) ?? []
+        var sent = sentNudges()
+        let known = Set(sent)
+        sent += saved.filter { !known.contains($0) }
+        guard !sent.contains(key) else {
+            nudgesSent = sent
+            return false
+        }
+        sent.append(key)
+        sent = Array(sent.suffix(300))
+        nudgesSent = sent
+        UserDefaults.standard.set(sent, forKey: Self.coachedKey)
+        return true
+    }
 
     /// Every half minute: a session waiting on you whose cache goes cold in under two minutes
     /// gets one heads-up, when its conversation is big enough for that to cost something.
@@ -301,15 +374,11 @@ final class AppServices {
         let paths = snapshot.paths
         Task {
             let jobs = await Task.detached { Unattended.jobs(configDirs: LiveSessions.configDirs(paths: paths)) }.value
-            var sent = UserDefaults.standard.stringArray(forKey: Self.coachedKey) ?? []
             for job in jobs where job.outcome != .running {
                 guard let updated = job.updated, Date().timeIntervalSince(updated) < 2 * 3_600 else { continue }
-                let key = "job|\(job.id)|\(job.outcome.rawValue)"
-                guard !sent.contains(key) else { continue }
+                guard claimNudge("job|\(job.id)|\(job.outcome.rawValue)") else { continue }
                 pulse.notifier.post(job: job)
-                sent.append(key)
             }
-            UserDefaults.standard.set(Array(sent.suffix(300)), forKey: Self.coachedKey)
         }
     }
 
@@ -321,19 +390,16 @@ final class AppServices {
         }
         guard !waiting.isEmpty else { return }
         Task {
-            var sent = UserDefaults.standard.stringArray(forKey: Self.coachedKey) ?? []
             for (session, conversation) in waiting {
                 guard let cache = try? await CacheBreaks.expiry(conversationID: conversation.id, index: history),
                       cache.context >= 80_000 else { continue }
                 let left = cache.at.timeIntervalSinceNow
                 let key = "cache|\(conversation.id)|\(Int(cache.at.timeIntervalSince1970))"
-                guard left > 0, left <= 120, !sent.contains(key) else { continue }
+                guard left > 0, left <= 120, claimNudge(key) else { continue }
                 pulse.notifier.post(cacheExpiring: session.projectName, conversationID: conversation.id,
                                     minutes: max(1, Int((left / 60).rounded(.up))), context: cache.context,
                                     extra: cache.extra, key: key)
-                sent.append(key)
             }
-            UserDefaults.standard.set(Array(sent.suffix(300)), forKey: Self.coachedKey)
         }
     }
 
@@ -347,23 +413,18 @@ final class AppServices {
             }
         }
         guard !live.isEmpty else { return }
-        let defaults = UserDefaults.standard
         Task {
-            var sent = defaults.stringArray(forKey: Self.coachedKey) ?? []
-            let nudges = (try? await ContextCoach.due(live, index: history, alreadySent: Set(sent))) ?? []
-            for nudge in nudges {
+            let nudges = (try? await ContextCoach.due(live, index: history, alreadySent: Set(sentNudges()))) ?? []
+            for nudge in nudges where claimNudge(nudge.key) {
                 pulse.notifier.post(nudge)
-                sent.append(nudge.key)
             }
             // A running session whose replies just changed model on their own.
             for session in live {
                 let switches = (try? await ModelDrift.switches(conversationID: session.conversationID, index: history)) ?? []
                 guard let latest = switches.last, latest.cause == .unexplained,
-                      Date().timeIntervalSince(latest.at) < 20 * 60, !sent.contains("drift|" + latest.id) else { continue }
+                      Date().timeIntervalSince(latest.at) < 20 * 60, claimNudge("drift|" + latest.id) else { continue }
                 pulse.notifier.post(drift: latest, project: session.project)
-                sent.append("drift|" + latest.id)
             }
-            defaults.set(Array(sent.suffix(300)), forKey: Self.coachedKey)
         }
     }
 
@@ -458,7 +519,7 @@ final class AppServices {
 
     func setShowsInSpotlight(_ on: Bool) {
         UserDefaults.standard.set(on, forKey: SpotlightIndexer.enabledKey)
-        if on { spotlight.update(snapshot: snapshot, index: index.index) } else { spotlight.clear() }
+        if !on { spotlight.clear() } else if hasFinishedSetup { spotlight.update(snapshot: snapshot, index: index.index) }
     }
 
     // MARK: Importing
@@ -493,13 +554,15 @@ final class AppServices {
     /// A backup from another Mac, waiting for its password.
     var openingMac: OtherMacRequest?
 
-    func openOtherMac() {
+    /// Asks for another Mac's backup. With `existing`, it's a newer backup of a Mac already
+    /// opened, which replaces that one under its name.
+    func openOtherMac(replacing existing: Install? = nil) {
         let panel = NSOpenPanel()
         panel.message = "Choose a Better Claude backup made on another Mac."
         panel.allowedContentTypes = [.init(filenameExtension: "aea") ?? .data]
         panel.directoryURL = Backup.iCloudFolder(paths: snapshot.paths)
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        openingMac = OtherMacRequest(backup: url)
+        openingMac = OtherMacRequest(backup: url, name: existing?.name, folder: existing?.dataRoot)
     }
 
     func removeOtherMac(_ install: Install) {

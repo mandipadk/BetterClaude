@@ -15,7 +15,10 @@ final class UpdateModel {
         case available(version: String, notes: String?)
         case downloading(Double)
         case readyToRestart
+        /// The check itself failed.
         case failed(String)
+        /// An update was found, and downloading, checking or unpacking it failed.
+        case installFailed(String, tooNew: Bool)
     }
 
     var state: State = .idle
@@ -120,7 +123,11 @@ final class UpdateModel {
             try? await Task.sleep(for: .milliseconds(400))
             AppDelegate.quit()
         } catch {
-            state = .failed("\(error)")
+            if case UpdateError.systemTooOld = error {
+                state = .installFailed("\(error)", tooNew: true)
+            } else {
+                state = .installFailed("\(error)", tooNew: false)
+            }
         }
     }
 }
@@ -161,13 +168,13 @@ struct UpdateSheet: View {
         case .upToDate: return "checkmark.circle.fill"
         case .available: return "arrow.down.circle.fill"
         case .downloading, .readyToRestart: return "arrow.down.circle"
-        case .failed: return "exclamationmark.triangle.fill"
+        case .failed, .installFailed: return "exclamationmark.triangle.fill"
         }
     }
 
     private var tint: Color {
         switch model.state {
-        case .failed: return Theme.attention
+        case .failed, .installFailed: return Theme.attention
         case .checking, .idle: return .secondary
         default: return Theme.accent
         }
@@ -181,6 +188,7 @@ struct UpdateSheet: View {
         case .downloading: return "Downloading…"
         case .readyToRestart: return "Restarting…"
         case .failed: return "Couldn't check for updates"
+        case .installFailed(_, let tooNew): return tooNew ? "This update needs a newer macOS" : "Couldn't install the update"
         case .idle: return "Updates"
         }
     }
@@ -225,6 +233,16 @@ struct UpdateSheet: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("Nothing was changed. You can download a release from GitHub instead.")
+                    .font(Theme.Font.caption).foregroundStyle(.secondary)
+            }
+        case .installFailed(let message, let tooNew):
+            VStack(spacing: 8) {
+                Text(message)
+                    .font(Theme.Font.callout)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(tooNew ? "Nothing was changed. This version keeps working as it is."
+                            : "Nothing was changed. You can download the release from GitHub instead.")
                     .font(Theme.Font.caption).foregroundStyle(.secondary)
             }
         }

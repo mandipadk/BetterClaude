@@ -288,9 +288,15 @@ final class ContinueModel: Identifiable {
     nonisolated static func leftBehind(_ result: RevertResult) -> String? {
         let count = result.leftInPlace.count
         guard count > 0 else { return nil }
+        if result.canRetry {
+            let count = result.retryable.count
+            return count == 1
+                ? "One file couldn't be taken back just now. Try the undo again from Activity."
+                : "\(count) files couldn't be taken back just now. Try the undo again from Activity."
+        }
         return count == 1
-            ? "One file changed since, so it was kept. Undo it again from Activity once you're done with it."
-            : "\(count) files changed since, so they were kept. Undo it again from Activity once you're done with them."
+            ? "One file changed since, so it was kept."
+            : "\(count) files changed since, so they were kept."
     }
 
     func cleanUp() {

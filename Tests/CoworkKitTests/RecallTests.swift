@@ -107,6 +107,28 @@ struct RecallTests {
         }
     }
 
+    @Test("A connection is written again when its install signs into another account")
+    func reconnectsOnAccountChange() throws {
+        try FixtureHomeTests.withSample { sample in
+            let snapshot = CatalogSnapshot(installs: InstallDiscovery.all(), paths: sample.paths)
+            let claude = try #require(snapshot.installs.first { $0.name == "Claude" })
+            let target = try #require(RecallConnection.target(for: claude, paths: sample.paths))
+            let server = URL(fileURLWithPath: "/bin/sh")
+            try RecallConnection.connect(target, server: server, account: Self.personal, paths: sample.paths)
+            let before = try #require(RecallConnection.registration(target, paths: sample.paths))
+            #expect(!RecallConnection.needsRepair(before, server: server, account: Self.personal))
+            #expect(RecallConnection.needsRepair(before, server: server, account: Self.work))
+
+            try RecallConnection.connect(target, server: server, account: Self.work, paths: sample.paths)
+            let after = try #require(RecallConnection.registration(target, paths: sample.paths))
+            #expect(after.arguments == ["--account", Self.work])
+            #expect(!RecallConnection.needsRepair(after, server: server, account: Self.work))
+            // Better Claude moved, and the copy it named is gone.
+            #expect(RecallConnection.needsRepair((command: "/srv/gone/bc-recall", arguments: after.arguments),
+                                                 server: server, account: Self.work))
+        }
+    }
+
     @Test("A server started by a Desktop copy answers for that copy's account")
     func consumerFromEnvironment() {
         var access = RecallAccess()

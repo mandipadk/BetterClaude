@@ -250,6 +250,29 @@ struct HistoryIndexTests {
         #expect(left.allSatisfy { $0.hasPrefix("history-v\(HistoryIndex.schemaVersion)") }, "\(left)")
     }
 
+    @Test("An index that can't be carried forward is kept for the next try, and the failure is reported")
+    func failedCarryKeepsThePrevious() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("carry-fail-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let previous = HistoryIndex.schemaVersion - 1
+        let old = folder.appendingPathComponent("history-v\(previous).sqlite")
+        do { _ = try HistoryIndex(url: old) }
+        do {
+            let raw = try SQLiteDatabase(url: old)
+            try raw.execute("PRAGMA user_version = \(previous);")
+        }
+        let url = folder.appendingPathComponent("history-v\(HistoryIndex.schemaVersion).sqlite")
+
+        // An upgrade that can't apply, standing in for a disk error partway through.
+        #expect(throws: HistoryIndex.OpenError.self) {
+            try HistoryIndex.carryForward(to: url, upgrades: [previous: "ALTER TABLE no_such_table ADD COLUMN x TEXT;"])
+        }
+        #expect(FileManager.default.fileExists(atPath: old.path))
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        let left = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        #expect(!left.contains { $0.hasPrefix(".") }, "\(left)")
+    }
+
     @Test("Tokens are recorded once per reply")
     func recordsUsage() async throws {
         try await Self.withSample { _, snapshot, index in

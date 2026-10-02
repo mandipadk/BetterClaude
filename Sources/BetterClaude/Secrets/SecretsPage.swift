@@ -11,26 +11,39 @@ final class SecretsModel {
     private(set) var sweeping = false
     private(set) var progress: (done: Int, total: Int) = (0, 0)
     private(set) var swept: Int?
+    /// Whether the last sweep ran before there was anything to read.
+    private var sweptNothing = false
 
     var open: [SecretSweep.Finding] { findings.filter { !handled.contains($0.fingerprint) } }
     var rotated: [SecretSweep.Finding] { findings.filter { handled.contains($0.fingerprint) } }
 
+    /// Reads every conversation, and the kept copies of ones Claude Code has deleted.
     func sweep(_ snapshot: CatalogSnapshot) {
         guard !sweeping else { return }
         sweeping = true
         handled = HandledSecrets.load()
-        let files = SecretSweep.files(in: snapshot)
-        progress = (0, files.count)
+        let conversations = SecretSweep.files(in: snapshot)
+        sweptNothing = conversations.isEmpty
+        progress = (0, conversations.count)
         Task {
-            let found = await Task.detached(priority: .userInitiated) {
-                SecretSweep.sweep(files) { done, total in
+            let (found, count) = await Task.detached(priority: .userInitiated) { () -> ([SecretSweep.Finding], Int) in
+                let files = conversations + SecretSweep.keptFiles(Vault.entries())
+                let found = SecretSweep.sweep(files) { done, total in
                     Task { @MainActor in self.progress = (max(self.progress.done, done), total) }
                 }
+                return (found, Set(files.map(\.conversationID)).count)
             }.value
             findings = found
-            swept = files.count
+            swept = count
             sweeping = false
         }
+    }
+
+    /// A sweep that ran before the first read of the Mac found nothing to read; once there's
+    /// something, it runs again.
+    func snapshotChanged(_ snapshot: CatalogSnapshot) {
+        guard swept != nil, sweptNothing, !snapshot.conversations.isEmpty else { return }
+        sweep(snapshot)
     }
 
     func setRotated(_ finding: SecretSweep.Finding, _ rotated: Bool) {
@@ -103,7 +116,9 @@ struct SecretsPage: View {
             .frame(maxWidth: 720, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .onAppear { if model.swept == nil { model.sweep(services.snapshot) } }
+        .task(id: services.hasLoaded) {
+            if services.hasLoaded, model.swept == nil { model.sweep(services.snapshot) }
+        }
     }
 }
 
@@ -132,7 +147,14 @@ private struct FindingRow: View {
                 .buttonStyle(.secondary)
             }
             ForEach(Array(finding.sightings.prefix(4).enumerated()), id: \.offset) { _, sighting in
-                if let conversation = services.snapshot.conversations.first(where: { $0.id == sighting.conversationID }) {
+                if sighting.conversationID.hasPrefix(SecretSweep.keptPrefix) {
+                    let key = String(sighting.conversationID.dropFirst(SecretSweep.keptPrefix.count))
+                    let title = services.kept.entries.first { $0.key == key }?.title ?? "a conversation"
+                    Text("\(sighting.source.description) in a kept copy of \(title)")
+                        .font(Theme.Font.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else if let conversation = services.snapshot.conversations.first(where: { $0.id == sighting.conversationID }) {
                     Button {
                         services.show(conversation)
                     } label: {

@@ -12,6 +12,16 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "1.4.4": [
+            Item(symbol: "text.bubble", title: "Nothing in a conversation goes missing",
+                 detail: "Some compactions and recaps, and prompts that mentioned a tag like <image>, weren't shown. They are now, and Fork from here is back on every message."),
+            Item(symbol: "arrow.uturn.backward", title: "Undo works on older copies",
+                 detail: "A copy made before 1.4 couldn't be undone. It can now: anything you've changed since is set aside, not lost."),
+            Item(symbol: "lock", title: "Keys stay out of Spotlight and notifications",
+                 detail: "Anything that looks like a key is masked before a title, a first question or a notification leaves the app. Spotlight can be turned off in Settings and during setup, and clicking a notification opens the window again."),
+            Item(symbol: "externaldrive", title: "Steadier backups and copies",
+                 detail: "A backup is checked to its last byte, restoring fills in what's missing without replacing what you have, a file reached through a link is written where the link really points, and an update never drops your search index."),
+        ],
         "1.4.3": [
             Item(symbol: "sidebar.left", title: "Claude Code conversations go to a Code tab",
                  detail: "Continuing a Claude Code conversation in another Claude now lists it in that Claude's Code tab, as the same conversation, ready to carry on. It's never turned into a Cowork task."),

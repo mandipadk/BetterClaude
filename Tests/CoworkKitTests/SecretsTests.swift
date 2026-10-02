@@ -28,6 +28,28 @@ struct SecretsTests {
         }
     }
 
+    @Test("A kept copy of a conversation Claude Code deleted is swept too")
+    func sweepsKeptCopies() throws {
+        try FixtureHomeTests.withSample { sample in
+            let folder = sample.paths.claudeCodeConfigDir.appendingPathComponent("projects/-srv-kept", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let transcript = folder.appendingPathComponent("kept-session.jsonl")
+            let line = #"{"type":"user","message":{"role":"user","content":"use "# + Self.github + #" for the deploy"}}"#
+            try Data((line + "\n").utf8).write(to: transcript)
+            let entry = try #require(try Vault.keep(transcriptAt: transcript, title: "Deploy", sessionId: "kept-session",
+                                                   projectPath: "/srv/kept", installID: "claude-code"))
+            // While Claude Code still has it, the original is what's swept.
+            #expect(SecretSweep.keptFiles([entry]).isEmpty)
+
+            try FileManager.default.removeItem(at: transcript)
+            let kept = SecretSweep.keptFiles(Vault.entries())
+            #expect(kept.contains { $0.conversationID == SecretSweep.keptPrefix + entry.key })
+            let findings = SecretSweep.sweep(kept)
+            let github = try #require(findings.first { $0.kind.id == "github" })
+            #expect(github.sightings.contains { $0.conversationID == SecretSweep.keptPrefix + entry.key })
+        }
+    }
+
     @Test("Words that merely contain a prefix, and long encoded blobs, aren't keys")
     func falsePositives() {
         let blob = "sk-" + String(repeating: "A1b2C3d4", count: 60)

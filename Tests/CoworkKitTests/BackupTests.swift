@@ -55,6 +55,67 @@ struct BackupTests {
             #expect(!FileManager.default.fileExists(atPath: index.path))
         }
     }
+
+    @Test("A backup that's cut short or damaged past its first entry doesn't count as opening")
+    func checksTheWholeArchive() throws {
+        try FixtureHomeTests.withSample { sample in
+            let imports = sample.paths.betterClaudeSupport.appendingPathComponent("Imports", isDirectory: true)
+            try FileManager.default.createDirectory(at: imports, withIntermediateDirectories: true)
+            // Several megabytes that don't compress, so the archive runs to many segments.
+            var generator = SystemRandomNumberGenerator()
+            let noise = Data((0..<(4 << 20)).map { _ in UInt8.random(in: 0...255, using: &generator) })
+            try noise.write(to: imports.appendingPathComponent("zz-large.bin"))
+            let archive = sample.root.appendingPathComponent("backups/whole.aea")
+            try Backup.create(at: archive, password: Self.password, paths: sample.paths)
+            #expect(Backup.opens(archive, password: Self.password))
+
+            let full = try Data(contentsOf: archive)
+            let cut = sample.root.appendingPathComponent("backups/cut.aea")
+            try full.prefix(full.count * 3 / 4).write(to: cut)
+            #expect(!Backup.opens(cut, password: Self.password))
+
+            var damaged = full
+            damaged[damaged.count - 64] ^= 0xFF
+            let flipped = sample.root.appendingPathComponent("backups/damaged.aea")
+            try damaged.write(to: flipped)
+            #expect(!Backup.opens(flipped, password: Self.password))
+        }
+    }
+
+    @Test("Restoring merges who may read what, and each kept conversation's copies, newer naming it")
+    func restoreMerges() throws {
+        try FixtureHomeTests.withSample { sample in
+            var access = RecallAccess()
+            access.setDoor(from: "acct-a", to: "acct-b", open: true)
+            try access.save(paths: sample.paths)
+            let entry = try #require(Vault.entries().first { $0.title == "Draft the conference talk abstract" })
+            let latest = try #require(entry.latest)
+            let archive = sample.root.appendingPathComponent("backups/merge.aea")
+            try Backup.create(at: archive, password: Self.password, paths: sample.paths)
+
+            // This Mac since: another door, and an older copy of the same conversation.
+            var local = RecallAccess()
+            local.setDoor(from: "acct-c", to: "acct-d", open: true)
+            local.installAccounts = ["/srv/data/Claude": "acct-c"]
+            try local.save(paths: sample.paths)
+            var older = entry
+            older.title = "An older title"
+            older.versions = [Vault.Version(sha256: String(repeating: "0", count: 64), size: 1,
+                                            sourceModified: latest.sourceModified.addingTimeInterval(-86_400),
+                                            keptAt: latest.keptAt.addingTimeInterval(-86_400))]
+            try Vault.save(older)
+
+            let report = try Backup.restore(from: archive, password: Self.password, paths: sample.paths)
+            #expect(report.files >= 2)
+            let merged = RecallAccess.load(paths: sample.paths)
+            #expect(merged.isOpen(from: "acct-a", to: "acct-b"))
+            #expect(merged.isOpen(from: "acct-c", to: "acct-d"))
+            #expect(merged.installAccounts == ["/srv/data/Claude": "acct-c"])
+            let kept = try #require(Vault.entries().first { $0.key == entry.key })
+            #expect(kept.versions.map(\.sha256) == [String(repeating: "0", count: 64), latest.sha256])
+            #expect(kept.title == entry.title)
+        }
+    }
 }
 
 @Suite("Another Mac")
@@ -83,6 +144,13 @@ struct OtherMacTests {
             let found = try await index.rows("SELECT COUNT(*) FROM conversations WHERE install_id = ?", [.text(studio.id)])
             #expect(found.first?.int(0) == Int64(opened))
             #expect(HistorySearch.place(kind: "otherMac", install: "Studio") == "Studio")
+
+            // A newer backup of the same Mac, opened under a new name, replaces it.
+            try OtherMacs.open(archive, password: BackupTests.password, name: "Studio upstairs",
+                               replacing: studio.dataRoot, paths: sample.paths)
+            let macs = OtherMacs.all(paths: sample.paths)
+            #expect(macs.map(\.mac.name) == ["Studio upstairs"])
+            #expect(macs.first?.folder.standardizedFileURL == studio.dataRoot.standardizedFileURL)
 
             try OtherMacs.remove(studio.dataRoot, paths: sample.paths)
             #expect(OtherMacs.all(paths: sample.paths).isEmpty)

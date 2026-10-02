@@ -48,7 +48,11 @@ final class KeptModel {
         }
     }
 
-    var onlyHere: [Vault.Entry] { entries.filter { !$0.sourceExists } }
+    /// Kept copies Claude Code no longer has, from this Mac.
+    var onlyHere: [Vault.Entry] { entries.filter { !$0.sourceExists && !$0.isFromAnotherMac() } }
+
+    /// Kept copies a backup brought from another Mac. They can be read, not put back.
+    var fromOtherMacs: [Vault.Entry] { entries.filter { $0.isFromAnotherMac() } }
 
     func expiry(of entry: Vault.Entry) -> Date? {
         entry.sourceExists ? Vault.expiry(of: URL(fileURLWithPath: entry.sourcePath), period: period) : nil
@@ -127,11 +131,33 @@ struct KeptPage: View {
                     }
                 }
 
+                if !kept.fromOtherMacs.isEmpty {
+                    DetailSection(title: "From another Mac",
+                                  subtitle: "Kept on another Mac and brought here by a backup. Read them here; they can only be put back on the Mac they came from.") {
+                        rows(kept.fromOtherMacs.map { entry in
+                            KeptRowData(id: entry.key, title: entry.title,
+                                        detail: "Last used \(entry.latest?.sourceModified.listStamp.lowercasedIfWordLocal ?? "")",
+                                        action: (entry, false))
+                        })
+                    }
+                }
+
                 let lost = goneForGood
-                if !lost.isEmpty {
+                let lostCode = lost.filter { $0.coworkSession == nil }
+                if !lostCode.isEmpty {
                     DetailSection(title: "Gone for good",
                                   subtitle: "Their messages were deleted before Better Claude could keep a copy. Only their titles remain.") {
-                        rows(lost.map { conversation in
+                        rows(lostCode.map { conversation in
+                            KeptRowData(id: conversation.id, title: conversation.title,
+                                        detail: services.install(for: conversation)?.name ?? "", action: nil)
+                        })
+                    }
+                }
+                let lostCowork = lost.filter { $0.coworkSession != nil }
+                if !lostCowork.isEmpty {
+                    DetailSection(title: "Cowork tasks without messages",
+                                  subtitle: "Their messages are gone from this Mac; Better Claude keeps copies of Claude Code conversations only. Only their titles remain.") {
+                        rows(lostCowork.map { conversation in
                             KeptRowData(id: conversation.id, title: conversation.title,
                                         detail: services.install(for: conversation)?.name ?? "", action: nil)
                         })
@@ -257,15 +283,21 @@ struct KeptPage: View {
                         Text(row.detail).font(Theme.Font.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer(minLength: Theme.Space.m)
-                    if let (entry, _) = row.action {
+                    if let (entry, canPutBack) = row.action {
                         Button("Read") {
                             let fallback = services.installs.first { $0.kind == .claudeCode }?.id ?? ""
-                            reading = services.kept.conversation(for: entry, fallbackInstall: fallback)
+                            if let conversation = services.kept.conversation(for: entry, fallbackInstall: fallback) {
+                                reading = conversation
+                            } else {
+                                services.kept.errorMessage = "The kept copy is missing from Better Claude's folder, so it can't be read."
+                            }
                         }
                         .buttonStyle(.secondary)
-                        Button("Put Back…") { puttingBack = row }
-                        .buttonStyle(.secondary)
-                        .help("Put it back where Claude Code can resume it. You can undo this from History.")
+                        if canPutBack {
+                            Button("Put Back…") { puttingBack = row }
+                            .buttonStyle(.secondary)
+                            .help("Put it back where Claude Code can resume it. You can undo this from History.")
+                        }
                     }
                 }
                 .padding(.horizontal, 8)

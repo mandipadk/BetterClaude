@@ -21,19 +21,35 @@ final class IndexModel {
 
     private var updateTask: Task<Void, Never>?
     private var pending: CatalogSnapshot?
+    private var isOpening = true
 
+    /// Opening can mean copying a whole index forward from the last version, so it happens
+    /// off the main thread; updates asked for meanwhile wait for it.
     init(paths: HostPaths) {
-        do {
-            index = try HistoryIndex(url: HistoryIndex.defaultURL(paths: paths))
-        } catch {
-            failure = String(describing: error)
+        let url = HistoryIndex.defaultURL(paths: paths)
+        Task {
+            let opened = await Task.detached(priority: .userInitiated) {
+                Result { try HistoryIndex(url: url) }
+            }.value
+            isOpening = false
+            switch opened {
+            case .success(let index): self.index = index
+            case .failure(let error): failure = String(describing: error)
+            }
+            if let next = pending {
+                pending = nil
+                update(from: next)
+            }
         }
     }
 
     /// Catches the index up with `snapshot`. A call while a pass is running queues one more
     /// pass with the newest snapshot rather than starting another alongside it.
     func update(from snapshot: CatalogSnapshot) {
-        guard let index else { return }
+        guard let index else {
+            if isOpening { pending = snapshot }
+            return
+        }
         if updateTask != nil {
             pending = snapshot
             return

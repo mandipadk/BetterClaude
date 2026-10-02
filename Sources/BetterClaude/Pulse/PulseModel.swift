@@ -49,7 +49,20 @@ final class PulseModel {
             MainActor.assumeIsolated { self?.read() }
         }
         refreshHooked()
+        upgradeHooks()
         read()
+    }
+
+    /// Hooks an earlier version installed on `Stop` wrote a file after every turn that nothing
+    /// reads; installing them again takes that one out.
+    private func upgradeHooks() {
+        let dirs = configDirs.filter { hooked.contains($0) }, paths = paths
+        guard !dirs.isEmpty else { return }
+        Task.detached(priority: .utility) {
+            for dir in dirs where PulseHooks.needsUpgrade(in: dir) {
+                try? PulseHooks.install(in: dir, paths: paths)
+            }
+        }
     }
 
     func read() {
@@ -195,7 +208,7 @@ final class PulseNotifier: NSObject, UNUserNotificationCenterDelegate {
         case .stalled: content.title = "\(job.name) stopped without finishing"
         case .running: return
         }
-        content.body = job.result.map { String($0.prefix(180)) }
+        content.body = job.result.map { String(SecretSweep.redact(String($0.prefix(4_000))).prefix(180)) }
             ?? (job.outcome == .finished ? "It ended without a final message." : "It hasn't been heard from in half an hour.")
         if let session = job.sessionID { content.userInfo = ["session": session] }
         let request = UNNotificationRequest(identifier: "job.\(job.id).\(job.outcome.rawValue)", content: content, trigger: nil)
@@ -249,8 +262,6 @@ final class PulseNotifier: NSObject, UNUserNotificationCenterDelegate {
             try? await UNUserNotificationCenter.current().add(request)
         }
     }
-    private var authorized: Bool?
-
     static var available: Bool {
         Bundle.main.bundleIdentifier != nil && Bundle.main.bundleURL.pathExtension == "app"
     }
@@ -268,14 +279,14 @@ final class PulseNotifier: NSObject, UNUserNotificationCenterDelegate {
         switch kind {
         case .needsYou:
             content.title = "\(project) needs you"
-            content.body = detail ?? "Claude is waiting for your answer."
+            content.body = detail.map(SecretSweep.redact) ?? "Claude is waiting for your answer."
             content.interruptionLevel = .timeSensitive
         case .finished:
             content.title = "\(project) is done"
             content.body = "Claude finished and is waiting for your next message."
         case .failed:
             content.title = "\(project) stopped"
-            content.body = detail ?? "Claude stopped with an error."
+            content.body = detail.map(SecretSweep.redact) ?? "Claude stopped with an error."
         }
         if let host = host?.localizedName { content.subtitle = "In \(host)" }
         content.userInfo = ["session": sessionID]
@@ -319,18 +330,15 @@ final class PulseNotifier: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// Asked each time rather than remembered: notifications can be turned on or off in
+    /// System Settings while Better Claude is open.
     private func ensureAuthorized() async -> Bool {
-        if let authorized { return authorized }
         let center = UNUserNotificationCenter.current()
-        let settings = await center.notificationSettings()
-        let granted: Bool
-        switch settings.authorizationStatus {
-        case .authorized, .provisional: granted = true
-        case .notDetermined: granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
-        default: granted = false
+        switch await center.notificationSettings().authorizationStatus {
+        case .authorized, .provisional: return true
+        case .notDetermined: return (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
+        default: return false
         }
-        authorized = granted
-        return granted
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,

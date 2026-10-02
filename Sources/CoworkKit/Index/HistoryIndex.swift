@@ -49,9 +49,13 @@ public actor HistoryIndex {
     public nonisolated let url: URL?
 
     /// Opens the index at `url`, creating or rebuilding it as needed; `nil` keeps it in memory.
+    ///
+    /// Reads and may copy a whole index, so call it off the main thread. When the last
+    /// version's index can't be carried forward this throws and leaves that index where it
+    /// is, so the next open tries again rather than losing what only it remembers.
     public init(url: URL?) throws {
         self.url = url
-        if let url { Self.carryForward(to: url) }
+        if let url { try Self.carryForward(to: url) }
         var database = try SQLiteDatabase(url: url)
         if let url { Self.removeOlderIndexes(beside: url) }
         if database.userVersion != Self.schemaVersion {
@@ -65,10 +69,14 @@ public actor HistoryIndex {
 
     public enum OpenError: Error, CustomStringConvertible {
         case missing, outdated
+        /// The last version's index couldn't be brought up to this one. It's kept for the next try.
+        case upgradeFailed(String)
         public var description: String {
             switch self {
             case .missing: return "Better Claude hasn't built its index yet. Open Better Claude once."
             case .outdated: return "Better Claude's index is from another version. Open Better Claude to bring it up to date."
+            case .upgradeFailed(let reason):
+                return "Better Claude couldn't bring its index up to date (\(reason)). The previous one is kept, and it tries again next time it opens."
             }
         }
     }
@@ -93,7 +101,7 @@ public actor HistoryIndex {
     /// this version yet. Conversations whose transcripts Claude has since deleted live only
     /// here, so they come along; the rest are read again in full on the next update, so
     /// they get whatever this version extracts that the last one didn't.
-    static func carryForward(to url: URL) {
+    static func carryForward(to url: URL, upgrades: [Int: String] = HistoryIndex.upgrades) throws {
         let manager = FileManager.default
         guard !manager.fileExists(atPath: url.path) else { return }
         let folder = url.deletingLastPathComponent()
@@ -115,8 +123,13 @@ public actor HistoryIndex {
                 }
             }
             // Only if no other process got there first: one may already have it open.
-            _ = renamex_np(staging.path, url.path, UInt32(RENAME_EXCL))
-        } catch {}
+            if renamex_np(staging.path, url.path, UInt32(RENAME_EXCL)) != 0 {
+                let code = errno
+                if code != EEXIST { throw AtomicWriteError.renameFailed(from: staging.path, to: url.path, code: code) }
+            }
+        } catch {
+            throw OpenError.upgradeFailed(String(describing: error))
+        }
     }
 
     /// Empties the index for a full rebuild, in place: another process may have it open, and

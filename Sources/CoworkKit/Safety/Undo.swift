@@ -8,11 +8,16 @@ public struct RevertResult: Sendable {
     /// never swallowed — a skipped entry usually means the file has since been edited, which
     /// is precisely the case where a silent partial undo would be worst.
     public let skipped: [(path: String, reason: String)]
+    /// Skipped paths whose reason may clear by itself, such as a file that couldn't be read
+    /// just then. While any remain, the undo can be tried again.
+    public let retryable: [String]
 
-    public init(deleted: [String], restored: [String], skipped: [(path: String, reason: String)]) {
+    public init(deleted: [String], restored: [String], skipped: [(path: String, reason: String)],
+                retryable: [String] = []) {
         self.deleted = deleted
         self.restored = restored
         self.skipped = skipped
+        self.retryable = retryable
     }
 
     public var isClean: Bool { skipped.isEmpty }
@@ -22,6 +27,9 @@ public struct RevertResult: Sendable {
     public var leftInPlace: [(path: String, reason: String)] {
         skipped.filter { $0.reason != Undo.alreadyAbsent }
     }
+
+    /// Whether trying again could take back more than this did.
+    public var canRetry: Bool { !retryable.isEmpty }
 }
 
 public enum UndoError: Error, CustomStringConvertible {
@@ -122,15 +130,18 @@ public enum Undo {
 
     /// Undo, and remember that it was undone so it is not offered again.
     ///
-    /// Only remembered when nothing was left behind: a file kept because it changed since is
-    /// still the receipt's to take back, once the person has dealt with it.
+    /// A file kept because it changed since stays kept however often Undo runs, so an undo
+    /// that leaves only such files is remembered as done, with what it kept. Only a skip that
+    /// may clear by itself, like a file that couldn't be read just then, leaves it to try again.
     public static func revertAndRecord(_ receipt: ImportReceipt) throws -> RevertResult {
         let current = (try? receipts().first { $0.id == receipt.id }) ?? receipt
         guard current.revertedAt == nil else { throw UndoError.alreadyUndone(id: receipt.id) }
         let result = try revert(current)
-        if result.leftInPlace.isEmpty {
+        if !result.canRetry {
             var updated = current
             updated.revertedAt = Date()
+            let kept = result.leftInPlace.map(\.path)
+            updated.keptPaths = kept.isEmpty ? nil : kept
             try save(updated)
         }
         return result
@@ -150,6 +161,7 @@ public enum Undo {
         var deleted: [String] = []
         var restored: [String] = []
         var skipped: [(path: String, reason: String)] = []
+        var retryable: [String] = []
 
         let touched = receipt.created.map(\.path) + receipt.modified.map(\.path)
             + (receipt.createdSpaces ?? []).map(\.orgRoot)
@@ -171,6 +183,7 @@ public enum Undo {
         for entry in deepestFirst {
             if (try? WriteFence.check(URL(fileURLWithPath: entry.path))) == nil {
                 skipped.append((entry.path, "outside the sample Mac this session is reading"))
+                retryable.append(entry.path)
                 continue
             }
             var isDirectory: ObjCBool = false
@@ -204,6 +217,7 @@ public enum Undo {
                 }
                 guard let actual = try? FileDigest.hex(contentsOf: URL(fileURLWithPath: entry.path)) else {
                     skipped.append((entry.path, "could not be read to verify its fingerprint"))
+                    retryable.append(entry.path)
                     continue
                 }
                 guard actual == expected else {
@@ -217,6 +231,7 @@ public enum Undo {
                 deleted.append(entry.path)
             } catch {
                 skipped.append((entry.path, "could not be removed: \(error.localizedDescription)"))
+                retryable.append(entry.path)
             }
         }
 
@@ -229,6 +244,7 @@ public enum Undo {
             let target = URL(fileURLWithPath: file.path)
             if (try? WriteFence.check(target)) == nil {
                 skipped.append((file.path, "outside the sample Mac this session is reading"))
+                retryable.append(file.path)
                 continue
             }
             guard fm.fileExists(atPath: file.backupPath) else {
@@ -238,24 +254,27 @@ public enum Undo {
             if fm.fileExists(atPath: file.path) {
                 guard let current = try? FileDigest.hex(contentsOf: target) else {
                     skipped.append((file.path, "could not be read to check it"))
+                    retryable.append(file.path)
                     continue
                 }
                 if current == file.sha256Before {
                     restored.append(file.path)
                     continue
                 }
-                guard let after = file.sha256After, after == current else {
-                    // The projects this added are taken back out of it one by one below.
-                    if spaceFiles.contains(target.standardizedFileURL.path) { continue }
-                    skipped.append((file.path, file.sha256After == nil
-                        ? "can't tell whether it changed since, so it stays. The earlier copy is at \(file.backupPath)"
-                        : "changed since, so it stays. The earlier copy is at \(file.backupPath)"))
+                // The projects this added are taken back out of it one by one below.
+                if spaceFiles.contains(target.standardizedFileURL.path), file.sha256After != current { continue }
+                // Receipts from before 1.4 don't say what Better Claude left, and its own write
+                // already moved the file off `sha256Before`. The earlier copy goes back as 1.3
+                // did; what's there now is copied aside first, so nothing is lost either way.
+                if let after = file.sha256After, after != current {
+                    skipped.append((file.path, "changed since, so it stays. The earlier copy is at \(file.backupPath)"))
                     continue
                 }
                 do {
                     _ = try FileProvenance.saveCurrent(target, paths: .current)
                 } catch {
                     skipped.append((file.path, "could not be copied aside first: \(error.localizedDescription)"))
+                    retryable.append(file.path)
                     continue
                 }
             }
@@ -264,6 +283,7 @@ public enum Undo {
                 restored.append(file.path)
             } catch {
                 skipped.append((file.path, "could not be restored: \(String(describing: error))"))
+                retryable.append(file.path)
             }
         }
 
@@ -287,10 +307,11 @@ public enum Undo {
                 }
             } catch {
                 skipped.append(("project “\(space.name)”", "could not be removed: \(error.localizedDescription)"))
+                retryable.append("project “\(space.name)”")
             }
         }
 
-        return RevertResult(deleted: deleted, restored: restored, skipped: skipped)
+        return RevertResult(deleted: deleted, restored: restored, skipped: skipped, retryable: retryable)
     }
 
     /// Paths belonging to a conversation this receipt brought in that has been used since:

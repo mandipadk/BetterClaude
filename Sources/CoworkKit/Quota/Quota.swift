@@ -129,7 +129,7 @@ public enum QuotaReader {
 
         var accountIDs = Set(samples.keys)
         if let cached { accountIDs.insert(cached.accountID) }
-        let known = Dictionary(snapshot.knownAccounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let known = snapshot.namedAccounts
 
         return accountIDs.compactMap { id -> AccountQuota? in
             let history = dedupe(samples[id] ?? [])

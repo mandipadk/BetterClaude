@@ -54,16 +54,25 @@ final class RecallModel {
         try? access.save(paths: paths)
     }
 
-    /// If Better Claude moved since a Claude was connected, point that Claude at where it is now.
+    /// Points each connected Claude at where Better Claude is now, and at the account it's
+    /// signed into now: an install that signed into another account would otherwise go on
+    /// reading the old one's history. Reading Claude Code's state file can take a while, so
+    /// it happens off the main thread.
     private func repairMoved(_ snapshot: CatalogSnapshot) {
         guard let server = serverURL, !paths.isFixture else { return }
-        for install in snapshot.installs where connected.contains(install.id) {
+        let paths = paths
+        let wanted = snapshot.installs.filter { connected.contains($0.id) }.compactMap { install -> (RecallConnection.Target, String)? in
             guard let target = RecallConnection.target(for: install, paths: paths),
-                  let registered = RecallConnection.registration(target, paths: paths),
-                  registered.command != server.path,
-                  let account = snapshot.account(of: install)?.id else { continue }
-            if FileManager.default.isExecutableFile(atPath: registered.command) { continue }
-            try? RecallConnection.connect(target, server: server, account: account, paths: paths)
+                  let account = snapshot.account(of: install)?.id else { return nil }
+            return (target, account)
+        }
+        guard !wanted.isEmpty else { return }
+        Task.detached(priority: .utility) {
+            for (target, account) in wanted {
+                guard let registered = RecallConnection.registration(target, paths: paths),
+                      RecallConnection.needsRepair(registered, server: server, account: account) else { continue }
+                try? RecallConnection.connect(target, server: server, account: account, paths: paths)
+            }
         }
     }
 
@@ -103,6 +112,11 @@ final class RecallModel {
                 errorMessage = String(describing: error)
             }
         }
+    }
+
+    /// Reads who may read what again, after a backup restored doors from another Mac.
+    func reloadAccess() {
+        access = RecallAccess.load(paths: paths)
     }
 
     func isOpen(from consumer: String, to other: String) -> Bool {

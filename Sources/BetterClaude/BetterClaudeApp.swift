@@ -162,7 +162,7 @@ struct BetterClaudeApp: App {
             MenuBarPanel()
                 .environment(services)
         } label: {
-            Image(nsImage: MenuBarIcon.image)
+            MenuBarLabel(services: services)
         }
         .menuBarExtraStyle(.window)
 
@@ -171,6 +171,18 @@ struct BetterClaudeApp: App {
                 .environment(services)
                 .environment(updates)
         }
+    }
+}
+
+/// The menu bar icon. It's there while the window is closed, so it's what lets a notification
+/// open the window again.
+private struct MenuBarLabel: View {
+    let services: AppServices
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Image(nsImage: MenuBarIcon.image)
+            .onAppear { services.openMainWindow = { openWindow(id: "main") } }
     }
 }
 

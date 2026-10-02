@@ -126,7 +126,8 @@ public enum Backup {
         return report
     }
 
-    /// Whether `backup` decrypts with `password` far enough to read its first entry.
+    /// Whether `backup` decrypts with `password` and reads through to its end: every entry's
+    /// header and contents, so a file damaged or cut short partway is caught, not only its start.
     static func opens(_ backup: URL, password: String) -> Bool {
         guard let input = ArchiveByteStream.fileStream(path: FilePath(backup.path), mode: .readOnly, options: [],
                                                        permissions: FilePermissions(rawValue: 0o644)),
@@ -140,17 +141,26 @@ public enum Backup {
             try? decoder.close()
             try? decrypted.close()
         }
+        let contents = ArchiveHeader.FieldKey("DAT")
+        var buffer = [UInt8](repeating: 0, count: 1 << 20)
         do {
-            _ = try decoder.readHeader()
+            while let header = try decoder.readHeader() {
+                guard case .blob(_, let size, _)? = header.field(forKey: contents) else { continue }
+                var remaining = size
+                while remaining > 0 {
+                    let count = Int(min(remaining, UInt64(buffer.count)))
+                    try buffer.withUnsafeMutableBytes { bytes in
+                        try decoder.readBlob(key: contents, into: UnsafeMutableRawBufferPointer(rebasing: bytes[..<count]))
+                    }
+                    remaining -= UInt64(count)
+                }
+            }
             return true
         } catch {
             return false
         }
     }
 
-    /// Opens a backup and adds whatever it holds that isn't here already. Nothing already on
-    /// this Mac is replaced, so restoring onto a Mac in use only fills in what's missing.
-    @discardableResult
     /// Decrypts and unpacks a backup into `folder`.
     static func extract(_ backup: URL, password: String, into staging: URL) throws {
         guard let input = ArchiveByteStream.fileStream(path: FilePath(backup.path), mode: .readOnly, options: [],
@@ -175,6 +185,11 @@ public enum Backup {
         }
     }
 
+    /// Opens a backup and adds whatever it holds that isn't here already. Nothing already on
+    /// this Mac is replaced, so restoring onto a Mac in use only fills in what's missing. The
+    /// two files both sides add to are merged rather than skipped: who may read what, and each
+    /// kept conversation's list of copies.
+    @discardableResult
     public static func restore(from backup: URL, password: String, paths: HostPaths = .current) throws -> Report {
         let fm = FileManager.default
         let target = paths.betterClaudeSupport
@@ -195,12 +210,45 @@ public enum Backup {
             let relative = String(resolved.dropFirst(base.count))
             guard let top = relative.split(separator: "/").first, included.contains(String(top)) else { continue }
             let destination = target.appendingPathComponent(relative)
-            guard !fm.fileExists(atPath: destination.path) else { continue }
+            if fm.fileExists(atPath: destination.path) {
+                if try merge(item, into: destination, relative: relative, paths: paths) {
+                    report.files += 1
+                    report.bytes += Int64(values?.fileSize ?? 0)
+                }
+                continue
+            }
             try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
             try fm.moveItem(at: item, to: destination)
             report.files += 1
             report.bytes += Int64(values?.fileSize ?? 0)
         }
         return report
+    }
+
+    /// Folds a file from a backup into this Mac's copy of it. Returns whether anything changed.
+    static func merge(_ incoming: URL, into existing: URL, relative: String, paths: HostPaths) throws -> Bool {
+        if relative == "Recall/access.json" {
+            let decoder = JSONDecoder()
+            guard let theirs = try? decoder.decode(RecallAccess.self, from: Data(contentsOf: incoming)),
+                  let ours = try? decoder.decode(RecallAccess.self, from: Data(contentsOf: existing)) else { return false }
+            // Which Desktop folder is which account is this Mac's to say; only the doors come along.
+            var merged = ours
+            for (consumer, others) in theirs.doors {
+                for other in others { merged.setDoor(from: consumer, to: other, open: true) }
+            }
+            guard merged != ours else { return false }
+            try merged.save(paths: paths)
+            return true
+        }
+        if relative.hasPrefix("Kept/entries/"), relative.hasSuffix(".json") {
+            guard let theirs = Vault.decodeEntry(try Data(contentsOf: incoming)),
+                  let ours = Vault.decodeEntry(try Data(contentsOf: existing)),
+                  theirs.key == ours.key else { return false }
+            let merged = Vault.merged(ours, theirs)
+            guard merged != ours else { return false }
+            try AtomicWrite.write(try Vault.encodeEntry(merged), to: existing)
+            return true
+        }
+        return false
     }
 }

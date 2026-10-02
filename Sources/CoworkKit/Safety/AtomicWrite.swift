@@ -9,6 +9,7 @@ public enum AtomicWriteError: Error, CustomStringConvertible {
     case missing(String)
     case notADirectory(String)
     case unresolvablePath(String)
+    case danglingLink(String)
 
     public var description: String {
         switch self {
@@ -28,6 +29,8 @@ public enum AtomicWriteError: Error, CustomStringConvertible {
             return "not a directory: \(p)"
         case .unresolvablePath(let p):
             return "no existing ancestor for \(p); cannot determine its volume"
+        case .danglingLink(let p):
+            return "\(p) is a link into a folder that doesn't exist; refusing to create it"
         }
     }
 
@@ -101,17 +104,46 @@ public enum AtomicWrite {
     }
 
     /// The file a path finally names, following a symlink at the last component (and any it
-    /// points to). The folders above are left as written: `rename(2)` follows those itself.
+    /// points to). A path that isn't a link is returned as written: `rename(2)` follows the
+    /// folders above it itself.
+    ///
+    /// A relative link is read against the real folder it sits in, as the kernel reads it, not
+    /// by trimming the written path: through a linked folder `..` is the real parent. A link
+    /// into a folder that doesn't exist throws rather than having that folder made wherever it
+    /// happens to point; nothing is written and the link is left as it is.
     static func resolvingLinks(_ url: URL) throws -> URL {
         var current = url.standardizedFileURL
+        var followed = false
         for _ in 0..<32 {
-            guard let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: current.path)
-            else { return current }
-            current = (destination.hasPrefix("/")
-                ? URL(fileURLWithPath: destination)
-                : current.deletingLastPathComponent().appendingPathComponent(destination)).standardizedFileURL
+            guard let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: current.path) else {
+                guard followed else { return current }
+                guard let folder = existingFolder(current.deletingLastPathComponent()) else {
+                    throw AtomicWriteError.danglingLink(url.path)
+                }
+                return folder.appendingPathComponent(current.lastPathComponent)
+            }
+            followed = true
+            if destination.hasPrefix("/") {
+                current = URL(fileURLWithPath: destination)
+            } else {
+                guard let folder = existingFolder(current.deletingLastPathComponent()) else {
+                    throw AtomicWriteError.danglingLink(url.path)
+                }
+                current = folder.appendingPathComponent(destination)
+            }
         }
         throw AtomicWriteError.openFailed(path: url.path, code: ELOOP)
+    }
+
+    /// realpath(3) of a folder that exists, or `nil`.
+    private static func existingFolder(_ url: URL) -> URL? {
+        guard let resolved = Darwin.realpath(url.path, nil) else { return nil }
+        defer { free(resolved) }
+        let path = String(cString: resolved)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue
+        else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
     }
 
     /// Inside `~/.claude`, a `.claude-*` copy, `~/.claude.json`, or the configured config folder.

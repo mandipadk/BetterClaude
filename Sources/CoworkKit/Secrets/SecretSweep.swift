@@ -144,6 +144,20 @@ public enum SecretSweep {
         }
     }
 
+    /// The prefix that names a kept copy in place of a conversation id.
+    public static let keptPrefix = "kept:"
+
+    /// Kept copies worth sweeping: every copy of a conversation Claude Code has deleted, since
+    /// they're the only plaintext of it left, and the earlier copies of one that was rewritten.
+    /// Each is named ``keptPrefix`` and its entry's key.
+    public static func keptFiles(_ entries: [Vault.Entry]) -> [(conversationID: String, url: URL)] {
+        entries.flatMap { entry -> [(conversationID: String, url: URL)] in
+            let versions = entry.sourceExists ? entry.versions.dropLast() : entry.versions[...]
+            return versions.map { (keptPrefix + entry.key, Vault.objectURL($0.sha256)) }
+                .filter { FileManager.default.fileExists(atPath: $0.1.path) }
+        }
+    }
+
     /// Sweeps conversation files. The bytes are searched for each kind's prefix and only a
     /// short stretch around a hit is matched, so a large history takes seconds.
     public static func sweep(_ files: [(conversationID: String, url: URL)],

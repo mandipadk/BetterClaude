@@ -4,6 +4,7 @@ import SwiftUI
 /// The main window: a full-height sidebar and one frosted surface, like Parallex.
 struct MainWindow: View {
     @Environment(AppServices.self) private var services
+    @Environment(\.openWindow) private var openWindow
     @State private var showsOnboarding = false
     /// Settings' Show Again clears this, and the welcome opens without a relaunch.
     @AppStorage("onboardingCompleted") private var onboardingCompleted = true
@@ -101,6 +102,7 @@ struct MainWindow: View {
             }
         }
         .task {
+            services.openMainWindow = { openWindow(id: "main") }
             if !services.hasLoaded { services.refresh() }
             // After the window has its toolbar: a sheet raised during the very first layout
             // leaves the columns laid out as if there were none, scrolled up under the title.
@@ -355,6 +357,12 @@ struct Sidebar: View {
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 14)
+        } else if services.index.index == nil, let failure = services.index.failure {
+            Text("Search isn't available right now")
+                .font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary).lineLimit(1)
+                .help(failure)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 14)
         }
     }
 }

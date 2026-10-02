@@ -28,13 +28,21 @@ public enum OtherMacs {
     }
 
     /// Opens a backup made on another Mac and keeps its conversations under `name`. Opening a
-    /// newer backup of the same Mac replaces the older one.
+    /// newer backup of the same Mac replaces the older one: pass that Mac's `folder` so it's
+    /// replaced even when the name changes.
     @discardableResult
-    public static func open(_ backup: URL, password: String, name: String, paths: HostPaths = .current) throws -> Int {
+    public static func open(_ backup: URL, password: String, name: String, replacing existing: URL? = nil,
+                            paths: HostPaths = .current) throws -> Int {
         let fm = FileManager.default
         let slug = name.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }.joined(separator: "-")
-        let folder = root(paths: paths).appendingPathComponent(slug.isEmpty ? "mac" : slug, isDirectory: true)
+        let base = root(paths: paths).standardizedFileURL
+        let folder: URL
+        if let existing = existing?.standardizedFileURL, existing.deletingLastPathComponent().path == base.path {
+            folder = existing
+        } else {
+            folder = base.appendingPathComponent(slug.isEmpty ? "mac" : slug, isDirectory: true)
+        }
         let staging = root(paths: paths).appendingPathComponent(".opening-\(UUID().uuidString.prefix(8))", isDirectory: true)
         try fm.createDirectory(at: staging, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: staging) }

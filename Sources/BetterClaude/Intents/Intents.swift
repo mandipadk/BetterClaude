@@ -20,8 +20,9 @@ struct SearchHistoryIntent: AppIntent {
         options.limit = 8
         let hits = try await index.search(words, options: options)
         let titles = hits.map(\.title)
+        let found = titles.count == 1 ? "1 conversation" : "\(titles.count) conversations"
         let dialog: IntentDialog = titles.isEmpty ? "Nothing in your history mentions that."
-            : "\(titles.count) conversations: \(titles.prefix(3).joined(separator: ", "))."
+            : "\(found): \(titles.prefix(3).joined(separator: ", "))."
         return .result(value: titles, dialog: dialog)
     }
 }
@@ -32,7 +33,8 @@ struct ShowLimitsIntent: AppIntent {
     static let description = IntentDescription("How much of each account's five-hour and weekly limits is used, as Claude last reported it.")
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
-        let snapshot = await Catalog().snapshot()
+        // Who's who is all this needs; reading every conversation would take far longer.
+        let snapshot = await Catalog().accountsSnapshot()
         let lines = QuotaReader.accounts(in: snapshot).map { quota -> String in
             let five = quota.window(.fiveHour).flatMap { $0.isStale ? nil : "\(Int($0.percent.rounded()))% of five hours" }
             let weeks = quota.weeklyWindows.map { window in

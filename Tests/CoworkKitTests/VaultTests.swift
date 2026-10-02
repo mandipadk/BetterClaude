@@ -88,6 +88,23 @@ struct VaultTests {
         }
     }
 
+    @Test("A copy kept on another Mac can be read but isn't put back outside this Mac's Claude Code folders")
+    func otherMacEntryIsNotPutBack() throws {
+        try FixtureHomeTests.withSample { _ in
+            let here = try #require(Vault.entries().first { $0.title == "Draft the conference talk abstract" })
+            #expect(!here.isFromAnotherMac())
+            let path = "/srv/elsewhere/.claude/projects/-srv-elsewhere-code/session.jsonl"
+            let elsewhere = Vault.Entry(key: Vault.key(for: path), sourcePath: path, sessionId: "elsewhere",
+                                        title: "Kept elsewhere", projectPath: "/srv/elsewhere/code",
+                                        installID: nil, versions: here.versions)
+            try Vault.save(elsewhere)
+            #expect(elsewhere.isFromAnotherMac())
+            #expect(Vault.latestCopy(of: elsewhere) != nil)
+            #expect(throws: Vault.RestoreError.self) { _ = try Vault.restore(elsewhere) }
+            #expect(!FileManager.default.fileExists(atPath: "/srv/elsewhere"))
+        }
+    }
+
     @Test("Claude Code's cleanup period is read from its settings, 30 days by default")
     func cleanupPeriod() throws {
         try FixtureHomeTests.withSample { sample in

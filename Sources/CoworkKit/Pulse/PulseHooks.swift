@@ -14,7 +14,9 @@ import Foundation
 public enum PulseHooks {
 
     public static let marker = "#better-claude-pulse"
-    public static let events = ["Notification", "Stop", "StopFailure"]
+    /// What the app reads. A hook on `Stop` ran after every turn, and the app learns that a
+    /// turn ended from the session files, so its events only piled up while the app was closed.
+    public static let events = ["Notification", "StopFailure"]
 
     public static func eventsDir(paths: HostPaths = .current) -> URL {
         paths.betterClaudeSupport.appendingPathComponent("Pulse/Events", isDirectory: true)
@@ -34,6 +36,17 @@ public enum PulseHooks {
     public static func isInstalled(in configDir: URL) -> Bool {
         guard let data = try? Data(contentsOf: settingsURL(in: configDir)) else { return false }
         return String(decoding: data, as: UTF8.self).contains(marker)
+    }
+
+    /// Installed by an earlier version, on an event this one no longer listens to. Installing
+    /// again takes those out and leaves the rest.
+    public static func needsUpgrade(in configDir: URL) -> Bool {
+        guard isInstalled(in: configDir), let hooks = (try? readSettings(in: configDir))?["hooks"]?.objectValue else { return false }
+        return hooks.orderedPairs.contains { event, value in
+            !events.contains(event) && (value.arrayValue ?? []).contains { group in
+                (group["hooks"]?.arrayValue ?? []).contains { $0["command"]?.stringValue?.contains(marker) ?? false }
+            }
+        }
     }
 
     public static func install(in configDir: URL, paths: HostPaths = .current) throws {
