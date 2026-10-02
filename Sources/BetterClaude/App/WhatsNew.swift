@@ -12,6 +12,12 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "1.4.1": [
+            Item(symbol: "text.below.photo", title: "What's New scrolls",
+                 detail: "A long list of changes pushed Continue out of reach. The list scrolls now, Continue stays in view, and Escape closes it."),
+            Item(symbol: "chevron.left.forwardslash.chevron.right", title: "Codex's sub-agents, where they ran",
+                 detail: "A Codex conversation's details list the threads Codex started for it."),
+        ],
         "1.4.0": [
             Item(symbol: "text.bubble", title: "Conversations read the way they happened",
                  detail: "What Claude Code adds to a conversation (task reports, command output, reminders) no longer shows as something you typed. Prompts you queued while Claude worked appear, rewound attempts fold into one line, each message shows once, and days are marked."),
@@ -304,6 +310,8 @@ struct WhatsNewSheet: View {
                 Text("What's new in Better Claude").font(Theme.Font.display)
                 Text("Version \(version)").font(Theme.Font.callout).foregroundStyle(.secondary)
             }
+            // The list scrolls and Continue stays put, however much a release has to say.
+            ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.l) {
                 ForEach(Array((ReleaseHighlights.items(for: version) ?? []).enumerated()), id: \.element.id) { index, item in
                     HStack(alignment: .top, spacing: 12) {
@@ -325,10 +333,17 @@ struct WhatsNewSheet: View {
                 }
             }
             .frame(width: 400)
-            Spacer(minLength: 0)
+            .padding(.vertical, 4)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(maxHeight: .infinity)
             Button("Continue", action: onClose)
                 .prominentAction()
                 .keyboardShortcut(.defaultAction)
+            Button("Close", action: onClose)
+                .keyboardShortcut(.cancelAction)
+                .hidden()
+                .frame(width: 0, height: 0)
         }
         .padding(32)
         .frame(width: 500, height: 560)

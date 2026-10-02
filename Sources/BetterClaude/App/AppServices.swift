@@ -380,7 +380,9 @@ final class AppServices {
                 case .science: return science ? install.id : nil
                 case .claudeCode, .external: return nil
                 case .desktop, .parallex:
-                    return open.contains(install.dataRoot.standardizedFileURL.path) ? install.id : nil
+                    if open.contains(install.dataRoot.standardizedFileURL.path) { return install.id }
+                    // A copy Launch Services lost track of still holds its store's lock.
+                    return ((try? Guards.holders(ofStore: install.dataRoot)) ?? []).isEmpty ? nil : install.id
                 }
             })
             await MainActor.run { self.running = ids }

@@ -107,6 +107,9 @@ struct BetterClaudeApp: App {
                     DebugRoute.apply(to: services)
                     updates.start()
                     showsWhatsNew = WhatsNewCheck.shouldShow(version: updates.currentVersion)
+                    #if DEBUG
+                    if ProcessInfo.processInfo.environment["BC_UI_ROUTE"] == "whatsnew" { showsWhatsNew = true }
+                    #endif
                 }
         }
         .defaultSize(width: 1180, height: 760)

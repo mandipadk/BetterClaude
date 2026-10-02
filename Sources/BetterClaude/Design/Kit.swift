@@ -189,8 +189,12 @@ struct SectionLabel: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.Surface.primary)
-            if let detail { Text(detail).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.Surface.secondary) }
+            // Side by side when they fit; in a narrow column the detail goes under the title
+            // rather than wrapping either of them mid-phrase.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) { titleText; detailText }
+                VStack(alignment: .leading, spacing: 2) { titleText; detailText }
+            }
             Spacer(minLength: 8)
             if let link, let action { Button(link, action: action).buttonStyle(.accentLink) }
         }
@@ -198,6 +202,18 @@ struct SectionLabel: View {
         .padding(.top, top)
         .padding(.bottom, 8)
         .accessibilityAddTraits(.isHeader)
+    }
+
+    private var titleText: some View {
+        Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.Surface.primary)
+            .fixedSize()
+    }
+
+    @ViewBuilder private var detailText: some View {
+        if let detail {
+            Text(detail).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.Surface.secondary)
+                .lineLimit(1)
+        }
     }
 }
 

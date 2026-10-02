@@ -124,3 +124,36 @@ extension DiscoveryAccuracyTests {
         #expect(Discovery.summarizeTranscript(at: url, timestamps: Discovery.TimestampParser()) != nil)
     }
 }
+
+extension DiscoveryAccuracyTests {
+    @Test("Something named like a transcript that isn't a plain file is skipped, not waited on")
+    func skipsPipes() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("fifo-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let pipe = dir.appendingPathComponent("11111111-2222-4333-8444-555555555555.jsonl")
+        #expect(mkfifo(pipe.path, 0o600) == 0)
+        #expect(try Discovery.claudeCodeSessions(projectDir: dir, configDir: dir).isEmpty)
+    }
+}
+
+extension DiscoveryAccuracyTests {
+    @Test("A failure read in a later pass than its tool call is reported so the call can be marked")
+    func failureInLaterPass() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("scan-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let call = #"{"type":"assistant","uuid":"a1","parentUuid":null,"sessionId":"s","timestamp":"2026-09-01T10:00:00Z","message":{"id":"m1","role":"assistant","model":"claude-sonnet-5","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"make"}}],"usage":{"input_tokens":1,"output_tokens":1}}}"# + "\n"
+        let failure = #"{"type":"user","uuid":"u1","parentUuid":"a1","sessionId":"s","timestamp":"2026-09-01T10:00:05Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","is_error":true,"content":"failed"}]}}"# + "\n"
+        let url = dir.appendingPathComponent("t.jsonl")
+        try Data((call + failure).utf8).write(to: url)
+
+        let whole = try TranscriptScanner.scan(url)
+        #expect(whole.toolCalls.first?.failed == true)
+        #expect(whole.failedToolUseIDs.isEmpty)
+
+        let later = try TranscriptScanner.scan(url, from: Int64(call.utf8.count))
+        #expect(later.toolCalls.isEmpty)
+        #expect(later.failedToolUseIDs == ["toolu_1"])
+    }
+}

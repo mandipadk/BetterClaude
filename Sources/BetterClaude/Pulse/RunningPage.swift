@@ -191,9 +191,7 @@ private struct UnattendedSection: View {
                         ForEach(jobs.prefix(10)) { job in jobRow(job) }
                         ForEach(loops.prefix(6)) { loop in
                             Button {
-                                services.filter = .all
-                                services.destination = .conversations
-                                services.selectedConversationID = loop.conversationID
+                                services.show(conversationID: loop.conversationID)
                             } label: {
                                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                                     Image(systemName: "arrow.clockwise").foregroundStyle(.secondary).frame(width: 16)
@@ -237,9 +235,7 @@ private struct UnattendedSection: View {
             Spacer(minLength: Theme.Space.m)
             if let session = job.sessionID, let conversation = services.conversation(forSession: session) {
                 Button("Open") {
-                    services.filter = .all
-                    services.destination = .conversations
-                    services.selectedConversationID = conversation.id
+                    services.show(conversationID: conversation.id)
                 }
                 .buttonStyle(.secondary)
             }

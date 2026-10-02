@@ -263,12 +263,14 @@ public enum Discovery {
     public static func claudeCodeSessions(projectDir: URL, configDir: URL,
                                           countingRecords: Bool = true) throws -> [CCSessionRef] {
         let entries = (try? FileManager.default.contentsOfDirectory(
-            at: projectDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+            at: projectDir, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])) ?? []
         let timestamps = TimestampParser()
 
         var result: [CCSessionRef] = []
+        // Only plain files: opening a pipe or socket named like a transcript would wait forever.
         for url in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
-        where StoreLayout.isTranscriptFileName(url.lastPathComponent) {
+        where StoreLayout.isTranscriptFileName(url.lastPathComponent)
+            && (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
             guard let summary = summarizeTranscript(at: url, timestamps: timestamps,
                                                     countingRecords: countingRecords) else { continue }
             result.append(CCSessionRef(

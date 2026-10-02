@@ -195,7 +195,5 @@ struct ReplaySheet: View {
         return "\(done) of \(model.results.count) answered, \(dollars(model.actualCost)) spent"
     }
 
-    private func dollars(_ value: Double) -> String {
-        value < 0.01 ? "under a cent" : value.formatted(.currency(code: "USD").precision(.fractionLength(2)))
-    }
+    private func dollars(_ value: Double) -> String { Pricing.dollars(value) }
 }

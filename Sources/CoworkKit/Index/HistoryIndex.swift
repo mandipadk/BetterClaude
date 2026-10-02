@@ -536,8 +536,23 @@ public actor HistoryIndex {
             INSERT INTO messages (conversation_id, ordinal, uuid, role, kind, timestamp, text)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """)
+        // Claude Code sometimes writes a stretch of records again further down; ones already
+        // read in an earlier pass aren't messages twice.
+        var seen = Set<String>()
+        if !replacing {
+            let uuids = Array(Set(scan.messages.compactMap(\.uuid)))
+            for start in stride(from: 0, to: uuids.count, by: 400) {
+                let chunk = Array(uuids[start..<min(start + 400, uuids.count)])
+                let marks = chunk.map { _ in "?" }.joined(separator: ",")
+                for row in try database.rows(
+                    "SELECT uuid FROM messages WHERE conversation_id = ? AND uuid IN (\(marks))",
+                    [id] + chunk.map(SQLiteValue.text)) {
+                    if let uuid = row.text(0) { seen.insert(uuid) }
+                }
+            }
+        }
         var ordinal = replacing ? 0 : ordinalStart
-        for message in scan.messages {
+        for message in scan.messages where message.uuid.map({ !seen.contains($0) }) ?? true {
             try insertMessage.run([id, .int(ordinal), .optional(message.uuid), .text(message.role.rawValue),
                                    .text(message.kind.rawValue), .date(message.timestamp), .text(message.text)])
             ordinal += 1
@@ -556,10 +571,15 @@ public actor HistoryIndex {
             INSERT INTO tool_calls (conversation_id, message_uuid, timestamp, name, file_path, detail, failed, tool_use_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """)
-        for call in scan.toolCalls {
+        for call in scan.toolCalls where call.messageUUID.map({ !seen.contains($0) }) ?? true {
             try insertTool.run([id, .optional(call.messageUUID), .date(call.timestamp), .text(call.name),
                                 .optional(call.filePath), .optional(call.detail), .int(call.failed ? 1 : 0),
                                 .optional(call.toolUseID)])
+        }
+        // A call read in an earlier pass whose failure arrived in this one.
+        for toolUseID in scan.failedToolUseIDs {
+            try database.run("UPDATE tool_calls SET failed = 1 WHERE conversation_id = ? AND tool_use_id = ?",
+                             [id, .text(toolUseID)])
         }
         let insertHealth = try database.prepare("""
             INSERT INTO health (conversation_id, kind, name, detail, timestamp) VALUES (?, ?, ?, ?, ?)

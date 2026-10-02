@@ -208,7 +208,5 @@ struct SubagentsView: View {
         return parts.joined(separator: ", ")
     }
 
-    private func dollars(_ value: Double) -> String {
-        value > 0 && value < 0.01 ? "under 1¢" : value.formatted(.currency(code: "USD").precision(.fractionLength(2)))
-    }
+    private func dollars(_ value: Double) -> String { Pricing.dollars(value) }
 }

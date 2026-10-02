@@ -76,7 +76,9 @@ struct ReaderInspector: View {
                 InspectorFiles(conversation: conversation)
             }
         case .activity:
-            if external { unavailable("Sub-agents are recorded by Claude Code only.") } else {
+            if let codex = conversation.external, codex.source == .codex {
+                CodexSubagentsList(conversationID: codex.id)
+            } else if external { unavailable("Sub-agents are recorded by Claude Code and Codex only.") } else {
                 SubagentsView(conversation: conversation, alwaysOpen: true, compact: true)
                     .overlay { if !hasMarker(.activity) { quiet("No sub-agents ran in this conversation.") } }
             }
@@ -136,7 +138,7 @@ struct ConversationFacts: View {
             if let project = conversation.projectName { KV("Project", project) }
             if let model = readable?.model ?? conversation.model { KV("Model", humanModelName(model)) }
             if let readable { KV("Messages", "\(readable.messageCount)") }
-            if let cost, cost > 0 { KV("Cost", cost.formatted(.currency(code: "USD").precision(.fractionLength(2)))) }
+            if let cost, cost > 0 { KV("Cost", Pricing.dollars(cost)) }
             if let deletion = ReaderHeader.deletionText(conversation, services: services) { KV("Deleted", deletion) }
             if let readable {
                 ForEach(readable.pullRequests, id: \.self) { pull in
@@ -347,5 +349,48 @@ struct InspectorKey: Hashable {
     init(_ conversationID: String, _ generation: Int) {
         self.conversationID = conversationID
         self.generation = generation
+    }
+}
+
+
+/// The threads Codex started while a conversation ran, read from their own session files.
+private struct CodexSubagentsList: View {
+    let conversationID: String
+    @State private var agents: [CodexSessions.Subagent]?
+
+    private func detail(_ agent: CodexSessions.Subagent) -> String {
+        let time = agent.started.map { "started \($0.formatted(.dateTime.hour().minute()))" }
+        guard let role = agent.role, !role.isEmpty else { return time.map { $0.prefix(1).uppercased() + $0.dropFirst() } ?? "" }
+        return [role.prefix(1).uppercased() + role.dropFirst(), time].compactMap { $0 }.joined(separator: ", ")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let agents {
+                if agents.isEmpty {
+                    Text("No sub-agents ran in this conversation.")
+                        .font(.system(size: 12)).foregroundStyle(Theme.Surface.secondary)
+                } else {
+                    Text(agents.count == 1 ? "1 sub-agent ran" : "\(agents.count) sub-agents ran")
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.bottom, 6)
+                    ForEach(agents) { agent in
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(agent.nickname ?? "Sub-agent").font(.system(size: 12.5, weight: .medium))
+                            Text(detail(agent))
+                                .font(.system(size: 11.5)).foregroundStyle(Theme.Surface.secondary)
+                        }
+                        .padding(.vertical, 5)
+                    }
+                }
+            } else {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task(id: conversationID) {
+            let id = conversationID
+            agents = await Task.detached(priority: .utility) { CodexSessions.subagents()[id] ?? [] }.value
+        }
     }
 }

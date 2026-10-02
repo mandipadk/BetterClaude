@@ -291,8 +291,9 @@ final class PulseNotifier: NSObject, UNUserNotificationCenterDelegate {
     func post(_ alert: LimitAlerts.Alert) {
         guard Self.available, UserDefaults.standard.object(forKey: Self.limitsKey) as? Bool ?? true else { return }
         let content = UNMutableNotificationContent()
-        let window = alert.window == .fiveHour ? "five-hour limit" : "weekly limit"
-        content.title = "\(alert.account) has used \(Int(alert.percent))% of its \(window)"
+        let window = alert.window == .fiveHour ? "five-hour limit"
+            : alert.scope.map { "weekly \($0) limit" } ?? "weekly limit"
+        content.title = "\(alert.account) has used \(Int(alert.percent.rounded()))% of its \(window)"
         var body: [String] = []
         if let reset = alert.resetsAt {
             let format = alert.window == .fiveHour ? Date.FormatStyle(date: .omitted, time: .shortened)

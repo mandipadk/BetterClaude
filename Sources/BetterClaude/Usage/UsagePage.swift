@@ -39,10 +39,18 @@ struct UsagePage: View {
                     }
                 }
             }
+            // The three below cover the same stretch of time; it's said once, above them.
+            if let period = data.period {
+                Text(period)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Theme.Surface.secondary)
+                    .padding(.horizontal, 4)
+                    .padding(.top, 26)
+            }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 24, alignment: .top), count: 3),
                       alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 0) {
-                    SectionLabel(title: "What used it", detail: data.period)
+                    SectionLabel(title: "What used it", top: data.period == nil ? 26 : 10)
                     Card {
                         let total = data.projects.reduce(0) { $0 + $1.cost }
                         if data.projects.isEmpty { Row(title: "Nothing yet", detail: period.emptyLine) }
@@ -62,7 +70,7 @@ struct UsagePage: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 0) {
-                    SectionLabel(title: "Coming back after a break")
+                    SectionLabel(title: "Coming back after a break", top: data.period == nil ? 26 : 10)
                     Card {
                         if let breaks = data.breaks, breaks.breaks > 0 {
                             Row(title: "\(breaks.breaks) repl\(breaks.breaks == 1 ? "y" : "ies") rewrote an expired cache",
@@ -80,7 +88,7 @@ struct UsagePage: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 0) {
-                    SectionLabel(title: "Models")
+                    SectionLabel(title: "Models", top: data.period == nil ? 26 : 10)
                     Card {
                         let total = data.models.reduce(0) { $0 + $1.cost }
                         if data.models.isEmpty { Row(title: "Nothing yet", detail: period.emptyLine) }

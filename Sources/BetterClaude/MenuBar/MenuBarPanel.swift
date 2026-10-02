@@ -28,7 +28,7 @@ struct MenuBarPanel: View {
                     heading("Now")
                     ForEach(now.prefix(3)) { session in sessionRow(session) }
                 }
-                let quotas = services.usage.quotas.filter { $0.window(.weekly) != nil }
+                let quotas = services.usage.quotas.filter { $0.tightestWeekly != nil }
                 if !quotas.isEmpty {
                     heading("Limits")
                     ForEach(quotas.prefix(3)) { quota in limitRow(quota) }
@@ -121,7 +121,8 @@ struct MenuBarPanel: View {
     }
 
     private func limitRow(_ quota: AccountQuota) -> some View {
-        let weekly = quota.window(.weekly)?.percent ?? 0
+        // The limit that will stop this account first: Fable's own week can be ahead of the overall one.
+        let weekly = quota.tightestWeekly?.percent ?? 0
         return Button { showInWindow { services.destination = .usage } } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {

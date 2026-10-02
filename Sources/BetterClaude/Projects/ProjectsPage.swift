@@ -445,9 +445,7 @@ private struct ProjectDetailView: View {
         return path.hasPrefix(root) ? String(path.dropFirst(root.count)) : services.snapshot.paths.abbreviating(path)
     }
 
-    private func dollars(_ value: Double) -> String {
-        value.formatted(.currency(code: "USD").precision(.fractionLength(2)))
-    }
+    private func dollars(_ value: Double) -> String { Pricing.dollars(value) }
 }
 
 /// Things you keep telling Claude in this project, offered as lines for its CLAUDE.md.

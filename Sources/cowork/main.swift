@@ -367,7 +367,7 @@ func cmdUsage() throws {
     for quota in quotas {
         print(quota.account.displayName)
         for window in quota.windows {
-            var line = "  \(window.kind.title): \(Int(window.percent.rounded()))%"
+            var line = "  \(window.title): \(Int(window.percent.rounded()))%"
             if let reset = window.resetsAt {
                 line += ", resets \(window.resetIsEstimate ? "about " : "")\(when.string(from: reset))"
             }

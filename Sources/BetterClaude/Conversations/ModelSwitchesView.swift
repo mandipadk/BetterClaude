@@ -56,9 +56,7 @@ struct ModelDriftSection: View {
                     VStack(alignment: .leading, spacing: Theme.Space.s) {
                         ForEach(found.prefix(8), id: \.change.id) { item in
                             Button {
-                                services.filter = .all
-                                services.destination = .conversations
-                                services.selectedConversationID = item.change.conversationID
+                                services.show(conversationID: item.change.conversationID)
                             } label: {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(item.title).font(Theme.Font.body).foregroundStyle(Theme.accent).lineLimit(1)
@@ -123,7 +121,5 @@ struct CacheBreaksSection: View {
         count >= 1_000_000 ? "\((Double(count) / 1e6).formatted(.number.precision(.fractionLength(0...1))))M" : "\(count / 1_000)K"
     }
 
-    private func dollars(_ value: Double) -> String {
-        value.formatted(.currency(code: "USD").precision(.fractionLength(value >= 100 ? 0 : 2)))
-    }
+    private func dollars(_ value: Double) -> String { Pricing.dollars(value) }
 }

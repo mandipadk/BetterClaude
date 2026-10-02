@@ -156,7 +156,5 @@ struct FlightRecorderView: View {
             : count >= 1_000 ? "\(count / 1_000)K" : "\(count)"
     }
 
-    private func dollars(_ value: Double) -> String {
-        value < 0.01 && value > 0 ? "under 1¢" : value.formatted(.currency(code: "USD").precision(.fractionLength(2)))
-    }
+    private func dollars(_ value: Double) -> String { Pricing.dollars(value) }
 }

@@ -102,6 +102,8 @@ public struct TranscriptScan: Sendable {
     public var modelMarkers: [ModelMarker] = []
     public var usage: [Usage] = []
     public var toolCalls: [ToolCall] = []
+    /// Failed results whose call was read in an earlier pass, so the index can mark it.
+    public var failedToolUseIDs: [String] = []
     public var fileVersions: [FileVersion] = []
     public var health: [HealthEvent] = []
     public var cost: CostState?
@@ -200,9 +202,11 @@ public enum TranscriptScanner {
             if type == "user" {
                 for block in message["content"]?.arrayValue ?? [] where block["type"]?.stringValue == "tool_result"
                     && block["is_error"]?.boolValue == true {
-                    if let id = block["tool_use_id"]?.stringValue,
-                       let at = result.toolCalls.lastIndex(where: { $0.toolUseID == id }) {
+                    guard let id = block["tool_use_id"]?.stringValue else { continue }
+                    if let at = result.toolCalls.lastIndex(where: { $0.toolUseID == id }) {
                         result.toolCalls[at].failed = true
+                    } else {
+                        result.failedToolUseIDs.append(id)
                     }
                 }
             }
