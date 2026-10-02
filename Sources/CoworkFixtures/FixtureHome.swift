@@ -304,6 +304,10 @@ public struct FixtureHome {
             "emailAddress": email,
             "accountName": name,
             "initialMessage": conversation.turns.first?.user ?? "",
+            // Claude Desktop writes these on every task and skips a record without them.
+            "userSelectedFolders": [String](),
+            "enabledMcpTools": [String: Any](),
+            "remoteMcpServersConfig": [Any](),
         ]
         if let spaceID { metadata["spaceId"] = spaceID }
         try writeJSON(metadata, to: orgDir.appendingPathComponent("\(sessionId).json"))

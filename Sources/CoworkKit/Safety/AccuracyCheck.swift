@@ -20,7 +20,7 @@ public enum AccuracyCheck {
 
     public struct Issue: Sendable, Identifiable, Equatable {
         public enum Kind: String, Sendable {
-            case duplicateRow, copies, missingMessages, indexBehind, indexAhead
+            case duplicateRow, copies, missingMessages, indexBehind, indexAhead, hiddenByDesktop
         }
         public let kind: Kind
         public let title: String
@@ -83,6 +83,17 @@ public enum AccuracyCheck {
             issues.append(Issue(kind: .copies, title: "Conversations in more than one place",
                                 detail: "Copied or moved between Claudes. Each copy is listed where it is; their usage is counted once.",
                                 count: copied.count))
+        }
+        // Task records a Claude Desktop skips because a field it requires is missing.
+        let unshown = snapshot.conversations.filter { conversation in
+            guard let session = conversation.coworkSession,
+                  let record = try? JSONValue.parse(Data(contentsOf: session.metadataURL)) else { return false }
+            return Importer.requiredByDesktop.contains { record[$0.0] == nil }
+        }.count
+        if unshown > 0 {
+            issues.append(Issue(kind: .hiddenByDesktop, title: "Tasks Claude won't show",
+                                detail: "Copied by an earlier Better Claude without a field Claude now requires. Undo the copy in Activity and copy it again.",
+                                count: unshown))
         }
         let missing = snapshot.conversations.filter(\.isTranscriptMissing).count
         if missing > 0 {

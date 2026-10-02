@@ -790,6 +790,14 @@ public enum Importer {
         }
         if let model = entry.origin.model, doc.model == nil { doc.model = model }
         if doc.root["remoteMcpServersConfig"] == nil { doc.root["remoteMcpServersConfig"] = .array([]) }
+        // Every list and object field the app's own records carry, empty where there's nothing
+        // to bring: the app drops a record that lacks a field it expects, without saying so.
+        if let donor = donor?.root.objectValue {
+            for (key, value) in donor.orderedPairs where doc.root[key] == nil {
+                if value.arrayValue != nil { doc.root[key] = .array([]) }
+                else if value.objectValue != nil { doc.root[key] = .object(JSONObject()) }
+            }
+        }
 
         if minimal {
             let keep: Set<String> = [
@@ -805,8 +813,18 @@ public enum Importer {
                 doc.removeKeys(object.keys.filter { !keep.contains($0) })
             }
         }
+        for (key, empty) in requiredByDesktop + [("enabledMcpTools", .object(JSONObject()))] where doc.root[key] == nil {
+            doc.root[key] = empty
+        }
         return doc
     }
+
+    /// Fields Claude Desktop requires on a task record (it skips a record without them) that a
+    /// conversation from Claude Code has nothing to fill. Checked against the app's own
+    /// validator: a session's `userSelectedFolders` must be a list.
+    public static let requiredByDesktop: [(String, JSONValue)] = [
+        ("userSelectedFolders", .array([])),
+    ]
 
     static func gitBranch(at path: String) -> String? {
         let process = Process()

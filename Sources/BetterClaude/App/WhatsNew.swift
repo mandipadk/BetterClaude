@@ -12,6 +12,12 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "1.4.2": [
+            Item(symbol: "arrow.right.doc.on.clipboard", title: "Copies into Claude show up again",
+                 detail: "A Claude Code conversation copied into Claude Desktop was written without a field Claude now requires, so Claude didn't list it. Copies are written whole now, and How It's Counted finds any that Claude won't show: undo those in Activity and copy them again."),
+            Item(symbol: "clock.arrow.circlepath", title: "Changes fits its window",
+                 detail: "With many files, the diff spilled over the sheet's title and buttons. It scrolls inside its space now."),
+        ],
         "1.4.1": [
             Item(symbol: "text.below.photo", title: "What's New scrolls",
                  detail: "A long list of changes pushed Continue out of reach. The list scrolls now, Continue stays in view, and Escape closes it."),

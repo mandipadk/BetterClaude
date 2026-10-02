@@ -70,7 +70,10 @@ final class RewindModel: Identifiable {
         timelapse = nil
         guard let file = changes?.files.first(where: { $0.path == path }) else { diff = nil; return }
         Task {
-            diff = await Task.detached(priority: .userInitiated) { ConversationRewind.diff(for: file) }.value
+            let computed = await Task.detached(priority: .userInitiated) { ConversationRewind.diff(for: file) }.value
+            // A quicker click on another file may have finished first.
+            guard selected == path else { return }
+            diff = computed
             guard let index, let path else { return }
             let made = try? await Timelapse.load(conversationID: conversation.id, path: path, index: index)
             if selected == path { timelapse = made }
@@ -155,10 +158,11 @@ struct RewindSheet: View {
                 case .ready:
                     if let changes = model.changes, !changes.files.isEmpty {
                         HStack(alignment: .top, spacing: 16) {
-                            fileList(changes).frame(width: 200)
-                            detail.frame(maxWidth: .infinity, alignment: .topLeading)
+                            fileList(changes).frame(width: 220)
+                            detail.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         }
                         .frame(height: contentHeight(changes))
+                        .clipped()
                     } else {
                         Text("This conversation didn't edit or create any files Claude Code kept versions of.")
                             .font(.system(size: 13)).foregroundStyle(Theme.Surface.secondary)
@@ -336,7 +340,9 @@ struct DiffWell: View {
         .defaultScrollAnchor(.topLeading)
         // Long lines still scroll sideways; a bar that's always there would cover the last line.
         .scrollIndicators(.never, axes: .horizontal)
-        .frame(height: contentHeight > 0 ? min(contentHeight, 470) : nil)
+        // As tall as the diff when there's room, and shorter, scrolling, when there isn't:
+        // a fixed height let the column spill over the sheet's title and buttons.
+        .frame(maxHeight: contentHeight > 0 ? contentHeight : .infinity)
         .background(Theme.Surface.fill, in: .rect(cornerRadius: 8, style: .continuous))
     }
 
