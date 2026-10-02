@@ -187,8 +187,14 @@ or start Claude Code in the project with it.
 
 **claude.ai and Codex.** File → Import claude.ai Export… takes the zip claude.ai emails you
 and adds those conversations to the timeline, search, Ask and Claude's history tools, under
-the account each belongs to. Codex sessions on the Mac appear on their own, read-only; only
-their session files and titles are read, never their credentials.
+the account each belongs to. Codex conversations on the Mac appear on their own, read-only;
+only their session files and titles are read, never their credentials. Threads Codex starts
+itself (sub-agents and its automatic reviews of commands) and runs by other programs driving
+Codex aren't listed as conversations, and the Codex page says how many there are.
+
+**How it's counted.** This Mac → How It's Counted checks every number against the disk: what
+each Claude lists, what was found but left out and why, and anything that doesn't add up.
+From the command line, `cowork check`.
 
 **Backups.** Everything Better Claude keeps — kept conversations, saved file versions and
 plans, imports, receipts — goes into one Apple Encrypted Archive locked with a password

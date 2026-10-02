@@ -210,9 +210,11 @@ public enum Updater {
         let errors = Pipe()
         ditto.standardError = errors
         try ditto.run()
+        // Read before waiting: a full pipe would leave ditto blocked and this waiting forever.
+        let errorOutput = errors.fileHandleForReading.readDataToEndOfFile()
         ditto.waitUntilExit()
         guard ditto.terminationStatus == 0 else {
-            let text = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            let text = String(decoding: errorOutput, as: UTF8.self)
             throw UpdateError.unpackFailed(text.isEmpty ? "ditto exited \(ditto.terminationStatus)" : text)
         }
         progress?(1.0)

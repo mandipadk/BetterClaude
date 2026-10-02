@@ -8,8 +8,21 @@ struct ThisMacPage: View {
     @Environment(AppServices.self) private var services
     @AppStorage(BackupSheet.lastBackupKey) private var lastBackup: Double = 0
     @State private var lastChange: ImportReceipt?
+    @State private var checkingCounts = false
 
     var body: some View {
+        page.sheet(isPresented: $checkingCounts) { AccuracySheet().environment(services) }
+            #if DEBUG
+            .onAppear {
+                if UserDefaults.standard.bool(forKey: "debugOpenAccuracy") {
+                    UserDefaults.standard.removeObject(forKey: "debugOpenAccuracy")
+                    checkingCounts = true
+                }
+            }
+            #endif
+    }
+
+    private var page: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 PageHeader(title: "This Mac", subtitle: "Everything Claude keeps here, and how Better Claude looks after it.")
@@ -20,6 +33,14 @@ struct ThisMacPage: View {
                     link("Activity", symbol: "clock.arrow.circlepath",
                          value: lastChange.map { "\($0.title ?? "A change"), \($0.timestamp.listStamp.lowercasedIfWordLocal)" }
                             ?? "Everything Better Claude changed, with Undo", to: .history)
+                    Button { checkingCounts = true } label: {
+                        GroupRow(title: "How it's counted", detail: "Every count checked against what's on this Mac") {
+                            symbol("checklist")
+                        } trailing: {
+                            RowChevron()
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 GroupLabel(title: "Safety")

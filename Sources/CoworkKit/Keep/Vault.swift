@@ -98,11 +98,17 @@ public enum Vault {
     // MARK: Expiry
 
     /// How long Claude Code keeps a conversation, from its `cleanupPeriodDays` setting.
-    public static func cleanupPeriod(configDir: URL = HostPaths.current.claudeCodeConfigDir) -> TimeInterval {
-        let settings = configDir.appendingPathComponent("settings.json")
-        if let data = try? Data(contentsOf: settings), let value = try? JSONValue.parse(data),
-           let days = value["cleanupPeriodDays"]?.intValue, days > 0 {
-            return TimeInterval(days) * 86_400
+    /// Claude Code's own precedence: an organisation's managed settings, then local, then the user's.
+    public static func cleanupPeriod(configDir: URL = HostPaths.current.claudeCodeConfigDir,
+                                     managed: URL = URL(fileURLWithPath: "/Library/Application Support/ClaudeCode/managed-settings.json"))
+        -> TimeInterval {
+        let candidates = [managed, configDir.appendingPathComponent("settings.local.json"),
+                          configDir.appendingPathComponent("settings.json")]
+        for settings in candidates {
+            guard let data = try? Data(contentsOf: settings), let value = try? JSONValue.parse(data),
+                  let raw = value["cleanupPeriodDays"] else { continue }
+            let days = raw.intValue ?? raw.doubleValue.map { Int64($0) }
+            if let days, days > 0 { return TimeInterval(days) * 86_400 }
         }
         return 30 * 86_400
     }

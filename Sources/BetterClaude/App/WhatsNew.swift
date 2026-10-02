@@ -12,6 +12,14 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "1.3.2": [
+            Item(symbol: "checklist", title: "How it's counted",
+                 detail: "This Mac → How It's Counted checks every number against what's on this Mac: what each Claude lists, what was found but left out and why, and anything that doesn't add up."),
+            Item(symbol: "text.bubble", title: "New Cowork tasks keep their messages",
+                 detail: "Claude now names a task's folder differently, so new tasks looked as if their messages were gone and couldn't be searched. They're found again."),
+            Item(symbol: "folder", title: "Projects add up",
+                 detail: "A project's page holds exactly the conversations its row counts. A conversation in your home folder no longer pulls every other project in with it."),
+        ],
         "1.3.1": [
             Item(symbol: "number", title: "Codex, counted right",
                  detail: "Codex writes a file for every thread it runs, so its sub-agents, its automatic reviews of commands and other programs' runs were listed as conversations. Now only the conversations you had are, and the Codex page says what's left out."),

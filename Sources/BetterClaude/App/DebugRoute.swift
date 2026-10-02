@@ -50,6 +50,9 @@ enum DebugRoute {
                 services.destination = .home
             case "thismac":
                 services.destination = .thisMac
+            case "accuracy":
+                UserDefaults.standard.set(true, forKey: "debugOpenAccuracy")
+                services.destination = .thisMac
             case "conversations":
                 services.destination = .conversations
             case "month":

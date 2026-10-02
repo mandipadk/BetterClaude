@@ -21,6 +21,9 @@ public struct ParallexInstance: Sendable, Hashable {
     /// A custom icon picked in Parallex, if any.
     public let customIconURL: URL?
     public let recordURL: URL
+    /// The copy's own Claude Code folder, when it was set up with one (`CLAUDE_CONFIG_DIR`);
+    /// its Code tab's conversations are kept there instead of `~/.claude`.
+    public var claudeCodeConfigDir: URL? = nil
 }
 
 public enum ParallexInstances {
@@ -80,7 +83,10 @@ public enum ParallexInstances {
             badgeText: (settings["badgeText"] as? String).flatMap { $0.isEmpty ? nil : $0 },
             badgeColorHex: settings["badgeColorHex"] as? String,
             customIconURL: customIcon,
-            recordURL: recordURL)
+            recordURL: recordURL,
+            claudeCodeConfigDir: environment["CLAUDE_CONFIG_DIR"].flatMap {
+                $0.isEmpty ? nil : URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true)
+            })
     }
 
     /// The copy's app: where Parallex recorded it, or where a person would have moved it,

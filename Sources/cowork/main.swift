@@ -8,6 +8,10 @@ let usage = """
 cowork — move Claude Cowork sessions between Claude Desktop installs and Claude Code
 
 USAGE
+  cowork check
+      Check every count against the disk: what each Claude lists, what was found but left
+      out and why, and anything that doesn't add up.
+
   cowork installs
       List every Claude on this Mac, including Parallex copies, Claude Science and
       Claude Code, with how many conversations each holds.
@@ -402,6 +406,24 @@ func cmdLive() {
               + "\(place.padding(toLength: 10, withPad: " ", startingAt: 0))for \(minutes) min")
     }
     print("\(sessions.count) running.")
+}
+
+func cmdCheck() {
+    let report = runBlocking { () -> AccuracyCheck.Report in
+        let snapshot = await Catalog().snapshot()
+        let index = try? HistoryIndex(readingFrom: HistoryIndex.defaultURL())
+        return await AccuracyCheck.run(snapshot: snapshot, index: index)
+    }
+    for source in report.sources {
+        var line = "\(source.name.padding(toLength: 18, withPad: " ", startingAt: 0))\(String(source.listed).leftPadded(to: 5)) listed"
+        if source.archived > 0 { line += ", \(source.archived) archived" }
+        if source.withoutMessages > 0 { line += ", \(source.withoutMessages) without messages" }
+        print(line)
+        for item in source.leftOut { print("  not listed: \(item)") }
+    }
+    print("\(report.total) conversations listed.")
+    if report.issues.isEmpty { print("Everything adds up."); return }
+    for issue in report.issues { print("- \(issue.title): \(issue.count). \(issue.detail)") }
 }
 
 func cmdInstalls() {
@@ -861,6 +883,7 @@ let args = Args(Array(argv.dropFirst()))
 do {
     switch command {
     case "installs": cmdInstalls()
+    case "check": cmdCheck()
     case "storage": cmdStorage()
     case "check-update": cmdCheckUpdate(args)
     case "stores": try cmdStores()

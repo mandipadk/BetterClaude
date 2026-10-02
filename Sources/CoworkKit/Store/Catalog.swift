@@ -193,6 +193,12 @@ public actor Catalog {
     }
 
     private var summaries: [String: CachedSummary] = [:]
+
+    /// Transcripts that couldn't be summarised, by size and date, so an unchanged one doesn't
+
+    /// send its whole project back to disk on every refresh.
+
+    private var unreadable: [String: (size: Int64, modified: Date)] = [:]
     private let paths: HostPaths
 
     public init(paths: HostPaths = .current) {
@@ -232,18 +238,46 @@ public actor Catalog {
         }
 
         // Claude Code transcripts, keyed by session id so Code tab records can claim theirs.
-        var claudeCode: [String: CCSessionRef] = [:]
+        // A list per id: a conversation imported into a second project keeps its id, and both
+        // copies are conversations.
+        var claudeCode: [String: [CCSessionRef]] = [:]
         let config = paths.claudeCodeConfigDir
         for project in (try? Discovery.claudeCodeProjects(configDir: config)) ?? [] {
             for session in sessions(inProject: project, configDir: config) {
-                claudeCode[session.sessionId] = session
+                claudeCode[session.sessionId, default: []].append(session)
             }
         }
 
+        // Parallex copies set up with a Claude Code of their own keep their Code tab's
+        // transcripts in that folder; anything there belongs to that copy.
+        let ownConfig = Dictionary(ParallexInstances.claudeCopies().compactMap { copy in
+            copy.claudeCodeConfigDir.map { (copy.dataRoot.standardizedFileURL.path, $0) }
+        }, uniquingKeysWith: { first, _ in first })
+
         for install in installs {
             guard let root = install.codeTabRoot else { continue }
+            var own: [String: CCSessionRef] = [:]
+            if let configDir = ownConfig[install.dataRoot.standardizedFileURL.path],
+               configDir.standardizedFileURL.path != config.standardizedFileURL.path {
+                for project in (try? Discovery.claudeCodeProjects(configDir: configDir)) ?? [] {
+                    for session in sessions(inProject: project, configDir: configDir) {
+                        own[session.sessionId] = session
+                    }
+                }
+            }
+            defer {
+                for session in own.values {
+                    conversations.append(ConversationRef(
+                        origin: .claudeCode(session), installID: install.id,
+                        title: session.title, lastActivity: session.lastTimestamp,
+                        projectPath: session.resolvedCwd.isEmpty ? nil : session.resolvedCwd,
+                        model: nil, bytes: session.byteSize, isStarred: false, isArchived: false,
+                        accountID: nil))
+                }
+            }
             for record in CodeTabSessions.sessions(in: root) {
-                let transcript = claudeCode.removeValue(forKey: record.cliSessionId)
+                let transcript = own.removeValue(forKey: record.cliSessionId)
+                    ?? claim(record, from: &claudeCode)
                 conversations.append(ConversationRef(
                     origin: .codeTab(record, transcript), installID: install.id,
                     title: record.title.isEmpty ? (transcript?.title ?? "Untitled session") : record.title,
@@ -258,7 +292,7 @@ public actor Catalog {
 
         let cliAccount = ClaudeAccount.claudeCode(paths: paths)
         if let cli = installs.first(where: { $0.kind == .claudeCode }) {
-            for session in claudeCode.values {
+            for session in claudeCode.values.joined() {
                 conversations.append(ConversationRef(
                     origin: .claudeCode(session), installID: cli.id,
                     title: session.title, lastActivity: session.lastTimestamp,
@@ -308,6 +342,16 @@ public actor Catalog {
         return snapshot
     }
 
+    /// The transcript a Code tab record points at: the copy in the folder the record worked in
+    /// when there are several with its id.
+    private func claim(_ record: CodeTabSession, from sessions: inout [String: [CCSessionRef]]) -> CCSessionRef? {
+        guard var candidates = sessions[record.cliSessionId], !candidates.isEmpty else { return nil }
+        let index = candidates.firstIndex { $0.resolvedCwd == record.cwd } ?? 0
+        let claimed = candidates.remove(at: index)
+        sessions[record.cliSessionId] = candidates.isEmpty ? nil : candidates
+        return claimed
+    }
+
     /// One project's transcripts, reusing every summary whose file has not changed.
     private func sessions(inProject project: URL, configDir: URL) -> [CCSessionRef] {
         let entries = (try? FileManager.default.contentsOfDirectory(
@@ -315,18 +359,21 @@ public actor Catalog {
             options: [.skipsHiddenFiles])) ?? []
         var result: [CCSessionRef] = []
         var stale = false
+        var skipped = false
         for url in entries where StoreLayout.isTranscriptFileName(url.lastPathComponent) {
             let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
             let size = Int64(values?.fileSize ?? 0)
             let modified = values?.contentModificationDate ?? .distantPast
             if let cached = summaries[url.path], cached.size == size, cached.modified == modified {
                 result.append(cached.session)
+            } else if let failed = unreadable[url.path], failed.size == size, failed.modified == modified {
+                skipped = true
             } else {
                 stale = true
                 break
             }
         }
-        guard stale || result.isEmpty else { return result }
+        guard stale || (result.isEmpty && !skipped) else { return result }
 
         let fresh = (try? Discovery.claudeCodeSessions(projectDir: project, configDir: configDir,
                                                        countingRecords: false)) ?? []
@@ -337,6 +384,11 @@ public actor Catalog {
                 size: Int64(values?.fileSize ?? 0),
                 modified: values?.contentModificationDate ?? .distantPast,
                 session: session)
+        }
+        let summarised = Set(fresh.map(\.transcriptURL.path))
+        for url in entries where StoreLayout.isTranscriptFileName(url.lastPathComponent) && !summarised.contains(url.path) {
+            let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+            unreadable[url.path] = (Int64(values?.fileSize ?? 0), values?.contentModificationDate ?? .distantPast)
         }
         return fresh
     }

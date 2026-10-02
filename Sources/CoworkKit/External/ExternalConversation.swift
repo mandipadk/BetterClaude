@@ -133,6 +133,46 @@ public enum CodexSessions {
         let firstPrompt: String?
         var originator: String? = nil
         var kind: Kind = .conversation
+        var parentID: String? = nil
+        var nickname: String? = nil
+        var role: String? = nil
+    }
+
+    /// A thread Codex started while a conversation ran.
+    public struct Subagent: Sendable, Hashable, Identifiable {
+        public let id: String
+        /// The conversation it ran for, even when another sub-agent started it.
+        public let conversationID: String
+        public let nickname: String?
+        public let role: String?
+        public let started: Date?
+        public let fileURL: URL
+    }
+
+    /// Sub-agents by the conversation they ran for.
+    public static func subagents(paths: HostPaths = .current) -> [String: [Subagent]] {
+        var heads: [String: (Head, URL)] = [:]
+        for url in sessionFiles(paths: paths) {
+            if let head = headOf(url) { heads[head.id] = (head, url) }
+        }
+        func conversation(of id: String) -> String? {
+            var current = id
+            for _ in 0..<16 {
+                guard let (head, _) = heads[current] else { return nil }
+                if head.kind == .conversation { return head.id }
+                guard let parent = head.parentID else { return nil }
+                current = parent
+            }
+            return nil
+        }
+        var result: [String: [Subagent]] = [:]
+        for (head, url) in heads.values where head.kind == .subagent {
+            guard let owner = head.parentID.flatMap(conversation(of:)) else { continue }
+            result[owner, default: []].append(Subagent(id: head.id, conversationID: owner, nickname: head.nickname,
+                                                       role: head.role, started: head.started, fileURL: url))
+        }
+        for key in result.keys { result[key]?.sort { ($0.started ?? .distantPast) < ($1.started ?? .distantPast) } }
+        return result
     }
 
     /// Reads `session_meta`: `source` is a string for a thread a client started, or
@@ -148,13 +188,44 @@ public enum CodexSessions {
         return .conversation
     }
 
+    /// Headers already read, by file, kept while the file is unchanged: a refresh every couple
+    /// of seconds would otherwise re-read every session's start.
+    private static let headCache = HeadCache()
+
+    final class HeadCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var entries: [String: (size: Int, modified: Date, head: Head?)] = [:]
+
+        func head(for url: URL, read: (URL) -> Head?) -> Head? {
+            let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+            let size = values?.fileSize ?? -1
+            let modified = values?.contentModificationDate ?? .distantPast
+            lock.lock()
+            if let cached = entries[url.path], cached.size == size, cached.modified == modified {
+                lock.unlock()
+                return cached.head
+            }
+            lock.unlock()
+            let head = read(url)
+            lock.lock()
+            entries[url.path] = (size, modified, head)
+            lock.unlock()
+            return head
+        }
+    }
+
     /// The session header and first real prompt, from the start of the file.
     static func headOf(_ url: URL) -> Head? {
+        headCache.head(for: url, read: readHead)
+    }
+
+    static func readHead(_ url: URL) -> Head? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         let data = (try? handle.read(upToCount: 256 * 1024)) ?? Data()
         var id: String?, started: Date?, cwd: String?, model: String?, prompt: String?
         var source: JSONValue?, threadSource: String?, originator: String?
+        var parentID: String?, nickname: String?, role: String?
         for line in data.split(separator: 0x0A) {
             guard let record = try? JSONValue.parse(Data(line)) else { continue }
             let payload = record["payload"]
@@ -167,6 +238,11 @@ public enum CodexSessions {
                 source = payload?["source"]
                 threadSource = payload?["thread_source"]?.stringValue
                 originator = payload?["originator"]?.stringValue
+                let spawn = payload?["source"]?["subagent"]?["thread_spawn"]
+                parentID = spawn?["parent_thread_id"]?.stringValue ?? payload?["parent_thread_id"]?.stringValue
+                    ?? payload?["forked_from_id"]?.stringValue
+                nickname = spawn?["agent_nickname"]?.stringValue ?? payload?["agent_nickname"]?.stringValue
+                role = spawn?["agent_role"]?.stringValue ?? payload?["agent_role"]?.stringValue
             case "turn_context":
                 model = model ?? payload?["model"]?.stringValue
             case "response_item" where prompt == nil:
@@ -178,7 +254,8 @@ public enum CodexSessions {
         }
         guard let id else { return nil }
         return Head(id: id, started: started, cwd: cwd, model: model, firstPrompt: prompt, originator: originator,
-                    kind: kind(source: source, threadSource: threadSource, originator: originator, model: model))
+                    kind: kind(source: source, threadSource: threadSource, originator: originator, model: model),
+                    parentID: parentID, nickname: nickname, role: role)
     }
 
     /// `session_index.jsonl`: the names Codex shows for its threads.

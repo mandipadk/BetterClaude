@@ -108,7 +108,7 @@ public enum Projects {
         var tallies: [String: Tally] = [:]
         for row in try await index.rows("""
             SELECT id, project_path, kind, install_name, account_id, first_activity, last_activity FROM conversations
-            WHERE project_path LIKE '/%'
+            WHERE project_path LIKE '/%' AND present = 1
             """) {
             guard let id = row.text(0), let project = row.text(1).map(root(of:)), !isScratch(project, home: home) else { continue }
             var tally = tallies[project] ?? Tally()
@@ -132,19 +132,18 @@ public enum Projects {
     public static func detail(of summary: ProjectSummary, index: HistoryIndex, days: Int = 56,
                               paths: HostPaths = .current, now: Date = Date()) async throws -> ProjectDetail {
         let costs = try await costs(index: index)
-        let like = SQLiteValue.text(summary.path + "/%")
-        let exact = SQLiteValue.text(summary.path)
+        // The same rule the list counts by: a conversation belongs to the folder it ran in (or
+        // the repository its worktree came from). A prefix match would pull every project
+        // under a home-folder session into that one.
         let conversations = try await index.rows("""
-            SELECT id, session_id, title, kind, install_name, last_activity, git_branch FROM conversations
-            WHERE project_path = ? OR project_path LIKE ? ORDER BY last_activity DESC
-            """, [exact, like]).compactMap { row -> ProjectDetail.Conversation? in
-            guard let id = row.text(0) else { return nil }
+            SELECT id, session_id, title, kind, install_name, last_activity, git_branch, project_path FROM conversations
+            WHERE project_path IS NOT NULL AND present = 1 ORDER BY last_activity DESC
+            """).compactMap { row -> ProjectDetail.Conversation? in
+            guard let id = row.text(0), let project = row.text(7), root(of: project) == summary.path else { return nil }
             return .init(id: id, sessionID: row.text(1), title: row.text(2) ?? "Untitled",
                          place: HistorySearch.place(kind: row.text(3), install: row.text(4)),
                          lastActivity: row.date(5), cost: costs[id] ?? 0, branch: row.text(6))
         }
-        // A folder inside the project isn't another project, but a sibling that shares the
-        // prefix (billing-service-v2) is.
         let ids = conversations.map(\.id)
         let list = ids.map { _ in "?" }.joined(separator: ",")
         let idValues = ids.map(SQLiteValue.text)

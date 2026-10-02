@@ -458,8 +458,8 @@ extension Discovery {
         guard let cliSessionId = document.cliSessionId, !cliSessionId.isEmpty else { return nil }
 
         let cwd = document.cwd ?? ""
-        let workspaceURL = metadataURL.deletingLastPathComponent()
-            .appendingPathComponent(sessionId, isDirectory: true)
+        let workspaceURL = workspaceDirectory(org: metadataURL.deletingLastPathComponent(),
+                                              sessionId: sessionId, cwd: cwd)
         let located = locateTranscript(workspace: workspaceURL, cwd: cwd, cliSessionId: cliSessionId)
 
         return SessionRef(
@@ -483,6 +483,28 @@ extension Discovery {
             byteSize: fileSize(metadataURL) + (measuringWorkspace
                 ? directorySize(workspaceURL)
                 : located.transcript.map(fileSize) ?? 0))
+    }
+
+    /// A session's workspace folder. Claude Desktop named it `<sessionId>` until September 2026
+    /// and now uses the first eight characters of the session's uuid; a host-loop session's
+    /// `cwd` points into it too.
+    static func workspaceDirectory(org: URL, sessionId: String, cwd: String) -> URL {
+        let full = org.appendingPathComponent(sessionId, isDirectory: true)
+        if isDirectory(full) { return full }
+        let uuid = sessionId.hasPrefix(StoreLayout.sessionPrefix)
+            ? String(sessionId.dropFirst(StoreLayout.sessionPrefix.count)) : sessionId
+        let short = org.appendingPathComponent(String(uuid.prefix(8)), isDirectory: true)
+        if uuid.count > 8, isDirectory(short) { return short }
+        // `<org>/<folder>/outputs`, written by the app for sessions that work on the host.
+        let orgPath = org.standardizedFileURL.path + "/"
+        var folder = URL(fileURLWithPath: cwd)
+        if folder.lastPathComponent == "outputs" { folder.deleteLastPathComponent() }
+        if !cwd.isEmpty, folder.standardizedFileURL.path.hasPrefix(orgPath),
+           folder.deletingLastPathComponent().standardizedFileURL.path + "/" == orgPath,
+           isDirectory(folder) {
+            return folder
+        }
+        return full
     }
 
     /// Find `<cliSessionId>.jsonl` beneath a workspace's `.claude/projects/`.
