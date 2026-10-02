@@ -53,6 +53,23 @@ struct LibraryTests {
                                           conversationID: id, container: "Claude")
     }
 
+    @Test("Code a tool put in the person's turn, or a compaction's summary quoted, isn't harvested")
+    func codeFromInjectedTurnsIsSkipped() {
+        let fence = "```python\nfor row in rows:\n    total += row.amount\nprint(total)\n```"
+        var summary = message("user", "Summary of earlier work:\n\(fence)", uuid: "s1")
+        summary["isCompactSummary"] = .bool(true)
+        let transcript = Transcript(records: [
+            message("user", "<local-command-stdout>\(fence)</local-command-stdout>", uuid: "u1"),
+            message("user", "<task-notification>\n<summary>Done</summary>\n<result>\(fence)</result>\n</task-notification>", uuid: "u2"),
+            summary,
+            message("user", "Why does this loop miss the last row?\n\(fence)", uuid: "u3"),
+        ])
+        let artifacts = ArtifactHarvest.codeBlocks(in: transcript, conversationTitle: "Chat",
+                                                   conversationID: "c1", container: "Claude")
+        #expect(artifacts.count == 1)
+        #expect(artifacts.first?.id.hasSuffix("#1") == true)
+    }
+
     // MARK: - Fence extraction
 
     @Test("A fence with a language tag yields one artifact carrying that language")

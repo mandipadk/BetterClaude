@@ -59,6 +59,27 @@ public enum InjectedContext {
         typedText(parts(ofBlocks: [text])) == nil
     }
 
+    /// Whether `text` opens with something a tool wrote, or a note that the person interrupted.
+    public static func opensWithInjected(_ text: String) -> Bool {
+        let head = Substring(text).drop { $0.isWhitespace }
+        if head.hasPrefix(interruption) { return true }
+        if (wholeTurnOpenings + blockOpenings).contains(where: { head.hasPrefix($0) }) { return true }
+        if head.hasPrefix("</"), let end = head.firstIndex(of: ">"),
+           knownElements.contains(String(head[head.index(head.startIndex, offsetBy: 2)..<end])) {
+            return true
+        }
+        guard let (name, contentStart) = openingTag(head), knownElements.contains(name) else { return false }
+        return head.range(of: "</\(name)>", range: contentStart..<head.endIndex) != nil
+            || isToolsUnclosed(name, head[contentStart...])
+    }
+
+    /// Whether a known element that is never closed is still a tool's: an opening tag on its
+    /// own, as Codex writes before an attached image, or a notification cut short. Anything
+    /// else unclosed is the person writing about the tag, and hiding it would hide their prompt.
+    static func isToolsUnclosed(_ name: String, _ content: Substring) -> Bool {
+        content.allSatisfy(\.isWhitespace) || (notificationElements.contains(name) && content.first?.isNewline == true)
+    }
+
     /// The person's turn, from its text blocks in order.
     public static func parts(ofBlocks blocks: [String]) -> [Part] {
         for block in blocks {
@@ -112,9 +133,12 @@ public enum InjectedContext {
             if let close = rest.range(of: "</\(name)>", range: contentStart..<rest.endIndex) {
                 inner = rest[contentStart..<close.lowerBound]
                 rest = rest[close.upperBound...]
-            } else {
+            } else if isToolsUnclosed(name, rest[contentStart...]) {
                 inner = rest[contentStart...]
                 rest = ""
+            } else {
+                // Never closed, so it's the person writing about the tag, not a tool's block.
+                break
             }
             let content = inner.trimmingCharacters(in: .whitespacesAndNewlines)
             switch name {
@@ -160,11 +184,8 @@ public enum InjectedContext {
 
     static func removingElement(_ name: String, from text: String) -> String {
         var text = text
-        while let open = text.range(of: "<\(name)>") {
-            guard let close = text.range(of: "</\(name)>", range: open.upperBound..<text.endIndex) else {
-                text.removeSubrange(open.lowerBound...)
-                break
-            }
+        while let open = text.range(of: "<\(name)>"),
+              let close = text.range(of: "</\(name)>", range: open.upperBound..<text.endIndex) {
             text.removeSubrange(open.lowerBound..<close.upperBound)
         }
         return text

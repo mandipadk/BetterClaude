@@ -48,7 +48,8 @@ public enum AskRetrieval {
                               maxSources: Int = 6, budget: Int = 9_000) async throws -> (sources: [Source], context: String) {
         let words = keywords(in: question)
         guard !words.isEmpty else { return ([], "") }
-        var options = HistorySearch.Options(accountIDs: accountIDs, includeAbsent: true,
+        // Only conversations still listed: a source is there to be opened.
+        var options = HistorySearch.Options(accountIDs: accountIDs, includeAbsent: false,
                                             limit: maxSources, excerptsPerHit: 3)
         options.requireAllWords = false
         options.redactSecrets = true
@@ -96,6 +97,28 @@ public enum AskRetrieval {
     question, say so plainly in one sentence and suggest other words to search for. Keep answers \
     to a few sentences. Address the person as "you".
     """
+
+    /// The source numbers an answer cites: `[2]`, `[1, 3]` and `[1-3]` alike.
+    public static func citedNumbers(in answer: String) -> Set<Int> {
+        var cited = Set<Int>()
+        for group in answer.matches(of: /\[([0-9,\-–\s]+)\]/) {
+            var numbers = Set<Int>()
+            for piece in group.output.1.split(separator: ",") {
+                let ends = piece.split(whereSeparator: { $0 == "-" || $0 == "–" })
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                if ends.count == 1, let number = Int(ends[0]) {
+                    numbers.insert(number)
+                } else if ends.count == 2, let low = Int(ends[0]), let high = Int(ends[1]), low <= high, high - low < 50 {
+                    numbers.formUnion(low...high)
+                } else {
+                    numbers = []
+                    break
+                }
+            }
+            cited.formUnion(numbers)
+        }
+        return cited
+    }
 
     public static func prompt(question: String, context: String) -> String {
         "Excerpts from past conversations:\n\n\(context)\nQuestion: \(question)"

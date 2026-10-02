@@ -43,17 +43,21 @@ public enum TitleResolver {
     }
 
     /// The title from whole lines at each end of a transcript, in Claude Code's order: the
-    /// agent's name, a title someone gave it, Claude's title, a compaction summary, then the
-    /// first prompt. `nil` when none of them is there.
+    /// agent's name or a title someone gave it, whichever was written last, Claude's title, a
+    /// compaction summary, then the first prompt. `nil` when none of them is there.
     ///
     /// Titles are appended rather than rewritten, so the newest is the last in the file: the
     /// tail is read backwards first, and the head only for what the tail lacks.
     static func resolve(headLines: [Data], tailLines: [Data], sidecarTitle: String?) -> (title: String, source: TitleSource)? {
         var found = AssignedTitles()
         found.absorb(tailLines.reversed())
-        if found.customTitle == nil { found.customTitle = sidecarTitle.flatMap { normalize($0, limit: nil) } }
+        if found.customTitle == nil, let title = sidecarTitle.flatMap({ normalize($0, limit: nil) }) {
+            found.customTitle = title
+            if found.newestAssigned == nil { found.newestAssigned = .customTitle }
+        }
         found.absorb(headLines.reversed())
 
+        if found.newestAssigned == .customTitle, let title = found.customTitle { return (title, .customTitle) }
         if let title = found.agentName { return (title, .agentName) }
         if let title = found.customTitle { return (title, .customTitle) }
         if let title = found.aiTitle { return (title, .aiTitle) }
@@ -86,6 +90,9 @@ public enum TitleResolver {
         var aiTitle: String?
         var summary: String?
         var lastPrompt: String?
+        /// Of the agent's name and a title someone gave, the one written last: renaming a
+        /// conversation writes a title after the name.
+        var newestAssigned: TitleSource?
 
         static let markers: [Data] = ["\"agentName\"", "\"customTitle\"", "\"aiTitle\"", "\"lastPrompt\"",
                                       "\"type\":\"summary\""].map { Data($0.utf8) }
@@ -101,6 +108,9 @@ public enum TitleResolver {
                 }
                 take("agentName", into: &agentName)
                 take("customTitle", into: &customTitle)
+                if newestAssigned == nil {
+                    if agentName != nil { newestAssigned = .agentName } else if customTitle != nil { newestAssigned = .customTitle }
+                }
                 take("aiTitle", into: &aiTitle)
                 take("lastPrompt", into: &lastPrompt)
                 if record["type"]?.stringValue == "summary" { take("summary", into: &summary) }
@@ -117,9 +127,6 @@ public enum TitleResolver {
         "output-style", "permissions", "plugin", "pr-comments", "release-notes", "resume", "review", "rewind",
         "status", "statusline", "terminal-setup", "theme", "todos", "upgrade", "usage", "vim",
     ]
-
-    /// Text a tool wrote at the start of the person's turn, or a note that they interrupted.
-    static let notTyped = try! NSRegularExpression(pattern: #"^\s*(<[a-z][\w-]*[\s>]|\[Request interrupted by user)"#)
 
     /// The first thing the person asked, as Claude Code titles a session with no other
     /// title: a slash command as `/name arguments`, a shell command as `! command`, and
@@ -146,8 +153,7 @@ public enum TitleResolver {
                 if let input = InjectedContext.element("bash-input", in: text), let title = clip("! \(input)") {
                     return title
                 }
-                let range = NSRange(text.startIndex..., in: text)
-                if notTyped.firstMatch(in: text, range: range) != nil {
+                if InjectedContext.opensWithInjected(text) {
                     if typedFallback == nil {
                         typedFallback = InjectedContext.typedText(InjectedContext.parts(ofBlocks: [text])).flatMap(clip)
                     }

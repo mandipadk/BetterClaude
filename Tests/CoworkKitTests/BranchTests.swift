@@ -314,6 +314,22 @@ struct BranchTests {
         #expect(branch.resolvedTitle().title == "Tokenizer instead")
     }
 
+    @Test("A fork doesn't keep the source's agent name over its own title")
+    func dropsSourceAgentName() throws {
+        let transcript = try Self.loaded([
+            Self.turn("user", "u1", parent: nil, text: "How do I parse this?"),
+            Self.bookkeeping("agent-name", [("agentName", .string("parser-agent"))]),
+            Self.turn("assistant", "a1", parent: "u1", text: "Recursive descent."),
+        ])
+        #expect(transcript.resolvedTitle() == ("parser-agent", .agentName))
+        let cut = try #require(ConversationBranch.points(in: transcript).first { $0.id == "a1" })
+
+        let (_, branch) = try ConversationBranch.plan(transcript: transcript, cutAt: cut, newTitle: "Tokenizer instead")
+
+        #expect(!branch.records.contains { $0["type"]?.stringValue == "agent-name" })
+        #expect(branch.resolvedTitle() == ("Tokenizer instead", .customTitle))
+    }
+
     /// The picker parses whole lines from a 64 KiB window at each end, and `tailStart` is
     /// clamped to the end of the head window — so a file just over 64 KiB has a tail of a
     /// few dozen bytes starting mid-record, and every trailing record fails to parse. A

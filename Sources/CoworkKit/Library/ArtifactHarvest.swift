@@ -125,7 +125,17 @@ public enum ArtifactHarvest {
         var out: [Artifact] = []
         var ordinal = 0
         for message in ConversationText.messages(in: transcript) {
-            for block in fencedBlocks(in: message.text) {
+            // Only what the person typed: not a tool's output in their turn, nor a compaction's summary.
+            let record = transcript.records[message.index]
+            guard record["isCompactSummary"]?.boolValue != true else { continue }
+            var text = message.text
+            if message.role == .user {
+                guard let typed = record["message"].flatMap({
+                    InjectedContext.typedText(InjectedContext.parts(ofBlocks: ConversationText.textBlocks(of: $0)))
+                }) else { continue }
+                text = typed
+            }
+            for block in fencedBlocks(in: text) {
                 ordinal += 1
                 guard isSubstantial(block.content) else { continue }
                 // Stored as a file would be, newline-terminated. Without this a block and the

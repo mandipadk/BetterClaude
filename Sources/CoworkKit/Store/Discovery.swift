@@ -667,10 +667,22 @@ extension Discovery {
     }
 
     /// Records that say nothing about when the conversation was last active: everything but
-    /// what the person and Claude said.
+    /// what the person typed and what Claude said or did. A command's echo or a task's
+    /// notification arrives as the person's turn, but nobody was there.
     static func isMessage(_ record: JSONValue) -> Bool {
-        let type = record["type"]?.stringValue
-        return (type == "user" || type == "assistant") && record["isMeta"]?.boolValue != true
+        if TranscriptScanner.queuedPrompt(record) != nil { return true }
+        guard record["isMeta"]?.boolValue != true, record["isCompactSummary"]?.boolValue != true,
+              let message = record["message"] else { return false }
+        switch record["type"]?.stringValue {
+        case "assistant":
+            return (message["content"]?.arrayValue ?? []).contains { $0["type"]?.stringValue == "tool_use" }
+                || !ConversationText.plainText(of: message).isEmpty
+        case "user":
+            return InjectedContext.typedText(InjectedContext.parts(ofBlocks: ConversationText.textBlocks(of: message))) != nil
+                || !ConversationText.attachmentNames(of: message).isEmpty
+        default:
+            return false
+        }
     }
 
     /// Walk the tail backwards for the last message's time and the folder last worked in.

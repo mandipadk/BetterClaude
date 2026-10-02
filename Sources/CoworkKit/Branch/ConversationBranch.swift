@@ -297,8 +297,9 @@ public enum ConversationBranch {
                 if sidecarTypesToDrop.contains(type) { return nil }
                 // The branch gets exactly one title, and it is not the source's. Leaving the
                 // original in would let it win: the resolver takes the last `customTitle` it
-                // can parse, and the branch's own copy is not always parseable (below).
-                if type == "custom-title" { return nil }
+                // can parse, and the branch's own copy is not always parseable (below). The
+                // source's agent name would win too, unless a title follows it.
+                if type == "custom-title" || type == "agent-name" { return nil }
             }
             var r = record
             if r["sessionId"] != nil { r["sessionId"] = .string(newSessionId) }

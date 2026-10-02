@@ -84,6 +84,12 @@ struct AskPage: View {
                     .font(Theme.Font.callout)
                     .foregroundStyle(.secondary)
             }
+        case .needsWords:
+            DetailSection(title: "Nothing to search for") {
+                Text("Asking needs more specific words than “\(ask.askedQuestion)”. Add a name, a file, or a word you'd have used at the time.")
+                    .font(Theme.Font.callout)
+                    .foregroundStyle(.secondary)
+            }
         case .failed(let message):
             DetailSection(title: "No answer") {
                 Text(message).font(Theme.Font.callout).foregroundStyle(.secondary)
@@ -156,7 +162,7 @@ struct AskPage: View {
     /// The answer with its citations picked out in the accent.
     private func cited(_ text: String) -> AttributedString {
         var result = AttributedString(text)
-        let pattern = /\[\d+(?:,\s*\d+)*\]/
+        let pattern = /\[\s*\d+(?:\s*[-–]\s*\d+)?(?:\s*,\s*\d+(?:\s*[-–]\s*\d+)?)*\s*\]/
         for match in text.matches(of: pattern) {
             guard let lower = AttributedString.Index(match.range.lowerBound, within: result),
                   let upper = AttributedString.Index(match.range.upperBound, within: result) else { continue }

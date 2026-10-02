@@ -297,7 +297,7 @@ public struct ReadableConversation: Sendable {
     static func uniquingIDs(_ entries: [Entry]) -> [Entry] {
         var seen = Set<String>()
         return entries.map { entry in
-            guard !seen.insert(entry.id).inserted else {
+            guard seen.insert(entry.id).inserted else {
                 var copy = 2
                 while !seen.insert("\(entry.id)#\(copy)").inserted { copy += 1 }
                 return entry.with(id: "\(entry.id)#\(copy)")
@@ -311,7 +311,8 @@ public struct ReadableConversation: Sendable {
 ///
 /// The transcript is a tree threaded by `parentUuid`: rewinding to an earlier message and
 /// going on from there leaves the old attempt in the file, on a branch the conversation no
-/// longer follows. The conversation is the chain from its last message back to the start.
+/// longer follows. The conversation is the chain from its last message back to the start,
+/// and whatever was written after that message on it.
 struct ActiveChain {
     /// Records not to show: repeats of an earlier record, and attempts that were rewound.
     private(set) var hidden = Set<Int>()
@@ -326,26 +327,45 @@ struct ActiveChain {
             guard let uuid = record["uuid"]?.stringValue else { continue }
             if position[uuid] == nil { position[uuid] = index } else { hidden.insert(index) }
         }
-        func parent(_ record: JSONValue) -> Int? {
-            // A compaction starts a new chain but names the message it followed.
-            (record["parentUuid"]?.stringValue ?? record["logicalParentUuid"]?.stringValue).flatMap { position[$0] }
-        }
         func inTree(_ index: Int) -> Bool {
             !hidden.contains(index) && records[index]["uuid"]?.stringValue != nil
                 && Self.treeTypes.contains(records[index]["type"]?.stringValue ?? "")
         }
+        func isMessage(_ index: Int) -> Bool {
+            let type = records[index]["type"]?.stringValue
+            return inTree(index) && (type == "user" || type == "assistant")
+                && records[index]["isSidechain"]?.boolValue != true
+        }
+        // Compactions, recaps and the summary a compaction keeps are Claude's account of the
+        // conversation, not an attempt anyone rewound.
+        func isAlwaysShown(_ index: Int) -> Bool {
+            records[index]["type"]?.stringValue == "system" || records[index]["isCompactSummary"]?.boolValue == true
+        }
+        var previousMessage = [Int?](repeating: nil, count: records.count)
+        var lastMessage: Int?
+        for index in records.indices {
+            previousMessage[index] = lastMessage
+            if isMessage(index) { lastMessage = index }
+        }
+        func parent(_ index: Int) -> Int? {
+            let record = records[index]
+            if let parent = record["parentUuid"]?.stringValue.flatMap({ position[$0] }) { return parent }
+            // A compaction starts a new chain but names the message it followed. Newer versions
+            // name one written after it, which it can't have followed: the message before it is.
+            if let logical = record["logicalParentUuid"]?.stringValue.flatMap({ position[$0] }), logical < index {
+                return logical
+            }
+            guard record["type"]?.stringValue == "system", record["subtype"]?.stringValue == "compact_boundary"
+            else { return nil }
+            return previousMessage[index]
+        }
 
         // With missing links or several starts, there is no one chain to follow: file order.
-        let roots = records.indices.filter { inTree($0) && parent(records[$0]) == nil }
-        guard roots.count == 1,
-              let leaf = records.indices.last(where: { index in
-                  let type = records[index]["type"]?.stringValue
-                  return inTree(index) && (type == "user" || type == "assistant")
-                      && records[index]["isSidechain"]?.boolValue != true
-              }) else { return }
+        let roots = records.indices.filter { inTree($0) && parent($0) == nil }
+        guard roots.count == 1, let leaf = records.indices.last(where: isMessage) else { return }
         var kept = Set<Int>()
         var cursor: Int? = leaf
-        while let index = cursor, kept.insert(index).inserted { cursor = parent(records[index]) }
+        while let index = cursor, kept.insert(index).inserted { cursor = parent(index) }
         guard kept.contains(roots[0]) else { return }
 
         // Parallel tool calls leave the other parts of a reply, and their results, beside the
@@ -381,16 +401,20 @@ struct ActiveChain {
                 changed = true
             }
         }
+        // What was written on the chain after its last message, such as a recap, is still on it.
+        for index in records.indices where index > leaf && inTree(index) && !kept.contains(index) {
+            if let parent = parent(index), kept.contains(parent) { kept.insert(index) }
+        }
 
         var children: [Int: [Int]] = [:]
         var dropped: [Int] = []
-        for index in records.indices where inTree(index) && !kept.contains(index) {
+        for index in records.indices where inTree(index) && !kept.contains(index) && !isAlwaysShown(index) {
             dropped.append(index)
-            if let parent = parent(records[index]) { children[parent, default: []].append(index) }
+            if let parent = parent(index) { children[parent, default: []].append(index) }
         }
         hidden.formUnion(dropped)
         for index in dropped {
-            guard let parent = parent(records[index]), kept.contains(parent) else { continue }
+            guard let parent = parent(index), kept.contains(parent) else { continue }
             var stack = [index]
             while let next = stack.popLast() {
                 if records[next]["isSidechain"]?.boolValue != true, isReadable(records[next]) {

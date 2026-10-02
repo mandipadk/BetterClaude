@@ -157,3 +157,31 @@ extension DiscoveryAccuracyTests {
         #expect(later.failedToolUseIDs == ["toolu_1"])
     }
 }
+
+extension DiscoveryAccuracyTests {
+    @Test("The reader shows every compaction, recap and prompt in the sample Mac's conversations")
+    func readerShowsEverything() throws {
+        try FixtureHomeTests.withSample { _ in
+            let config = Discovery.defaultClaudeCodeConfigDir()
+            var total = ReaderCheck.Result()
+            for session in try Discovery.claudeCodeProjects(configDir: config)
+                .flatMap({ try Discovery.claudeCodeSessions(projectDir: $0, configDir: config) }) {
+                total = total + ReaderCheck.check(try Transcript(contentsOf: session.transcriptURL))
+            }
+            #expect(total.prompts > 0)
+            #expect(total.isComplete, "\(total)")
+        }
+    }
+
+    @Test("A prompt is anything outside complete tag blocks, however the reader classifies it")
+    func independentPromptRule() throws {
+        #expect(ReaderCheck.outsideClosedTags("<system-reminder>x</system-reminder>").isEmpty)
+        #expect(ReaderCheck.outsideClosedTags("<image> tags render blank on Safari") == "<image> tags render blank on Safari")
+        #expect(ReaderCheck.outsideClosedTags("<uploaded_files>a</uploaded_files>\nsummarise it") == "summarise it")
+        func message(_ text: String) throws -> JSONValue {
+            try JSONValue.parse(Data(#"{"content":"\#(text)"}"#.utf8))
+        }
+        #expect(try !ReaderCheck.typed(message("[Request interrupted by user]")))
+        #expect(try ReaderCheck.typed(message("[Request] for a new endpoint")))
+    }
+}

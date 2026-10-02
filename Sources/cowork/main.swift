@@ -8,7 +8,9 @@ let usage = """
 cowork — move Claude Cowork sessions between Claude Desktop installs and Claude Code
 
 USAGE
-  cowork check
+  cowork check [--reader]
+      --reader: for every conversation, whether the reader shows every compaction, recap and
+      prompt the transcript holds (counts only).
       Check every count against the disk: what each Claude lists, what was found but left
       out and why, and anything that doesn't add up.
 
@@ -406,6 +408,32 @@ func cmdLive() {
               + "\(place.padding(toLength: 10, withPad: " ", startingAt: 0))for \(minutes) min")
     }
     print("\(sessions.count) running.")
+}
+
+func cmdCheckReader() {
+    let snapshot = runBlocking { await Catalog().snapshot() }
+    var total = ReaderCheck.Result()
+    var incomplete = 0, read = 0, unexplained = 0
+    for conversation in snapshot.conversations where conversation.external == nil {
+        guard let url = conversation.transcriptURL, let transcript = try? Transcript(contentsOf: url) else { continue }
+        let result = ReaderCheck.check(transcript)
+        read += 1
+        total = total + result
+        if !result.isComplete { incomplete += 1 }
+        // Prompts missing where nothing was rewound can't be on a rewound attempt.
+        if result.promptsShown < result.prompts, result.rewound == 0 { unexplained += 1 }
+        if result.compactionsShown < result.compactions || result.recapsShown < result.recaps { unexplained += 1 }
+    }
+    print("Read \(read) conversations.")
+    print("  Compactions: \(total.compactionsShown) shown of \(total.compactions)")
+    print("  Recaps: \(total.recapsShown) shown of \(total.recaps)")
+    print("  Prompts: \(total.promptsShown) shown of \(total.prompts)")
+    print("  Rewound attempts folded into a line: \(total.rewound) (prompts in them aren't shown on their own)")
+    if incomplete == 0 {
+        print("The reader shows everything.")
+    } else {
+        print("\(incomplete) conversations show less than their transcript holds; \(unexplained) of them can't be explained by a rewound attempt.")
+    }
 }
 
 func cmdCheck() {
@@ -885,7 +913,7 @@ let args = Args(Array(argv.dropFirst()))
 do {
     switch command {
     case "installs": cmdInstalls()
-    case "check": cmdCheck()
+    case "check": args.flags.contains("reader") ? cmdCheckReader() : cmdCheck()
     case "storage": cmdStorage()
     case "check-update": cmdCheckUpdate(args)
     case "stores": try cmdStores()

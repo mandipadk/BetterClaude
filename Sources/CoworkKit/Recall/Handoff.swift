@@ -25,7 +25,8 @@ public enum Handoff {
 
     public static func material(for conversationID: String, index: HistoryIndex) async throws -> HandoffMaterial? {
         guard let row = try await index.rows("""
-            SELECT title, kind, install_name, project_path, first_activity, last_activity, message_count
+            SELECT title, kind, install_name, project_path, first_activity, last_activity,
+                   (SELECT COUNT(*) FROM messages WHERE conversation_id = conversations.id AND kind = 'message')
             FROM conversations WHERE id = ?
             """, [.text(conversationID)]).first else { return nil }
         let id = SQLiteValue.text(conversationID)
@@ -33,8 +34,13 @@ public enum Handoff {
             try await index.rows(sql, [id]).first?.text(0)
         }
         let firstAsk = try await text("SELECT text FROM messages WHERE conversation_id = ? AND role = 'user' AND kind = 'message' ORDER BY ordinal LIMIT 1")
-        let lastAsk = try await text("SELECT text FROM messages WHERE conversation_id = ? AND role = 'user' AND kind = 'message' ORDER BY ordinal DESC LIMIT 1")
-        let lastReply = try await text("SELECT text FROM messages WHERE conversation_id = ? AND role = 'assistant' AND kind = 'message' ORDER BY ordinal DESC LIMIT 1")
+        let last = try await index.rows("SELECT text, ordinal FROM messages WHERE conversation_id = ? AND role = 'user' AND kind = 'message' ORDER BY ordinal DESC LIMIT 1", [id]).first
+        let lastAsk = last?.text(0)
+        // The reply to that ask, if it got one: a reply from before it answers something else.
+        let lastReply = try await index.rows("""
+            SELECT text FROM messages WHERE conversation_id = ? AND role = 'assistant' AND kind = 'message' AND ordinal > ?
+            ORDER BY ordinal DESC LIMIT 1
+            """, [id, .int(last?.int(1) ?? -1)]).first?.text(0)
         let compaction = try await text("SELECT text FROM messages WHERE conversation_id = ? AND kind = 'compaction' ORDER BY ordinal DESC LIMIT 1")
         let recaps = try await index.rows("""
             SELECT text FROM messages WHERE conversation_id = ? AND kind = 'recap' ORDER BY ordinal DESC LIMIT 4

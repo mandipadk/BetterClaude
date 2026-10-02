@@ -17,6 +17,8 @@ final class AskModel {
         case done
         /// Nothing in the history matched the question's words.
         case nothingFound
+        /// The question has no words specific enough to search for.
+        case needsWords
         case failed(String)
     }
 
@@ -35,8 +37,7 @@ final class AskModel {
     /// cites none.
     var shownSources: [AskRetrieval.Source] {
         guard phase == .done else { return sources }
-        let cited = Set(answer.matches(of: /\d+/).compactMap { Int($0.output) }
-            .filter { number in answer.contains("[\(number)") || answer.contains(", \(number)]") })
+        let cited = AskRetrieval.citedNumbers(in: answer)
         let chosen = sources.filter { cited.contains($0.number) }
         return chosen.isEmpty ? sources : chosen
     }
@@ -71,6 +72,11 @@ final class AskModel {
         askedQuestion = question
         answer = ""
         sources = []
+        guard !AskRetrieval.keywords(in: question).isEmpty else {
+            task = nil
+            phase = .needsWords
+            return
+        }
         phase = .searching
         task = Task {
             do {

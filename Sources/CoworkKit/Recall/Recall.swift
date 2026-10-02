@@ -146,8 +146,8 @@ public struct Recall: Sendable {
             budget -= line.count
             last = message.ordinal
         }
-        if last + 1 < conversation.messageCount {
-            out += "\n(\(conversation.messageCount - last - 1) more messages. Continue with start=\(last + 1).)"
+        if last + 1 < conversation.entryCount {
+            out += "\n(\(conversation.entryCount - last - 1) more messages. Continue with start=\(last + 1).)"
         }
         return out
     }
@@ -283,20 +283,26 @@ public struct Recall: Sendable {
         let title: String
         let projectPath: String?
         let lastActivity: Date?
+        /// What each side said, without the compactions and recaps between.
         let messageCount: Int
+        /// Every entry read_conversation pages through, compactions and recaps included.
+        let entryCount: Int
     }
 
     /// A conversation by session id or index id, only if its account may be read.
     func find(_ id: String) async throws -> Found? {
         guard !accounts.isEmpty else { return nil }
         let rows = try await index.rows("""
-            SELECT id, session_id, title, project_path, last_activity, message_count FROM conversations
+            SELECT id, session_id, title, project_path, last_activity, message_count,
+                   (SELECT COUNT(*) FROM messages WHERE conversation_id = conversations.id AND kind = 'message')
+            FROM conversations
             WHERE (session_id = ? OR id = ?) AND account_id IN (\(accounts.map { _ in "?" }.joined(separator: ",")))
             ORDER BY present DESC, message_count DESC, last_activity DESC LIMIT 1
             """, [.text(id), .text(id)] + accounts.sorted().map(SQLiteValue.text))
         guard let row = rows.first else { return nil }
         return Found(id: row.text(0) ?? id, sessionID: row.text(1), title: row.text(2) ?? "Untitled",
-                     projectPath: row.text(3), lastActivity: row.date(4), messageCount: Int(row.int(5)))
+                     projectPath: row.text(3), lastActivity: row.date(4), messageCount: Int(row.int(6)),
+                     entryCount: Int(row.int(5)))
     }
 
     /// The id to give Claude for each conversation: its session id, which is what `claude

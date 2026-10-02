@@ -574,6 +574,8 @@ public enum Importer {
             transcript.mapRecords { record in
                 var r = record
                 if let type = r["type"]?.stringValue, Self.sidecarTypesToDrop.contains(type) { return nil }
+                // The title written below names it; an agent name from elsewhere would outrank it.
+                if r["type"]?.stringValue == "agent-name" { return nil }
                 if r["cwd"] != nil { r["cwd"] = .string(computation.newCwd) }
                 if r["sessionId"] != nil { r["sessionId"] = .string(computation.cliSessionId) }
                 if r["session_id"] != nil { r["session_id"] = .string(computation.cliSessionId) }

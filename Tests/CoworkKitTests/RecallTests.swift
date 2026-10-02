@@ -138,3 +138,75 @@ struct RecallTests {
         }
     }
 }
+
+@Suite("Handoff and Ask details")
+struct HandoffDetailTests {
+
+    /// One conversation whose rows include a compaction and a recap, and end on an ask.
+    static func index(endingWithReply: Bool) async throws -> HistoryIndex {
+        let index = try HistoryIndex(url: nil)
+        let rows: [(String, String, String)] = [
+            ("user", "message", "Plan the migration"),
+            ("assistant", "message", "Three steps."),
+            ("user", "compaction", "We planned a migration."),
+            ("system", "recap", "Step one is next."),
+            ("user", "message", "Start step one"),
+        ] + (endingWithReply ? [("assistant", "message", "Step one is done.")] : [])
+        _ = try await index.rows("""
+            INSERT INTO conversations (id, session_id, install_id, account_id, kind, title, last_activity, present, message_count)
+            VALUES ('c1', 's1', 'install', 'acct', 'claudeCode', 'Migration', ?, 1, ?)
+            """, [.date(Date()), .int(Int64(rows.count))])
+        for (ordinal, row) in rows.enumerated() {
+            _ = try await index.rows("INSERT INTO messages (conversation_id, ordinal, role, kind, text) VALUES ('c1', ?, ?, ?, ?)",
+                                     [.int(Int64(ordinal)), .text(row.0), .text(row.1), .text(row.2)])
+        }
+        return index
+    }
+
+    @Test("A handoff leaves out the reply when the conversation ends on an unanswered ask")
+    func unansweredAsk() async throws {
+        let open = try #require(try await Handoff.material(for: "c1", index: try await Self.index(endingWithReply: false)))
+        #expect(open.lastAsk == "Start step one")
+        #expect(open.lastReply == nil)
+        #expect(!Handoff.draft(open).contains("**Claude:**"))
+
+        let answered = try #require(try await Handoff.material(for: "c1", index: try await Self.index(endingWithReply: true)))
+        #expect(answered.lastReply == "Step one is done.")
+    }
+
+    @Test("Message counts leave out compactions and recaps")
+    func messageCounts() async throws {
+        let index = try await Self.index(endingWithReply: true)
+        let material = try #require(try await Handoff.material(for: "c1", index: index))
+        #expect(material.messageCount == 4)
+        #expect(Handoff.draft(material).contains(". 4 messages"))
+
+        let read = try await Recall(index: index, accounts: ["acct"]).read(id: "s1", from: 0, limit: 2)
+        #expect(read.contains("messages: 4\n"))
+        #expect(read.contains("(4 more messages. Continue with start=2.)"))
+    }
+
+    @Test("Every source an answer cites is listed, ranges and lists included")
+    func citations() {
+        #expect(AskRetrieval.citedNumbers(in: "You chose SQLite [1]. Later [2, 4] and [5-7] revisited it.")
+                == [1, 2, 4, 5, 6, 7])
+        #expect(AskRetrieval.citedNumbers(in: "See [3–4] and [ 6 ]") == [3, 4, 6])
+        #expect(AskRetrieval.citedNumbers(in: "An array a[i] and [x, 1] cite nothing").isEmpty)
+    }
+
+    @Test("A question of only common words has nothing to search for")
+    func onlyCommonWords() async throws {
+        #expect(AskRetrieval.keywords(in: "What did we decide about that?").isEmpty)
+        let index = try await Self.index(endingWithReply: true)
+        let found = try await AskRetrieval.gather(question: "What did we decide about that?", index: index)
+        #expect(found.sources.isEmpty)
+    }
+
+    @Test("Ask only offers sources that are still there to open")
+    func absentSourcesAreLeftOut() async throws {
+        let index = try await Self.index(endingWithReply: true)
+        #expect(try await AskRetrieval.gather(question: "migration plan", index: index).sources.map(\.conversationID) == ["c1"])
+        _ = try await index.rows("UPDATE conversations SET present = 0 WHERE id = 'c1'")
+        #expect(try await AskRetrieval.gather(question: "migration plan", index: index).sources.isEmpty)
+    }
+}

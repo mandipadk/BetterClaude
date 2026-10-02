@@ -93,6 +93,45 @@ struct InjectedTurnTests {
         #expect(InjectedContext.parts(ofBlocks: ["The following is the Codex agent history", "Fix it"]).isEmpty)
     }
 
+    @Test("A tag the person typed without closing it is part of their prompt")
+    func unclosedTagsAreTyped() throws {
+        for text in ["<image> tags render blank in the preview", "<skill> block disappears after reload",
+                     "<permissions> never closes here", "<system-reminder> shows up in my notes",
+                     "Why does Fix it<system-reminder> stay?"] {
+            #expect(InjectedContext.typedText(InjectedContext.parts(ofBlocks: [text])) == text, "\(text)")
+            #expect(!InjectedContext.contains(text), "\(text)")
+        }
+        let parts = InjectedContext.parts(ofBlocks: ["<command-name>/review</command-name>\n<command-args></command-args>\n<skill> is empty"])
+        #expect(parts == [.command(name: "/review", arguments: ""), .typed("<skill> is empty")])
+
+        let records = try Lines.records([
+            Lines.user("u1", parent: nil, Lines.string("<image> tags render blank in the preview")),
+            Lines.assistant("a1", parent: "u1", "They need a src."),
+        ])
+        let readable = ReadableConversation(transcript: Transcript(records: records))
+        #expect(readable.messages.map(\.text) == ["<image> tags render blank in the preview", "They need a src."])
+        var scan = TranscriptScan()
+        for record in records { TranscriptScanner.absorb(record, into: &scan) }
+        #expect(scan.messages.first?.text == "<image> tags render blank in the preview")
+    }
+
+    @Test("A block a tool wrote and closed is still hidden, with the prompt after it kept")
+    func closedBlocksStayHidden() {
+        let parts = InjectedContext.parts(ofBlocks: ["<skill>\nname: x\n</skill>\nUse it on the parser",
+                                                     "<permissions>\nallow all\n</permissions>"])
+        #expect(InjectedContext.typedText(parts) == "Use it on the parser")
+        #expect(InjectedContext.typedText(InjectedContext.parts(ofBlocks: ["Fix it<system-reminder>Plan.</system-reminder>"]))
+                == "Fix it")
+        #expect(InjectedContext.opensWithInjected("<skill>\nname: x\n</skill>"))
+        #expect(InjectedContext.opensWithInjected("<image name=[Image #1]>"))
+        #expect(InjectedContext.opensWithInjected("[Request interrupted by user]"))
+        // A notification cut short is still the tool's.
+        #expect(InjectedContext.contains("<task-notification>\n<task-id>1</task-id>"))
+        #expect(!InjectedContext.contains("<task-notification> never fires for me"))
+        #expect(!InjectedContext.opensWithInjected("<image> tags render blank"))
+        #expect(!InjectedContext.opensWithInjected("<div> centering is broken"))
+    }
+
     @Test("A prompt queued while Claude worked is the person's; a queued notification isn't")
     func queuedPrompts() throws {
         let records = try Lines.records([
@@ -154,6 +193,7 @@ struct ActiveChainTests {
         ])
         let readable = ReadableConversation(transcript: Transcript(records: records))
         #expect(readable.messages.map(\.text) == ["First", "Reply"])
+        #expect(readable.messages.map(\.id) == ["u1", "a1"])
 
         var scan = TranscriptScan()
         for record in records { TranscriptScanner.absorb(record, into: &scan) }
@@ -163,7 +203,7 @@ struct ActiveChainTests {
             .notice(.init(id: "n", kind: .command, text: "Ran /a", timestamp: nil)),
             .notice(.init(id: "n", kind: .command, text: "Ran /b", timestamp: nil)),
         ])
-        #expect(Set(repeated.map(\.id)).count == 2)
+        #expect(repeated.map(\.id) == ["n", "n#2"])
     }
 
     @Test("A rewound attempt is left out, with a line where it began")
@@ -206,6 +246,55 @@ struct ActiveChainTests {
         let tools = readable.entries.compactMap { if case .tools(_, let names) = $0 { return names }; return nil }
         #expect(tools == [["Read", "Read"]])
         #expect(readable.entries.contains { if case .compaction(let c) = $0 { return c.summary == "We read two files." }; return false })
+    }
+
+    @Test("A compaction in today's format, and a recap after the last message, stay on the conversation")
+    func currentCompactionAndTrailingRecap() throws {
+        let records = try Lines.records([
+            Lines.user("u1", parent: nil, Lines.string("Plan the migration"), at: 1),
+            Lines.assistant("a1", parent: "u1", "Three steps.", at: 2),
+            #"{"type":"attachment","uuid":"x1","parentUuid":"a1","timestamp":"2026-09-01T10:00:03.000Z","attachment":{"type":"hook_success"}}"#,
+            #"{"type":"permission-mode","permissionMode":"default","sessionId":"s"}"#,
+            // Today's boundary names a record written after it as the one it followed.
+            #"{"type":"system","subtype":"compact_boundary","uuid":"c1","parentUuid":null,"logicalParentUuid":"x3","timestamp":"2026-09-01T10:00:04.000Z","compactMetadata":{"trigger":"auto","preTokens":160000,"postTokens":9000}}"#,
+            #"{"type":"attachment","uuid":"x2","parentUuid":"x1","timestamp":"2026-09-01T10:00:04.000Z","attachment":{"type":"hook_success"}}"#,
+            #"{"type":"user","uuid":"s1","parentUuid":"c1","isCompactSummary":true,"timestamp":"2026-09-01T10:00:04.000Z","message":{"role":"user","content":"We planned a three-step migration."}}"#,
+            #"{"type":"attachment","uuid":"x3","parentUuid":"s1","timestamp":"2026-09-01T10:00:05.000Z","attachment":{"type":"hook_success"}}"#,
+            Lines.user("u2", parent: "x2", Lines.string("Start with step one"), at: 6),
+            Lines.assistant("a2", parent: "u2", "Step one is done.", at: 7),
+            #"{"type":"system","subtype":"away_summary","uuid":"r1","parentUuid":"a2","timestamp":"2026-09-01T10:00:30.000Z","content":"Step one of the migration is done."}"#,
+        ])
+        let readable = ReadableConversation(transcript: Transcript(records: records))
+        #expect(readable.notices.isEmpty)
+        #expect(readable.messages.map(\.text) == ["Plan the migration", "Three steps.", "Start with step one",
+                                                  "Step one is done."])
+        guard readable.entries.count == 6, case .compaction(let compaction) = readable.entries[2],
+              case .recap(_, let recap, _) = readable.entries[5] else {
+            Issue.record("expected the compaction after the first reply and the recap at the end")
+            return
+        }
+        #expect(compaction.id == "c1" && compaction.trigger == "auto")
+        #expect(compaction.summary == "We planned a three-step migration.")
+        #expect(recap == "Step one of the migration is done.")
+    }
+
+    @Test("A rewound attempt is still left out after a compaction")
+    func rewoundAfterCompaction() throws {
+        let records = try Lines.records([
+            Lines.user("u1", parent: nil, Lines.string("Write a parser")),
+            Lines.assistant("a1", parent: "u1", "Here's a parser."),
+            #"{"type":"system","subtype":"compact_boundary","uuid":"c1","parentUuid":null,"logicalParentUuid":"a1","compactMetadata":{"trigger":"manual"}}"#,
+            #"{"type":"user","uuid":"s1","parentUuid":"c1","isCompactSummary":true,"message":{"role":"user","content":"A parser was written."}}"#,
+            Lines.user("u2", parent: "s1", Lines.string("Make it recursive")),
+            Lines.assistant("a2", parent: "u2", "Now it's recursive."),
+            Lines.user("u3", parent: "s1", Lines.string("Make it iterative")),
+            Lines.assistant("a3", parent: "u3", "Now it's iterative."),
+        ])
+        let readable = ReadableConversation(transcript: Transcript(records: records))
+        #expect(readable.messages.map(\.text) == ["Write a parser", "Here's a parser.", "Make it iterative",
+                                                  "Now it's iterative."])
+        #expect(readable.notices.map(\.kind) == [.rewound])
+        #expect(readable.entries.contains { if case .compaction(let c) = $0 { return c.summary == "A parser was written." }; return false })
     }
 
     @Test("Without one chain to follow, everything shows in file order")
@@ -298,6 +387,20 @@ struct TitleRulesTests {
         #expect(try title([summary, prompt, ai]) == ("Launch plan", .aiTitle))
         #expect(try title([summary, prompt, ai, custom]) == ("Q4 launch", .customTitle))
         #expect(try title([summary, prompt, ai, custom, agent]) == ("launch-bot", .agentName))
+        // Renaming writes a title after the agent's name, and the newer one is shown.
+        #expect(try title([summary, prompt, ai, agent, custom]) == ("Q4 launch", .customTitle))
+    }
+
+    @Test("A first prompt that opens with a tag is a prompt unless a tool wrote the tag")
+    func firstPromptOpeningWithATag() throws {
+        #expect(try title([Lines.user("u1", parent: nil, Lines.string("<div> centering is broken on Safari"))])
+                == ("<div> centering is broken on Safari", .firstPrompt))
+        #expect(try title([Lines.user("u1", parent: nil, Lines.string("<image> tags render blank")),
+                           Lines.user("u2", parent: "u1", Lines.string("Later prompt"))])
+                == ("<image> tags render blank", .firstPrompt))
+        #expect(try title([Lines.user("u1", parent: nil, Lines.string("<system-reminder>Plan.</system-reminder>")),
+                           Lines.user("u2", parent: "u1", Lines.string("Fix the redirect"))])
+                == ("Fix the redirect", .firstPrompt))
     }
 
     @Test("A title kept beside the transcript counts when the transcript has none")
@@ -344,6 +447,22 @@ struct TitleRulesTests {
             try FileManager.default.setAttributes([.modificationDate: early], ofItemAtPath: url.path)
             let clamped = try #require(try Discovery.claudeCodeSessions(projectDir: project, configDir: project).first)
             #expect(abs(clamped.lastTimestamp.timeIntervalSince(early)) < 1)
+        }
+    }
+
+    @Test("Last active ignores a command's echo and a task's notification after the last message")
+    func lastActiveIgnoresInjectedTurns() throws {
+        try withProject { project in
+            let url = project.appendingPathComponent("1f0e0000-0000-4000-8000-000000000006.jsonl")
+            try write([
+                Lines.user("u1", parent: nil, Lines.string("Hello"), at: 1),
+                #"{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-09-01T10:00:03.000Z","message":{"id":"m1","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}"#,
+                Lines.user("u2", parent: "a1", Lines.string("<task-notification>\n<summary>Done</summary>\n</task-notification>"), at: 40),
+                Lines.user("u3", parent: "u2", Lines.string("<command-name>/cost</command-name>\n<command-args></command-args>"), at: 41),
+                Lines.user("u4", parent: "u3", Lines.string("<local-command-stdout>$0.10</local-command-stdout>"), at: 42),
+            ], to: url)
+            let session = try #require(try Discovery.claudeCodeSessions(projectDir: project, configDir: project).first)
+            #expect(session.lastTimestamp == Transcript.parseTimestamp("2026-09-01T10:00:03.000Z"))
         }
     }
 
