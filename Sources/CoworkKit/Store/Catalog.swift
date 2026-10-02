@@ -298,6 +298,10 @@ public actor Catalog {
         conversations.sort {
             $0.lastActivity == $1.lastActivity ? $0.id < $1.id : $0.lastActivity > $1.lastActivity
         }
+        // A list with two rows of one id draws blank rows and selects the wrong one; keep the
+        // newest of any that collide.
+        var seen = Set<String>()
+        conversations.removeAll { !seen.insert($0.id).inserted }
         var snapshot = CatalogSnapshot(installs: installs, accounts: accounts,
                                        conversations: conversations, paths: paths)
         snapshot.claudeCodeAccount = cliAccount

@@ -249,7 +249,13 @@ public actor HistoryIndex {
         try database.transaction {
             let present = Set(snapshot.conversations.map(\.id))
             for id in stored.keys where !present.contains(id) {
-                try database.run("UPDATE conversations SET present = 0 WHERE id = ?", [.text(id)])
+                // Codex threads that stop being listed are sub-agents, reviews or other programs'
+                // runs, not deleted conversations: they leave the index rather than linger in search.
+                if id.hasPrefix(ExternalConversation.Source.codex.rawValue + ":") {
+                    try forget(id)
+                } else {
+                    try database.run("UPDATE conversations SET present = 0 WHERE id = ?", [.text(id)])
+                }
             }
             for conversation in snapshot.conversations {
                 try upsertMetadata(conversation, installName: snapshot.install(conversation.installID)?.name)
@@ -407,6 +413,15 @@ public actor HistoryIndex {
             """, [.text(conversation.id), .text(conversation.cliSessionId), .text(conversation.installID),
                   .optional(installName), .optional(conversation.accountID), .text(conversation.kindName), .text(conversation.title), .optional(conversation.projectPath),
                   .optional(conversation.model), .date(conversation.lastActivity)])
+    }
+
+    /// Removes a conversation and everything indexed from it.
+    private func forget(_ id: String) throws {
+        for table in ["messages", "usage", "tool_calls", "file_versions", "health", "pull_requests",
+                      "model_markers", "subagents", "conversations"] {
+            let column = table == "conversations" ? "id" : "conversation_id"
+            try database.run("DELETE FROM \(table) WHERE \(column) = ?", [.text(id)])
+        }
     }
 
     private func write(_ scan: TranscriptScan, for conversation: ConversationRef, url: URL,

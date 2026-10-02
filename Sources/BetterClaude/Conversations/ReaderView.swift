@@ -66,6 +66,7 @@ struct ReaderView: View {
                         switch entry {
                         case .message(let message):
                             MessageView(message: message,
+                                        assistantName: reader.conversation?.external?.source == .codex ? "Codex" : "Claude",
                                         claims: message.role == .user ? [] : message.timestamp.flatMap { reader.doubtfulClaims[$0] } ?? [],
                                         onFork: reader.forkPoints[message.id] == nil ? nil : {
                                             services.forking = ForkRequest(messageID: message.id)
@@ -232,6 +233,8 @@ struct FindField: View {
 
 struct MessageView: View {
     let message: MessageText
+    /// Who replied: Claude, or Codex for a Codex conversation.
+    var assistantName = "Claude"
     /// Claims in this reply that the transcript doesn't back.
     var claims: [Claims.Claim] = []
     var onFork: (() -> Void)? = nil
@@ -240,7 +243,7 @@ struct MessageView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(message.role == .user ? "You" : "Claude")
+                Text(message.role == .user ? "You" : assistantName)
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(Theme.Surface.primary)
                 if let time = message.timestamp {

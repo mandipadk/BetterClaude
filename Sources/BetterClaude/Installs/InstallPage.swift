@@ -7,6 +7,7 @@ struct InstallPage: View {
     @Environment(AppServices.self) private var services
     let install: Install
     @State private var confirmingRemoval = false
+    @State private var codexSurvey: CodexSessions.Survey?
     @AppStorage("installTab") private var tab: InstallTab = .conversations
 
     enum InstallTab: String, CaseIterable, Identifiable {
@@ -71,6 +72,10 @@ struct InstallPage: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollContentBackground(.hidden)
+        .task(id: install.id) {
+            guard install.kind == .external(.codex) else { codexSurvey = nil; return }
+            codexSurvey = await Task.detached(priority: .utility) { CodexSessions.survey() }.value
+        }
         .confirmationDialog(removalTitle, isPresented: $confirmingRemoval, titleVisibility: .visible) {
             Button(install.kind == .external(.otherMac) ? "Remove History" : "Remove Conversations", role: .destructive) {
                 if install.kind == .external(.otherMac) { services.removeOtherMac(install) } else { services.removeClaudeWebImport() }
@@ -187,7 +192,7 @@ struct InstallPage: View {
 
     private var conversations: some View {
         let list = services.snapshot.conversations(in: install.id)
-        return DetailSection(title: "Conversations", subtitle: conversationsSubtitle(list)) {
+        return DetailSection(title: "Conversations", subtitle: conversationsSubtitle(list) + leftOut) {
             if !list.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(list.prefix(5)) { conversation in
@@ -219,6 +224,21 @@ struct InstallPage: View {
                 }
             }
         }
+    }
+
+    /// For Codex: the session files that aren't a conversation, so the count can be trusted.
+    private var leftOut: String {
+        guard let survey = codexSurvey else { return "" }
+        var parts: [String] = []
+        if let n = survey.counts[.subagent] { parts.append("\(n) thread\(n == 1 ? "" : "s") Codex started itself") }
+        if let n = survey.counts[.review] { parts.append("\(n) automatic review\(n == 1 ? "" : "s") of commands") }
+        for (program, n) in survey.automatedBy.sorted(by: { $0.value > $1.value }) {
+            parts.append("\(n) run\(n == 1 ? "" : "s") by \(program)")
+        }
+        guard !parts.isEmpty else { return "" }
+        let joined = parts.count == 1 ? parts[0]
+            : parts.dropLast().joined(separator: ", ") + " and " + parts[parts.count - 1]
+        return " Not listed: " + joined + "."
     }
 
     private func conversationsSubtitle(_ list: [ConversationRef]) -> String {

@@ -62,15 +62,59 @@ public enum CodexSessions {
         paths.home.appendingPathComponent(".codex", isDirectory: true)
     }
 
+    /// What a session file is. Codex writes one for every thread, and most of them aren't a
+    /// conversation a person had.
+    public enum Kind: String, Sendable, Hashable {
+        /// Started by a person in one of Codex's own apps.
+        case conversation
+        /// A thread Codex started for a conversation: a sub-agent, or a fork it made to run one.
+        case subagent
+        /// Codex's automatic review of a command it wanted to run.
+        case review
+        /// Started by another program driving Codex.
+        case automated
+    }
+
+    /// The clients a person types into. Anything else driving Codex is a program.
+    static let interactiveOriginators: Set<String> = [
+        "Codex Desktop", "codex-tui", "codex_cli_rs", "codex_vscode", "codex_exec", "codex-cli",
+    ]
+
+    /// How many session files of each kind there are, and which programs ran the automated ones.
+    public struct Survey: Sendable, Equatable {
+        public var counts: [Kind: Int] = [:]
+        public var automatedBy: [String: Int] = [:]
+    }
+
+    public static func survey(paths: HostPaths = .current) -> Survey {
+        var survey = Survey()
+        for url in sessionFiles(paths: paths) {
+            guard let head = headOf(url) else { continue }
+            survey.counts[head.kind, default: 0] += 1
+            if head.kind == .automated { survey.automatedBy[head.originator ?? "another program", default: 0] += 1 }
+        }
+        return survey
+    }
+
+    static func sessionFiles(paths: HostPaths) -> [URL] {
+        guard let walker = FileManager.default.enumerator(
+            at: home(paths: paths).appendingPathComponent("sessions", isDirectory: true),
+            includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) else { return [] }
+        var files: [URL] = []
+        for case let url as URL in walker where url.lastPathComponent.hasPrefix("rollout-") && url.pathExtension == "jsonl" {
+            files.append(url)
+        }
+        return files
+    }
+
+    /// Conversations people had in Codex. Sub-agents, automatic reviews and runs by other
+    /// programs are left out; ``survey(paths:)`` counts them.
     public static func conversations(paths: HostPaths = .current) -> [ExternalConversation] {
         let root = home(paths: paths)
         let titles = threadNames(root)
-        guard let walker = FileManager.default.enumerator(
-            at: root.appendingPathComponent("sessions", isDirectory: true),
-            includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) else { return [] }
         var found: [ExternalConversation] = []
-        for case let url as URL in walker where url.lastPathComponent.hasPrefix("rollout-") && url.pathExtension == "jsonl" {
-            guard let head = headOf(url) else { continue }
+        for url in sessionFiles(paths: paths) {
+            guard let head = headOf(url), head.kind == .conversation else { continue }
             let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
             let title = titles[head.id] ?? head.firstPrompt.map { clip($0, 90) }
                 ?? "Codex session" + (head.cwd.map { " in \(URL(fileURLWithPath: $0).lastPathComponent)" } ?? "")
@@ -87,6 +131,21 @@ public enum CodexSessions {
         let cwd: String?
         let model: String?
         let firstPrompt: String?
+        var originator: String? = nil
+        var kind: Kind = .conversation
+    }
+
+    /// Reads `session_meta`: `source` is a string for a thread a client started, or
+    /// `{"subagent": {"thread_spawn": …}}` / `{"subagent": {"other": "guardian"}}` for ones Codex
+    /// started itself; `thread_source` says the same in newer versions.
+    static func kind(source: JSONValue?, threadSource: String?, originator: String?, model: String?) -> Kind {
+        if threadSource == "guardian_review" || model == "codex-auto-review" { return .review }
+        if let subagent = source?["subagent"] {
+            return subagent["other"]?.stringValue == "guardian" ? .review : .subagent
+        }
+        if threadSource == "subagent" { return .subagent }
+        if let originator, !interactiveOriginators.contains(originator) { return .automated }
+        return .conversation
     }
 
     /// The session header and first real prompt, from the start of the file.
@@ -95,14 +154,19 @@ public enum CodexSessions {
         defer { try? handle.close() }
         let data = (try? handle.read(upToCount: 256 * 1024)) ?? Data()
         var id: String?, started: Date?, cwd: String?, model: String?, prompt: String?
+        var source: JSONValue?, threadSource: String?, originator: String?
         for line in data.split(separator: 0x0A) {
             guard let record = try? JSONValue.parse(Data(line)) else { continue }
             let payload = record["payload"]
             switch record["type"]?.stringValue {
-            case "session_meta":
+            // A fork's file carries a copy of its parent's header further down; the first is its own.
+            case "session_meta" where id == nil:
                 id = payload?["id"]?.stringValue ?? payload?["session_id"]?.stringValue
                 started = (payload?["timestamp"]?.stringValue ?? record["timestamp"]?.stringValue).flatMap(Transcript.parseTimestamp)
                 cwd = payload?["cwd"]?.stringValue
+                source = payload?["source"]
+                threadSource = payload?["thread_source"]?.stringValue
+                originator = payload?["originator"]?.stringValue
             case "turn_context":
                 model = model ?? payload?["model"]?.stringValue
             case "response_item" where prompt == nil:
@@ -113,7 +177,8 @@ public enum CodexSessions {
             if id != nil, prompt != nil, model != nil { break }
         }
         guard let id else { return nil }
-        return Head(id: id, started: started, cwd: cwd, model: model, firstPrompt: prompt)
+        return Head(id: id, started: started, cwd: cwd, model: model, firstPrompt: prompt, originator: originator,
+                    kind: kind(source: source, threadSource: threadSource, originator: originator, model: model))
     }
 
     /// `session_index.jsonl`: the names Codex shows for its threads.
@@ -160,7 +225,7 @@ public enum CodexSessions {
             }
             let payload = record["payload"]
             switch (record["type"]?.stringValue, payload?["type"]?.stringValue) {
-            case ("session_meta", _):
+            case ("session_meta", _) where scan.cwd == nil:
                 scan.cwd = payload?["cwd"]?.stringValue
                 scan.gitBranch = payload?["git"]?["branch"]?.stringValue
             case ("response_item", "message"):

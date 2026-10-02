@@ -94,6 +94,43 @@ public struct FixtureHome {
         try touch(file, at: start.addingTimeInterval(60))
         try Data((#"{"id":"\#(id)","thread_name":"Refunds post twice on webhook retry","updated_at":"\#(stamp(60))"}"# + "\n").utf8)
             .write(to: home.appendingPathComponent("session_index.jsonl"))
+
+        // Threads Codex writes that aren't a conversation a person had: a sub-agent forked from
+        // the session above (its file repeats the parent's header after its own), an automatic
+        // review of a command, and a run by another program driving Codex.
+        func write(_ name: String, _ records: [[String: Any]]) throws {
+            let lines = try records.map { String(decoding: try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]), as: UTF8.self) }
+            let url = day.appendingPathComponent(name)
+            try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: url)
+            try touch(url, at: start.addingTimeInterval(90))
+        }
+        let subagent = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a60"
+        try write("rollout-2026-09-20T10-01-00-\(subagent).jsonl", [
+            ["timestamp": stamp(30), "type": "session_meta",
+             "payload": ["id": subagent, "timestamp": stamp(30), "cwd": cwd, "originator": "codex_cli_rs",
+                         "forked_from_id": id, "thread_source": "subagent",
+                         "source": ["subagent": ["thread_spawn": ["parent_thread_id": id, "depth": 1]]]]],
+            records[0],
+            ["timestamp": stamp(31), "type": "response_item",
+             "payload": ["type": "message", "role": "user", "content": [["type": "input_text", "text": "Find every place refunds are created."]]]],
+        ])
+        let review = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a61"
+        try write("rollout-2026-09-20T10-01-30-\(review).jsonl", [
+            ["timestamp": stamp(40), "type": "session_meta",
+             "payload": ["id": review, "timestamp": stamp(40), "cwd": cwd, "originator": "codex_cli_rs",
+                         "thread_source": "guardian_review", "source": ["subagent": ["other": "guardian"]]]],
+            ["timestamp": stamp(41), "type": "turn_context", "payload": ["cwd": cwd, "model": "codex-auto-review"]],
+            ["timestamp": stamp(42), "type": "response_item",
+             "payload": ["type": "message", "role": "assistant",
+                         "content": [["type": "output_text", "text": #"{"risk_level":"low","outcome":"allow"}"#]]]],
+        ])
+        let automated = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a62"
+        try write("rollout-2026-09-20T10-02-00-\(automated).jsonl", [
+            ["timestamp": stamp(50), "type": "session_meta",
+             "payload": ["id": automated, "timestamp": stamp(50), "cwd": cwd, "originator": "nightly-bot", "source": "vscode"]],
+            ["timestamp": stamp(51), "type": "response_item",
+             "payload": ["type": "message", "role": "user", "content": [["type": "input_text", "text": "Run the dependency audit."]]]],
+        ])
     }
 
     /// One conversation Claude Code has already deleted, still held by Better Claude.

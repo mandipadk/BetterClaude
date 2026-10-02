@@ -12,6 +12,12 @@ enum ReleaseHighlights {
     }
 
     static let byVersion: [String: [Item]] = [
+        "1.3.1": [
+            Item(symbol: "number", title: "Codex, counted right",
+                 detail: "Codex writes a file for every thread it runs, so its sub-agents, its automatic reviews of commands and other programs' runs were listed as conversations. Now only the conversations you had are, and the Codex page says what's left out."),
+            Item(symbol: "list.bullet", title: "No more gaps in the list",
+                 detail: "A Codex thread could take its parent's id, which left blank rows in Conversations and showed one conversation as two. Each conversation is listed once, and Codex's replies are labelled Codex."),
+        ],
         "1.3.0": [
             Item(symbol: "terminal", title: "Move a Cowork project to Claude Code",
                  detail: "Cowork tasks on this Mac are going away. Move to Claude Code, in Projects, brings a project's conversations into its folder with their full history, ready for claude --resume and listed in the Code tab. Their files land in From Cowork, and a CLAUDE.md and a brief say what came before."),

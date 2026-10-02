@@ -416,6 +416,14 @@ func cmdInstalls() {
         print(line)
         print("  \(HostPaths.current.abbreviating(install.dataRoot.path))")
         if let app = install.appURL { print("  \(app.path)") }
+        if install.kind == .external(.codex) {
+            let survey = CodexSessions.survey()
+            var left: [String] = []
+            if let n = survey.counts[.subagent] { left.append("\(n) sub-agent threads") }
+            if let n = survey.counts[.review] { left.append("\(n) automatic reviews") }
+            for (program, n) in survey.automatedBy.sorted(by: { $0.value > $1.value }) { left.append("\(n) runs by \(program)") }
+            if !left.isEmpty { print("  Not listed: " + left.joined(separator: ", ")) }
+        }
     }
 }
 
